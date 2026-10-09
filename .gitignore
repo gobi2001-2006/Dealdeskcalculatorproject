@@ -1,19 +1,24 @@
-# Environment secrets
+# Python virtual environments
+venv/
+backend/venv/
+
+# Environment variables and secrets
 .env
 .env.*
 !.env.example
 
-# Python
-.venv/
+# Python cache
 __pycache__/
 *.py[cod]
-.pytest_cache/
 
-# Frontend
+# Frontend dependencies
 node_modules/
+frontend/node_modules/
 dist/
+frontend/dist/
 
-# Editor and operating system
+# IDE and system files
 .vscode/
+.idea/
 .DS_Store
 Thumbs.db
