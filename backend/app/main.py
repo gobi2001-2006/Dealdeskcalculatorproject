@@ -1,7 +1,4 @@
-
-# pyrefly: ignore [missing-import]
 from fastapi import FastAPI, HTTPException
-# pyrefly: ignore [missing-import]
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import test_db_connection
@@ -22,7 +19,7 @@ def database_health():
             "status": "connected",
             "database_test": result,
         }
-    except SQLAlchemyError:
+    except (SQLAlchemyError, RuntimeError, Exception):
         raise HTTPException(
             status_code=503,
             detail="Database connection failed",

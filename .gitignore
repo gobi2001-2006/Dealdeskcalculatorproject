@@ -1,6 +1,10 @@
 # Python virtual environments
 venv/
 backend/venv/
+.venv/
+backend/.venv/
+env/
+backend/env/
 
 # Environment variables and secrets
 .env
