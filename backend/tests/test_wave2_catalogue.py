@@ -574,7 +574,10 @@ def test_pg_pack_items_locked_version_delete_rejected(pg_conn):
 def test_pg_product_description_date_order_rejected(pg_conn):
     """DB rejects product_description where valid_to <= valid_from."""
     ids = _pg_seed(pg_conn)
-    with pytest.raises(Exception, match="ck_product_descriptions_valid_date_order"):
+    with pytest.raises(
+        Exception,
+        match=r"(?:ck_product_descriptions_valid_date_order|ck_product_descriptions_ck_product_descriptions_valid_d_790f)",
+    ):
         pg_conn.execute(text(
             "INSERT INTO product_descriptions"
             "(feature_id, language, scope_text, version_no, valid_from, valid_to, status) "

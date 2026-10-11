@@ -337,6 +337,10 @@ def test_in_memory_sqlite_ddl_creation():
     assert EXPECTED_TABLES.issubset(created_tables)
 
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ALEMBIC_INI = str(_BACKEND_DIR / "alembic.ini")
+
+
 def test_alembic_heads_and_discovery():
     """Verify Alembic configuration discovers the Wave 1 migration revision.
 
@@ -345,7 +349,7 @@ def test_alembic_heads_and_discovery():
     checks that the revision is reachable in the script directory rather than
     asserting it is the sole head.
     """
-    cfg = Config("alembic.ini")
+    cfg = Config(_ALEMBIC_INI)
     script = ScriptDirectory.from_config(cfg)
     # Wave 1 revision must be discoverable as a script
     rev = script.get_revision("9472414f438c")
@@ -357,7 +361,7 @@ def test_alembic_offline_sql_generation():
     import contextlib
 
     buf = io.StringIO()
-    cfg = Config("alembic.ini")
+    cfg = Config(_ALEMBIC_INI)
     with contextlib.redirect_stdout(buf):
         command.upgrade(cfg, "head", sql=True)
     sql_output = buf.getvalue()
