@@ -1,3 +1,4 @@
+
 """Phase E: rule-level regression tests for the pricing engine and proposal service.
 
 These run on the in-memory SQLite fixtures (no PostgreSQL needed) and reuse the
