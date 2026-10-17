@@ -4,7 +4,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import test_db_connection
 
 app = FastAPI(title="Adrenalin Deal Desk API")
+from app.api.router import api_router
 
+app.include_router(api_router, prefix="/api")
 
 @app.get("/")
 def home():

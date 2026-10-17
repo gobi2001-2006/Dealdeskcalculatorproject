@@ -20,7 +20,7 @@ Verifies:
 17.  All nine Wave 1 tables remain intact (regression guard).
 
 Tests 12 and 13 require a real PostgreSQL connection because they test
-trigger behaviour; they are skipped automatically when DATABASE_URL is not
+trigger behaviour; they are skipped automatically when TEST_DATABASE_URL is not
 set in the test environment.
 """
 
@@ -37,10 +37,9 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
-# Load .env so DATABASE_URL is available for the PG integration tests.
-# This must happen before the skipif mark is evaluated.
-from dotenv import load_dotenv as _load_dotenv
-_load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# NOTE: the PG integration tests below run ONLY against the local database named by
+# TEST_DATABASE_URL (see tests/conftest.py). They must never read backend/.env, because
+# that file holds the production Neon DATABASE_URL.
 
 from app.db.base import Base
 from app.models.catalogue import (
@@ -397,21 +396,14 @@ def test_alembic_wave2_offline_sql():
 
 
 # ---------------------------------------------------------------------------
-# PostgreSQL integration tests (skipped when DATABASE_URL is absent)
+# PostgreSQL integration tests (skipped when TEST_DATABASE_URL is absent)
 # ---------------------------------------------------------------------------
 _SKIP_PG = pytest.mark.skipif(
-    not os.getenv("DATABASE_URL"),
-    reason="DATABASE_URL not set — skipping PostgreSQL integration tests",
+    not os.getenv("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set — skipping PostgreSQL integration tests",
 )
 
-
-@pytest.fixture(scope="module")
-def pg_engine():
-    """Provide a live PostgreSQL engine using the configured DATABASE_URL."""
-    url = os.getenv("DATABASE_URL")
-    engine = create_engine(url, pool_pre_ping=True)
-    yield engine
-    engine.dispose()
+# The `pg_engine` fixture comes from tests/conftest.py (local test database built by Alembic).
 
 
 @pytest.fixture()

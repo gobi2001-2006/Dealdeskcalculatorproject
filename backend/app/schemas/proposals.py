@@ -293,7 +293,16 @@ class ProposalBase(BaseModel):
 
 class ProposalCreate(ProposalBase):
     """Payload for creating a new proposal."""
-    pass
+    customer_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Customer ID referencing customers.id (defaults to deal's customer_id if omitted)",
+    )
+    rate_card_version_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Optional rate card version ID to auto-create initial version 1",
+    )
 
 
 class ProposalUpdate(BaseModel):
@@ -544,6 +553,16 @@ class ProposalCountryBase(BaseModel):
         gt=0,
         description="Country ID referencing countries.id",
     )
+    deployment_model_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Rate-card dimension: deployment model ID (set together with pricing_model_id)",
+    )
+    pricing_model_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Rate-card dimension: pricing model ID (set together with deployment_model_id)",
+    )
     user_headcount: Optional[int] = Field(
         None,
         ge=0,
@@ -554,10 +573,22 @@ class ProposalCountryBase(BaseModel):
         description="Whether this country is the primary deployment location",
     )
 
+    @model_validator(mode="after")
+    def validate_pricing_dimensions_together(self) -> "ProposalCountryBase":
+        if (self.deployment_model_id is None) != (self.pricing_model_id is None):
+            raise ValueError(
+                "deployment_model_id and pricing_model_id must be provided together"
+            )
+        return self
+
 
 class ProposalCountryCreate(ProposalCountryBase):
     """Payload for linking a deployment country to a proposal."""
-    pass
+    proposal_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Proposal ID referencing proposals.id (optional if provided in route path)",
+    )
 
 
 class ProposalCountryUpdate(BaseModel):
@@ -567,6 +598,8 @@ class ProposalCountryUpdate(BaseModel):
 
     proposal_id: Optional[int] = Field(None, gt=0)
     country_id: Optional[int] = Field(None, gt=0)
+    deployment_model_id: Optional[int] = Field(None, gt=0)
+    pricing_model_id: Optional[int] = Field(None, gt=0)
     user_headcount: Optional[int] = Field(None, ge=0)
     is_primary_deployment: Optional[bool] = None
 
@@ -666,6 +699,40 @@ class ProposalLineItemBase(BaseModel):
 
 class ProposalLineItemCreate(ProposalLineItemBase):
     """Payload for creating a proposal line item."""
+
+    proposal_version_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Proposal version ID (optional if attaching to proposal's draft version)",
+    )
+    line_number: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Ordering sequence of line items (auto-assigned if omitted)",
+    )
+    currency_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Line presentation currency referencing currencies.id (defaults to proposal currency)",
+    )
+    list_unit_price: Decimal = Field(
+        Decimal("0"),
+        ge=Decimal("0"),
+        decimal_places=4,
+        description="Ignored on input. Prices always come from the rate card; the server fills this in on calculation.",
+    )
+    net_unit_price: Decimal = Field(
+        Decimal("0"),
+        ge=Decimal("0"),
+        decimal_places=4,
+        description="Ignored on input. Computed by the server on calculation.",
+    )
+    extended_amount: Decimal = Field(
+        Decimal("0"),
+        ge=Decimal("0"),
+        decimal_places=4,
+        description="Ignored on input. Computed by the server on calculation.",
+    )
 
     @model_validator(mode="after")
     def validate_target_exclusive(self) -> "ProposalLineItemCreate":
@@ -798,7 +865,28 @@ class ProposalServiceLineBase(BaseModel):
 
 class ProposalServiceLineCreate(ProposalServiceLineBase):
     """Payload for creating a proposal service line."""
-    pass
+    proposal_version_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Proposal version ID (optional if attaching to proposal's draft version)",
+    )
+    currency_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Line presentation currency referencing currencies.id (defaults to proposal currency)",
+    )
+    rate_applied: Decimal = Field(
+        Decimal("0"),
+        ge=Decimal("0"),
+        decimal_places=4,
+        description="Ignored on input. The day rate always comes from the service-rate master.",
+    )
+    extended_amount: Decimal = Field(
+        Decimal("0"),
+        ge=Decimal("0"),
+        decimal_places=4,
+        description="Ignored on input. Computed by the server on calculation.",
+    )
 
 
 class ProposalServiceLineUpdate(BaseModel):
@@ -1109,8 +1197,8 @@ class ProposalVersionDetailResponse(ProposalVersionResponse):
     proposal: Optional[ProposalResponse] = None
     rate_card_version: Optional[RateCardVersionResponse] = None
     created_by_user: Optional[UserResponse] = None
-    line_items: list[ProposalLineItemResponse] = Field(default_factory=list)
-    service_lines: list[ProposalServiceLineResponse] = Field(default_factory=list)
+    line_items: list[ProposalLineItemDetailResponse | ProposalLineItemResponse] = Field(default_factory=list)
+    service_lines: list[ProposalServiceLineDetailResponse | ProposalServiceLineResponse] = Field(default_factory=list)
     snapshots: list[CalculationSnapshotResponse] = Field(default_factory=list)
     content: list[ProposalContentResponse] = Field(default_factory=list)
     approvals: list[ApprovalResponse] = Field(default_factory=list)
@@ -1124,8 +1212,143 @@ class ProposalDetailResponse(ProposalResponse):
     currency: Optional[CurrencyResponse] = None
     created_by_user: Optional[UserResponse] = None
     contacts: list[ProposalContactResponse] = Field(default_factory=list)
-    versions: list[ProposalVersionResponse] = Field(default_factory=list)
-    countries: list[ProposalCountryResponse] = Field(default_factory=list)
+    versions: list[ProposalVersionDetailResponse | ProposalVersionResponse] = Field(default_factory=list)
+    countries: list[ProposalCountryDetailResponse | ProposalCountryResponse] = Field(default_factory=list)
+
+
+# =============================================================================
+# 12. Phase D — Pricing Calculation Schemas
+# =============================================================================
+
+class LineItemCalculationResult(BaseModel):
+    """Calculation result for a single subscription line item."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    line_item_id: int
+    line_number: int
+    pack_version_id: Optional[int] = None
+    feature_id: Optional[int] = None
+    target_name: Optional[str] = None
+    product_id: Optional[int] = None
+    product_name: str
+    product_code: str
+    uom_id: int
+    currency_id: int
+    currency_code: str
+    platform_fee: float = Field(description="Annual platform/fixed fee from rate card")
+    rate_per_unit: float = Field(description="Rate per unit of measure (PEPM)")
+    average_monthly_volume: float = Field(description="Average monthly quantity/volume")
+    annual_consumption_fee: float = Field(description="rate_per_unit × avg_monthly_volume × 12")
+    item_subscription_before_discount: float = Field(description="platform_fee + annual_consumption_fee")
+    item_discount_pct: float = Field(description="Item-level discount percentage (0–100)")
+    item_discount_amount: float = Field(description="subscription_before_discount × discount_pct / 100")
+    item_subscription_after_discount: float = Field(description="Subscription after applying item discount")
+
+
+class ServiceLineCalculationResult(BaseModel):
+    """Calculation result for a single service / implementation line."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    service_line_id: int
+    role_name: str
+    service_rate_id: Optional[int] = None
+    man_days: float
+    hourly_rate: Optional[float] = None
+    standard_hours_per_day: float
+    day_rate: float = Field(description="hourly_rate × standard_hours_per_day (or explicit daily_rate)")
+    service_line_total: float = Field(description="man_days × day_rate")
+    currency_id: int
+    currency_code: str
+    discount_pct: float
+    product_code: Optional[str] = None
+
+
+class ProductCalculationResult(BaseModel):
+    """Consolidated calculation result aggregated by product."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    product_id: Optional[int] = None
+    product_name: str
+    product_code: str
+    native_currency_id: int
+    native_currency_code: str
+
+    # Subscription
+    subscription_subtotal_before_discount: float
+    subscription_discount_pct: float
+    subscription_discount_amount: float
+    subscription_total_after_discount: float
+
+    # Services
+    service_subtotal_before_discount: float
+    service_discount_pct: float
+    service_discount_amount: float
+    service_total_after_discount: float
+
+    # Totals
+    product_native_total: float
+    fx_rate_multiplier: float
+    currency_pair: str
+    reporting_currency_id: int
+    reporting_currency_code: str
+    product_reporting_total: float
+
+    line_items: list[LineItemCalculationResult] = Field(default_factory=list)
+    service_lines: list[ServiceLineCalculationResult] = Field(default_factory=list)
+
+
+class CalculationRequest(BaseModel):
+    """Request payload to trigger a proposal pricing calculation.
+
+    All monetary overrides are optional — the engine performs a full
+    server-side recalculation using rate cards and service rates from
+    the database.  Discount overrides are accepted per product code.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    version_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Target a specific proposal version; defaults to the latest draft",
+    )
+    product_subscription_discounts: dict[str, Decimal] = Field(
+        default_factory=dict,
+        description="Optional map of product_code → subscription discount % to override",
+    )
+    product_service_discounts: dict[str, Decimal] = Field(
+        default_factory=dict,
+        description="Optional map of product_code → service discount % to override",
+    )
+    default_hours_per_day: Optional[Decimal] = Field(
+        None,
+        gt=Decimal("0"),
+        le=Decimal("24"),
+        description="Override working hours per day (default 8.00)",
+    )
+    calculated_by_user_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="User ID triggering the calculation (audit trail)",
+    )
+
+
+class ProposalCalculationResponse(BaseModel):
+    """Top-level response returned by the calculation engine."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    snapshot_id: int
+    proposal_id: int
+    proposal_version_id: int
+    version_no: int
+    calculated_at: str
+    reporting_currency_code: str
+    total_proposal_reporting_currency: float
+    snapshot_payload: dict[str, Any]
 
 
 # Rebuild any models that declare circular or forward references

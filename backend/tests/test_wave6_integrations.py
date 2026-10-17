@@ -175,11 +175,13 @@ def test_wave6_check_constraints():
 # 6. Alembic Discovery & Offline SQL
 # ===========================================================================
 def test_alembic_wave6_head():
-    """Alembic must report Wave 6 'e5f6a7b8c9d0' as current head."""
+    """Wave 6 'e5f6a7b8c9d0' must be part of a single linear history (no stray heads)."""
     cfg = Config(_ALEMBIC_INI)
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
-    assert "e5f6a7b8c9d0" in heads, f"Wave 6 head not found in heads: {heads}"
+    assert len(heads) == 1, f"Expected a single Alembic head, found: {heads}"
+    ancestors = {rev.revision for rev in script.walk_revisions(base="base", head=heads[0])}
+    assert "e5f6a7b8c9d0" in ancestors, f"Wave 6 revision missing from history ending at {heads}"
 
 
 def test_alembic_wave6_offline_sql():
