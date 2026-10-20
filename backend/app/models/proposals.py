@@ -25,6 +25,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Identity,
     Index,
     Integer,
@@ -32,6 +33,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     text,
 )
@@ -453,6 +455,17 @@ class ProposalCountry(Base):
             "user_headcount IS NULL OR user_headcount >= 0",
             name="ck_proposal_countries_headcount_non_negative",
         ),
+        CheckConstraint(
+            "(deployment_model_id IS NULL) = (pricing_model_id IS NULL)",
+            name="pricing_dims_both_or_neither",
+        ),
+        # Only a permitted deployment/pricing combination can be stored (NULLs skip the check).
+        ForeignKeyConstraint(
+            ["deployment_model_id", "pricing_model_id"],
+            ["deployment_pricing_options.deployment_model_id", "deployment_pricing_options.pricing_model_id"],
+            name="fk_proposal_countries_deployment_pricing_option",
+            ondelete="RESTRICT",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -470,6 +483,19 @@ class ProposalCountry(Base):
         BigInteger,
         ForeignKey("countries.id", ondelete="RESTRICT"),
         nullable=False,
+        index=True,
+    )
+    # Rate-card dimensions for this country block (see migration f6a7b8c9d0e1).
+    deployment_model_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("deployment_models.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    pricing_model_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("pricing_models.id", ondelete="RESTRICT"),
+        nullable=True,
         index=True,
     )
     user_headcount: Mapped[Optional[int]] = mapped_column(
@@ -755,6 +781,17 @@ class CalculationSnapshot(Base):
         "ProposalVersion", back_populates="snapshots"
     )
     calculated_by_user: Mapped[Optional["User"]] = relationship("User")
+
+
+class SnapshotImmutableError(Exception):
+    """Raised when code attempts to modify or delete a persisted calculation snapshot."""
+
+
+@event.listens_for(CalculationSnapshot, "before_update")
+@event.listens_for(CalculationSnapshot, "before_delete")
+def _block_snapshot_mutation(mapper, connection, target):  # noqa: ARG001
+    """ORM-level guard; PostgreSQL additionally enforces this with a trigger (migration f6a7b8c9d0e1)."""
+    raise SnapshotImmutableError("calculation_snapshots rows are immutable")
 
 
 # =============================================================================
