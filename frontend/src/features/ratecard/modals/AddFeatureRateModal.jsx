@@ -1,87 +1,115 @@
-import { useState } from 'react'
+ import { useState, useMemo } from 'react'
 import { X, Layers, AlertCircle } from 'lucide-react'
+
+const DEFAULT_TIERS = [
+  { id: 'tier-1', code: 'Tier 1', name: 'Enterprise' },
+  { id: 'tier-2', code: 'Tier 2', name: 'Mid-Market' },
+  { id: 'tier-3', code: 'Tier 3', name: 'Growth' },
+]
 
 export function AddFeatureRateModal({
   isOpen,
   onClose,
   onSave,
-  products = [],
+  features = [],
+  pricingTiers = DEFAULT_TIERS,
+  targetFamilyId = null,
+  families = [],
   activeDeployment = 'Shared Cloud',
   activePricing = 'PEPM',
   existingFeatureRates = [],
 }) {
-  const availableProducts = products.filter(
-    (prod) =>
-      !existingFeatureRates.some(
-        (r) =>
-          r.productId === prod.id &&
-          r.deploymentModel === activeDeployment &&
-          r.pricingModel === activePricing,
-      ),
-  )
+  const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
 
-  const [selectedProductId, setSelectedProductId] = useState(
-    availableProducts[0]?.id || '',
-  )
-  const [tier1Rate, setTier1Rate] = useState('')
-  const [tier2Rate, setTier2Rate] = useState('')
-  const [tier3Rate, setTier3Rate] = useState('')
+  // Pre-filter features by family if targetFamilyId is provided
+  const familyFeatures = useMemo(() => {
+    if (targetFamilyId && targetFamilyId !== 'all') {
+      return features.filter(
+        (f) =>
+          String(f.familyId) === String(targetFamilyId) ||
+          String(f.product_family_id) === String(targetFamilyId),
+      )
+    }
+    return features
+  }, [features, targetFamilyId])
+
+  // Filter available features not yet configured for this deployment & pricing model
+  const availableFeatures = useMemo(() => {
+    return familyFeatures.filter(
+      (feat) =>
+        !existingFeatureRates.some(
+          (r) =>
+            (r.featureId === feat.id || String(r.featureId) === String(feat.id)) &&
+            r.deploymentModel === activeDeployment &&
+            r.pricingModel === activePricing,
+        ),
+    )
+  }, [familyFeatures, existingFeatureRates, activeDeployment, activePricing])
+
+  const [selectedFeatureId, setSelectedFeatureId] = useState('')
+  const [tierRates, setTierRates] = useState({})
   const [uom, setUom] = useState('Active Employees (with ESS)')
   const [error, setError] = useState('')
 
   if (!isOpen) return null
 
-  const activeProduct = products.find(
-    (p) => p.id === (selectedProductId || availableProducts[0]?.id),
-  )
+  const effectiveFeatureId = selectedFeatureId || availableFeatures[0]?.id || ''
+  const activeFeature = features.find((f) => String(f.id) === String(effectiveFeatureId))
+
+  const handleTierRateChange = (tierId, value) => {
+    setTierRates((prev) => ({ ...prev, [tierId]: value }))
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
     setError('')
 
-    const targetProdId = selectedProductId || availableProducts[0]?.id
-    if (!targetProdId) {
-      setError('Please select a product from the Product Catalogue.')
+    if (!effectiveFeatureId) {
+      setError('Please select a feature from the Product Catalogue.')
       return
     }
 
-    const t1 = parseFloat(tier1Rate)
-    const t2 = parseFloat(tier2Rate)
-    const t3 = parseFloat(tier3Rate)
+    // Validate tier rates
+    for (const tier of tiersToRender) {
+      const val = tierRates[tier.id]
+      if (val !== undefined && val !== '' && val !== null) {
+        const num = parseFloat(val)
+        if (isNaN(num) || num < 0) {
+          setError(`Rate for ${tier.name || tier.code} must be a valid non-negative number.`)
+          return
+        }
+      }
+    }
 
-    if (tier1Rate !== '' && (isNaN(t1) || t1 < 0)) {
-      setError('Tier 1 rate must be a valid non-negative number.')
-      return
-    }
-    if (tier2Rate !== '' && (isNaN(t2) || t2 < 0)) {
-      setError('Tier 2 rate must be a valid non-negative number.')
-      return
-    }
-    if (tier3Rate !== '' && (isNaN(t3) || t3 < 0)) {
-      setError('Tier 3 rate must be a valid non-negative number.')
-      return
-    }
+    const t1 = tierRates[tiersToRender[0]?.id] ?? ''
+    const t2 = tierRates[tiersToRender[1]?.id] ?? ''
+    const t3 = tierRates[tiersToRender[2]?.id] ?? ''
 
     onSave({
-      productId: targetProdId,
-      productCode: activeProduct?.code || 'PROD-SKU',
-      featureName: activeProduct?.solution || 'Feature Add-on',
-      familyId: activeProduct?.familyId || 'fam-ta',
-      productType: activeProduct?.type || 'Adrenalin Native',
+      featureId: activeFeature?.id ? Number(activeFeature.id) : Number(effectiveFeatureId),
+      productId: activeFeature?.productId,
+      productCode: activeFeature?.code || 'FEAT-SKU',
+      featureName: activeFeature?.name || 'Feature Add-on',
+      familyId: activeFeature?.familyId || activeFeature?.product_family_id || targetFamilyId || 'all',
+      productType:
+        activeFeature?.classification === 'ai_enabled'
+          ? 'AI Agent Module'
+          : 'Adrenalin Native',
       deploymentModel: activeDeployment,
       pricingModel: activePricing,
       unitOfMeasure: uom,
-      tier1Rate: tier1Rate.trim() || '0',
-      tier2Rate: tier2Rate.trim() || '0',
-      tier3Rate: tier3Rate.trim() || '0',
+      tierRates,
+      tier1Rate: String(t1).trim() || '0',
+      tier2Rate: String(t2).trim() || '0',
+      tier3Rate: String(t3).trim() || '0',
     })
 
-    setTier1Rate('')
-    setTier2Rate('')
-    setTier3Rate('')
+    setTierRates({})
     setError('')
     onClose()
   }
+
+  const targetFamilyObj = families.find((f) => String(f.id) === String(targetFamilyId))
 
   return (
     <div
@@ -102,7 +130,7 @@ export function AddFeatureRateModal({
                 Add À la Carte Feature Rate
               </h2>
               <p className="text-xs text-slate-500">
-                Configure tier rate for an individual catalogue feature ({activeDeployment})
+                {targetFamilyObj ? `${targetFamilyObj.name} • ` : ''}Configure dynamic tier rates for an individual catalogue feature ({activeDeployment})
               </p>
             </div>
           </div>
@@ -127,34 +155,47 @@ export function AddFeatureRateModal({
 
           <div>
             <label htmlFor="feature-product-select" className="block text-xs font-semibold text-slate-700 mb-1">
-              Select Product / Feature <span className="text-rose-500">*</span>
+              Select Feature (from Product Catalogue L2/L3) <span className="text-rose-500">*</span>
             </label>
-            {availableProducts.length > 0 ? (
+            {availableFeatures.length > 0 ? (
               <select
                 id="feature-product-select"
-                value={selectedProductId || availableProducts[0]?.id}
-                onChange={(e) => setSelectedProductId(e.target.value)}
+                value={effectiveFeatureId}
+                onChange={(e) => setSelectedFeatureId(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
-                {availableProducts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.solution} ({p.code}) — {p.type}
+                {availableFeatures.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({f.code}) — {f.productName || 'Module'} [{f.classification || 'native'}]
                   </option>
                 ))}
               </select>
             ) : (
               <div className="p-3 text-xs rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
-                All catalogue products already have rates configured for this deployment model.
+                All catalogue features for this family already have rates configured for {activeDeployment} / {activePricing}.
               </div>
             )}
           </div>
 
+          {/* Active feature details badge */}
+          {activeFeature && (
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+              <div>
+                <span className="font-semibold text-slate-800">{activeFeature.name}</span>
+                <span className="font-mono text-[10px] text-slate-500 ml-2">Code: {activeFeature.code}</span>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-slate-200 text-slate-700">
+                {activeFeature.classification === 'ai_enabled' ? 'AI Agent' : 'Native Module'}
+              </span>
+            </div>
+          )}
+
           <div>
-            <label htmlFor="feature-uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
               Unit of Measure
             </label>
             <input
-              id="feature-uom-input"
+              id="uom-input"
               type="text"
               value={uom}
               onChange={(e) => setUom(e.target.value)}
@@ -162,51 +203,35 @@ export function AddFeatureRateModal({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label htmlFor="feat-tier1-rate" className="block text-xs font-semibold text-slate-700 mb-1">
-                Tier 1 (Enterprise)
-              </label>
-              <input
-                id="feat-tier1-rate"
-                type="number"
-                min="0"
-                step="any"
-                value={tier1Rate}
-                onChange={(e) => setTier1Rate(e.target.value)}
-                placeholder="Rate"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="feat-tier2-rate" className="block text-xs font-semibold text-slate-700 mb-1">
-                Tier 2 (Mid-Market)
-              </label>
-              <input
-                id="feat-tier2-rate"
-                type="number"
-                min="0"
-                step="any"
-                value={tier2Rate}
-                onChange={(e) => setTier2Rate(e.target.value)}
-                placeholder="Rate"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="feat-tier3-rate" className="block text-xs font-semibold text-slate-700 mb-1">
-                Tier 3 (Growth)
-              </label>
-              <input
-                id="feat-tier3-rate"
-                type="number"
-                min="0"
-                step="any"
-                value={tier3Rate}
-                onChange={(e) => setTier3Rate(e.target.value)}
-                placeholder="Rate"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-              />
+          {/* Dynamic Tiers Grid */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Configured Customer Tier Rates
+            </label>
+            <div className={`grid gap-3 ${tiersToRender.length <= 2 ? 'grid-cols-2' : tiersToRender.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
+              {tiersToRender.map((tier) => (
+                <div key={tier.id}>
+                  <label
+                    htmlFor={`feature-tier-input-${tier.id}`}
+                    className="block text-[11px] font-medium text-slate-600 mb-1 truncate"
+                    title={tier.name || tier.code}
+                  >
+                    {tier.name && tier.name !== tier.code
+                      ? `${tier.code} (${tier.name})`
+                      : tier.code || tier.name}
+                  </label>
+                  <input
+                    id={`feature-tier-input-${tier.id}`}
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={tierRates[tier.id] ?? ''}
+                    onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
+                    placeholder="Rate"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                  />
+                </div>
+              ))}
             </div>
           </div>
 
@@ -220,7 +245,7 @@ export function AddFeatureRateModal({
             </button>
             <button
               type="submit"
-              disabled={availableProducts.length === 0}
+              disabled={availableFeatures.length === 0}
               className="px-4 py-2 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
               Add Feature Rate

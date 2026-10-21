@@ -12,7 +12,7 @@ import axios from 'axios'
  * Note: No fake financial calculations or fabricated endpoints are implemented here.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,

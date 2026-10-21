@@ -41,6 +41,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -610,6 +611,13 @@ class PackItem(Base):
         primary_key=True,
         nullable=False,
         comment="Feature included in this pack version",
+    )
+    is_required: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default=text("true"),
+        nullable=False,
+        comment="Whether this feature is required (mandatory) or optional in this pack version",
     )
 
     # Relationships

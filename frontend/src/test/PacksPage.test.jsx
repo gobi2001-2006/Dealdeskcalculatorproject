@@ -319,4 +319,99 @@ describe('Pack Builder Feature Tests', () => {
     ).toBeInTheDocument()
     expect(within(sidebar).getByText('TIME-ROST-99')).toBeInTheDocument()
   })
+
+  it('toggles a selected pack item between Required and Optional', () => {
+    renderPacksPage()
+
+    // Open a pack
+    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
+    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
+
+    // Find the requirement toggle button for ATS
+    const reqToggleBtn = screen.getByRole('button', {
+      name: /Toggle requirement for Applicant Tracking System \(ATS\)/i,
+    })
+    expect(reqToggleBtn).toHaveTextContent('Required')
+
+    // Click to make it Optional
+    fireEvent.click(reqToggleBtn)
+    expect(reqToggleBtn).toHaveTextContent('Optional')
+
+    // Click again to make it Required
+    fireEvent.click(reqToggleBtn)
+    expect(reqToggleBtn).toHaveTextContent('Required')
+  })
+
+  it('duplicates an existing pack into a new template', () => {
+    renderPacksPage()
+
+    // Open a pack
+    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
+    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
+
+    // Click Duplicate
+    const dupBtn = screen.getByRole('button', { name: /Duplicate Pack/i })
+    fireEvent.click(dupBtn)
+
+    // Heading becomes New Pack
+    expect(screen.getByRole('heading', { name: /New Pack/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Pack Name/i)).toHaveValue('Talent Acquisition Growth Suite (Copy)')
+    expect(screen.getByLabelText(/Pack Code \/ SKU/i)).toHaveValue('TA-GROWTH-01-COPY')
+
+    // Counters retain the 5 products
+    const saveBar = screen.getByRole('contentinfo', { name: /Pack Builder Action Bar/i })
+    expect(within(saveBar).getByText('5')).toBeInTheDocument()
+  })
+
+  it('creates and activates a new pack version', () => {
+    renderPacksPage()
+
+    // Open a pack
+    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
+    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
+
+    // Initially shows v1 (active)
+    expect(screen.getByText(/v1 \(active\)/i)).toBeInTheDocument()
+
+    // Click New Version
+    const newVerBtn = screen.getByRole('button', { name: /New Version/i })
+    fireEvent.click(newVerBtn)
+
+    // Updates to v2 (draft)
+    expect(screen.getByText(/v2 \(draft\)/i)).toBeInTheDocument()
+
+    // Activate button appears
+    const activateBtn = screen.getByRole('button', { name: /Activate Version/i })
+    fireEvent.click(activateBtn)
+
+    // Updates to v2 (active)
+    expect(screen.getByText(/v2 \(active\)/i)).toBeInTheDocument()
+  })
+
+  it('deletes an existing pack via delete confirmation modal', async () => {
+    renderPacksPage()
+
+    // Open a pack
+    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
+    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
+
+    // Click Delete Pack in the header
+    const deleteBtn = screen.getByRole('button', { name: /Delete Pack/i })
+    fireEvent.click(deleteBtn)
+
+    // Dialog opens
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Delete Pack Preset')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Talent Acquisition Growth Suite/i)).toBeInTheDocument()
+
+    // Confirm deletion
+    const confirmBtn = within(dialog).getByRole('button', { name: /Confirm Delete/i })
+    fireEvent.click(confirmBtn)
+
+    // Modal closes and pack is removed from sidebar
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+    expect(within(sidebar).queryByText('Talent Acquisition Growth Suite')).not.toBeInTheDocument()
+  })
 })

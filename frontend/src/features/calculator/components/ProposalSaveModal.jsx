@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import {
-  FileText,
   X,
   Check,
   Copy,
   Download,
-  AlertTriangle,
+  Database,
   Code2,
+  RefreshCw,
 } from 'lucide-react'
 
 export function ProposalSaveModal({
@@ -14,6 +14,7 @@ export function ProposalSaveModal({
   serializedData,
   onClose,
   onConfirmSave,
+  isSaving = false,
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -49,14 +50,14 @@ export function ProposalSaveModal({
         <div className="bg-[#0B1528] text-white px-5 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-orange-400">
-              <FileText className="w-4 h-4" aria-hidden="true" />
+              <Database className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
               <h2 id="save-proposal-title" className="text-sm font-bold text-white tracking-wide">
-                Save Proposal Draft — Frontend Prototype
+                Save Proposal Draft — PostgreSQL
               </h2>
               <p className="text-[11px] text-slate-300">
-                Pydantic schema representation for FastAPI Wave 5 integration.
+                Persist proposal header, regional country scopes, line items, and service lines.
               </p>
             </div>
           </div>
@@ -70,14 +71,12 @@ export function ProposalSaveModal({
           </button>
         </div>
 
-        {/* Notice Banner */}
-        <div className="px-5 py-3 bg-amber-50 border-b border-amber-200/80 flex items-start gap-2.5 text-xs text-amber-900 shrink-0">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+        {/* Live Persistence Banner */}
+        <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-200/80 flex items-start gap-2.5 text-xs text-emerald-900 shrink-0">
+          <Database className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" />
           <div>
-            <strong className="font-semibold">Frontend Prototype Notice:</strong>{' '}
-            The PostgreSQL backend persistence endpoint (`POST /proposals`) is currently pending deployment in Wave 5.
-            This proposal structure will be retained in local browser state and can be copied or downloaded as JSON.
-            No persistent database record is created at this time.
+            <strong className="font-semibold">Live Database Integration:</strong>{' '}
+            Saving persists the customer, deal, proposal header, country deployment scopes, pack & feature line items, and service lines directly into PostgreSQL via FastAPI endpoints. Saved proposals can be reloaded after browser refresh.
           </div>
         </div>
 
@@ -132,19 +131,28 @@ export function ProposalSaveModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200/60"
+              disabled={isSaving}
+              className="px-3.5 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-200/60 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="button"
-              onClick={() => {
-                onConfirmSave()
-                onClose()
-              }}
-              className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors"
+              onClick={onConfirmSave}
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors disabled:opacity-50"
             >
-              Confirm Local Prototype Save
+              {isSaving ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                  <span>Saving to PostgreSQL...</span>
+                </>
+              ) : (
+                <>
+                  <Database className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Confirm Save to PostgreSQL</span>
+                </>
+              )}
             </button>
           </div>
         </div>

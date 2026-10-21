@@ -47,6 +47,9 @@ BEGIN
             'pack_versions row id=% is locked and cannot be modified or deleted.',
             OLD.id;
     END IF;
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
     RETURN NEW;
 END;
 $$;

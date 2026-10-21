@@ -489,6 +489,12 @@ class ServiceRateResponse(ServiceRateBase):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode="after")
+    def compute_default_daily_rate(self) -> "ServiceRateResponse":
+        if self.daily_rate is None and self.hourly_rate is not None and self.hours_per_day is not None:
+            self.daily_rate = self.hourly_rate * self.hours_per_day
+        return self
+
 
 # =============================================================================
 # Nested / Detail Schemas

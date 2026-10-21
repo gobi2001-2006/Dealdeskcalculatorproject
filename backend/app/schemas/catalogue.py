@@ -469,12 +469,33 @@ class PackItemBase(BaseModel):
         gt=0,
         description="Feature included in this pack version",
     )
+    is_required: bool = Field(
+        default=True,
+        description="Whether this feature is required (mandatory) or optional in this pack version",
+    )
 
 
 class PackItemCreate(PackItemBase):
     """Payload for associating a feature with a pack version."""
 
     pass
+
+
+class PackItemInput(BaseModel):
+    """Input payload for a pack item when creating or syncing pack versions."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    feature_id: int = Field(..., gt=0, description="Feature ID included in pack version")
+    is_required: bool = Field(default=True, description="Whether this feature is required (mandatory) or optional")
+
+
+class PackItemsSyncRequest(BaseModel):
+    """Request payload for syncing all items of a pack version."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    items: list[PackItemInput] = Field(default_factory=list, description="Target list of features and their requirement flags")
 
 
 class PackItemUpdate(BaseModel):
@@ -484,6 +505,7 @@ class PackItemUpdate(BaseModel):
 
     pack_version_id: Optional[int] = Field(None, gt=0)
     feature_id: Optional[int] = Field(None, gt=0)
+    is_required: Optional[bool] = None
 
 
 class PackItemResponse(PackItemBase):
@@ -511,7 +533,7 @@ class PackVersionDetailResponse(PackVersionResponse):
 class PackDetailResponse(PackResponse):
     """Pack response with nested pack versions."""
 
-    pack_versions: list[PackVersionResponse] = Field(default_factory=list)
+    pack_versions: list[PackVersionDetailResponse] = Field(default_factory=list)
 
 
 class FeatureDetailResponse(FeatureResponse):

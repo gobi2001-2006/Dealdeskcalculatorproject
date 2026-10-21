@@ -1,14 +1,56 @@
-import { Building, Globe2, AlertCircle, FileText } from 'lucide-react'
+import { useEffect } from 'react'
+import { Building, Globe2, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { MASTER_CURRENCIES } from '../calculatorData'
 
 export function ClientConfigCard({
   clientInfo,
   onChangeClientInfo,
   errors = {},
+  customers = [],
+  currencies = MASTER_CURRENCIES,
 }) {
+  const currencyList = currencies.length > 0 ? currencies : MASTER_CURRENCIES
+
   const selectedCurrencyObj =
-    MASTER_CURRENCIES.find((c) => c.code === clientInfo.reportingCurrency) ||
-    MASTER_CURRENCIES[0]
+    currencyList.find(
+      (c) =>
+        (clientInfo.reportingCurrencyId && Number(c.id) === Number(clientInfo.reportingCurrencyId)) ||
+        c.code === clientInfo.reportingCurrency
+    ) || currencyList[0]
+
+  useEffect(() => {
+    if (
+      selectedCurrencyObj &&
+      (!clientInfo.reportingCurrencyId ||
+        Number(clientInfo.reportingCurrencyId) !== Number(selectedCurrencyObj.id) ||
+        clientInfo.reportingCurrency !== selectedCurrencyObj.code)
+    ) {
+      onChangeClientInfo('reportingCurrencyId', Number(selectedCurrencyObj.id) || selectedCurrencyObj.id)
+      onChangeClientInfo('reportingCurrency', selectedCurrencyObj.code)
+    }
+  }, [selectedCurrencyObj, clientInfo.reportingCurrencyId, clientInfo.reportingCurrency, onChangeClientInfo])
+
+  const handleCurrencySelect = (currencyVal) => {
+    const found = currencyList.find(
+      (c) => String(c.id) === String(currencyVal) || c.code === currencyVal
+    )
+    if (found) {
+      onChangeClientInfo('reportingCurrencyId', Number(found.id) || found.id)
+      onChangeClientInfo('reportingCurrency', found.code)
+    }
+  }
+
+  const handleCustomerSelect = (selectedCustomerId) => {
+    if (!selectedCustomerId) {
+      onChangeClientInfo('customerId', null)
+      return
+    }
+    const found = customers.find((c) => String(c.id) === String(selectedCustomerId))
+    if (found) {
+      onChangeClientInfo('customerId', found.id)
+      onChangeClientInfo('clientName', found.name)
+    }
+  }
 
   return (
     <section
@@ -22,9 +64,17 @@ export function ClientConfigCard({
             <Building className="w-4 h-4" aria-hidden="true" />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900 tracking-tight">
-              Client & Commercial Specifications
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+                Client & Commercial Specifications
+              </h2>
+              {clientInfo.proposalId && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <CheckCircle2 className="w-3 h-3 text-blue-600" aria-hidden="true" />
+                  <span>ID: {clientInfo.proposalId} ({clientInfo.proposalCode || 'DRAFT'})</span>
+                </span>
+              )}
+            </div>
             <p className="text-[11px] text-slate-500">
               Customer entity, commercial deal code, and global financial consolidation currency.
             </p>
@@ -41,28 +91,71 @@ export function ClientConfigCard({
       {/* Form Fields */}
       <div className="p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          {/* Client Name Field */}
+          {/* Customer / Client Selection or Entry */}
           <div className="md:col-span-5">
-            <label
-              htmlFor="client-name-input"
-              className="block text-xs font-semibold text-slate-700 mb-1"
-            >
-              Client / Deal Name <span className="text-rose-500">*</span>
-            </label>
-            <input
-              id="client-name-input"
-              type="text"
-              value={clientInfo.clientName}
-              onChange={(e) => onChangeClientInfo('clientName', e.target.value)}
-              placeholder="e.g. Acme Global Enterprise"
-              className={`w-full px-3 py-2 text-xs rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
-                errors.clientName
-                  ? 'border-rose-400 focus:ring-rose-200'
-                  : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
-              }`}
-              aria-invalid={Boolean(errors.clientName)}
-              aria-describedby={errors.clientName ? 'client-name-error' : undefined}
-            />
+            <div className="flex items-center justify-between mb-1">
+              <label
+                htmlFor="client-name-input"
+                className="block text-xs font-semibold text-slate-700"
+              >
+                Client / Customer Name <span className="text-rose-500">*</span>
+              </label>
+              {customers.length > 0 && (
+                <span className="text-[10px] text-slate-400">
+                  {customers.length} customer records
+                </span>
+              )}
+            </div>
+            {customers.length > 0 ? (
+              <div className="space-y-1.5">
+                <select
+                  id="client-select"
+                  aria-label="Select Existing Customer"
+                  value={clientInfo.customerId || ''}
+                  onChange={(e) => handleCustomerSelect(e.target.value)}
+                  className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                >
+                  <option value="">-- Choose Existing or Enter Custom Client --</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.code})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  id="client-name-input"
+                  type="text"
+                  value={clientInfo.clientName}
+                  onChange={(e) => {
+                    onChangeClientInfo('clientName', e.target.value)
+                    onChangeClientInfo('customerId', null) // clear mapped customer if typing custom name
+                  }}
+                  placeholder="e.g. Demo Technologies"
+                  className={`w-full px-3 py-2 text-xs rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
+                    errors.clientName
+                      ? 'border-rose-400 focus:ring-rose-200'
+                      : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
+                  }`}
+                  aria-invalid={Boolean(errors.clientName)}
+                  aria-describedby={errors.clientName ? 'client-name-error' : undefined}
+                />
+              </div>
+            ) : (
+              <input
+                id="client-name-input"
+                type="text"
+                value={clientInfo.clientName}
+                onChange={(e) => onChangeClientInfo('clientName', e.target.value)}
+                placeholder="e.g. Demo Technologies"
+                className={`w-full px-3 py-2 text-xs rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
+                  errors.clientName
+                    ? 'border-rose-400 focus:ring-rose-200'
+                    : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
+                }`}
+                aria-invalid={Boolean(errors.clientName)}
+                aria-describedby={errors.clientName ? 'client-name-error' : undefined}
+              />
+            )}
             {errors.clientName && (
               <p
                 id="client-name-error"
@@ -87,7 +180,7 @@ export function ClientConfigCard({
               type="text"
               value={clientInfo.dealCode}
               onChange={(e) => onChangeClientInfo('dealCode', e.target.value)}
-              placeholder="e.g. DEAL-2026-0042"
+              placeholder="e.g. DEV-DEAL-001"
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
             />
           </div>
@@ -103,19 +196,19 @@ export function ClientConfigCard({
             <div className="relative">
               <select
                 id="reporting-currency-select"
-                value={clientInfo.reportingCurrency}
-                onChange={(e) => onChangeClientInfo('reportingCurrency', e.target.value)}
+                value={selectedCurrencyObj?.id || clientInfo.reportingCurrencyId || ''}
+                onChange={(e) => handleCurrencySelect(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
               >
-                {MASTER_CURRENCIES.map((curr) => (
-                  <option key={curr.code} value={curr.code}>
-                    {curr.code} ({curr.symbol}) — {curr.name}
+                {currencyList.map((currency) => (
+                  <option key={currency.id} value={currency.id}>
+                    {currency.code} — {currency.name}
                   </option>
                 ))}
               </select>
             </div>
             <p className="mt-1 text-[10px] text-slate-500">
-              Changing reporting currency does not overwrite native country currencies.
+              Reporting currency governs calculation consolidation in PostgreSQL.
             </p>
           </div>
         </div>
@@ -141,7 +234,7 @@ export function ClientConfigCard({
             </div>
             <p className="text-[11px] text-slate-600 leading-relaxed">
               All regional country rate cards and inputs remain preserved in their native currencies (e.g. INR, AED, SAR).
-              Consolidated totals across jurisdictions will be converted to{' '}
+              Consolidated totals across jurisdictions are converted to{' '}
               <strong className="text-slate-900">{selectedCurrencyObj.code}</strong> by the backend calculation engine using official treasury FX peg rates.
             </p>
           </div>
@@ -151,18 +244,17 @@ export function ClientConfigCard({
         <div>
           <label
             htmlFor="client-notes-input"
-            className="block text-xs font-semibold text-slate-700 mb-1 flex items-center gap-1.5"
+            className="block text-xs font-semibold text-slate-700 mb-1"
           >
-            <FileText className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-            <span>Proposal Scope & Deal Notes (Optional)</span>
+            Internal Deal Notes & Commercial Terms
           </label>
-          <input
+          <textarea
             id="client-notes-input"
-            type="text"
-            value={clientInfo.notes}
+            rows={2}
+            value={clientInfo.notes || ''}
             onChange={(e) => onChangeClientInfo('notes', e.target.value)}
-            placeholder="e.g. Multi-country rollout with 3-year term commitment..."
-            className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+            placeholder="Add internal deal desk notes, scope restrictions, or contract requirements..."
+            className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 resize-none"
           />
         </div>
       </div>

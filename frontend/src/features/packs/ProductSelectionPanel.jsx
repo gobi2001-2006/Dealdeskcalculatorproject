@@ -26,8 +26,10 @@ export function ProductSelectionPanel({
   families = [],
   allProducts = [],
   selectedProductIds = [],
+  requiredProductIds = [],
   onToggleProduct,
   onRemoveProduct,
+  onToggleRequired,
 }) {
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -316,28 +318,47 @@ export function ProductSelectionPanel({
           </div>
         ) : (
           <div className="flex items-center gap-2 flex-wrap">
-            {selectedProductList.map((prod) => (
-              <span
-                key={prod.id}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-white border border-slate-300 text-slate-800 shadow-2xs"
-              >
-                <span className="font-mono text-[10px] text-slate-500">
-                  {prod.code}
-                </span>
-                <span className="font-medium truncate max-w-[180px]" title={prod.solution}>
-                  {prod.solution}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onRemoveProduct(prod.id)}
-                  className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-slate-100 transition-colors cursor-pointer"
-                  title={`Remove ${prod.solution}`}
-                  aria-label={`Remove ${prod.solution}`}
+            {selectedProductList.map((prod) => {
+              const isRequired = requiredProductIds.includes(prod.id)
+              return (
+                <span
+                  key={prod.id}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-white border border-slate-300 text-slate-800 shadow-2xs"
                 >
-                  <X className="w-3 h-3" aria-hidden="true" />
-                </button>
-              </span>
-            ))}
+                  <span className="font-mono text-[10px] text-slate-500">
+                    {prod.code}
+                  </span>
+                  <span className="font-medium truncate max-w-[180px]" title={prod.solution}>
+                    {prod.solution}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onToggleRequired?.(prod.id)
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold transition-colors cursor-pointer ${
+                      isRequired
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                        : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
+                    }`}
+                    title={isRequired ? 'Marked as Required (click to make Optional)' : 'Marked as Optional (click to make Required)'}
+                    aria-label={`Toggle requirement for ${prod.solution}`}
+                  >
+                    {isRequired ? 'Required' : 'Optional'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveProduct(prod.id)}
+                    className="p-0.5 rounded text-slate-400 hover:text-red-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                    title={`Remove ${prod.solution}`}
+                    aria-label={`Remove ${prod.solution}`}
+                  >
+                    <X className="w-3 h-3" aria-hidden="true" />
+                  </button>
+                </span>
+              )
+            })}
           </div>
         )}
       </div>

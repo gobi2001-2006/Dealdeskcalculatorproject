@@ -6,6 +6,7 @@ import {
   Edit2,
   Check,
   X,
+  Info,
 } from 'lucide-react'
 import { INITIAL_HOURLY_RATES } from '../../../data/rateCardData'
 import { validateServiceLine } from '../calculatorData'
@@ -16,19 +17,37 @@ export function ServiceLinesSection({
   currencySymbol = '$',
   serviceLines = [],
   onUpdateServiceLines,
+  serviceRates = [],
 }) {
   const [isAddingLine, setIsAddingLine] = useState(false)
   const [editingLineId, setEditingLineId] = useState(null)
 
-  // Matching preset hourly rates for this country or all rates
-  const matchingPresets = INITIAL_HOURLY_RATES.filter(
-    (hr) => hr.country.toLowerCase() === countryName.toLowerCase() || hr.currency === currency
-  )
-  const allPresets = matchingPresets.length > 0 ? matchingPresets : INITIAL_HOURLY_RATES
+  // Map live service rates or fallback to presets
+  const allPresets =
+    serviceRates.length > 0
+      ? serviceRates.map((sr) => ({
+          id: sr.id,
+          serviceLine: sr.role_name,
+          hourlyRate:
+            Number(sr.hourly_rate) ||
+            (sr.daily_rate ? Number(sr.daily_rate) / 8 : 150),
+          currency: sr.currency?.code || currency,
+        }))
+      : INITIAL_HOURLY_RATES.filter(
+          (hr) =>
+            hr.country?.toLowerCase() === countryName?.toLowerCase() ||
+            hr.currency === currency
+        ).length > 0
+      ? INITIAL_HOURLY_RATES.filter(
+          (hr) =>
+            hr.country?.toLowerCase() === countryName?.toLowerCase() ||
+            hr.currency === currency
+        )
+      : INITIAL_HOURLY_RATES
 
   // New service line form draft
   const [newDraft, setNewDraft] = useState({
-    roleName: allPresets[0]?.serviceLine || '',
+    roleName: allPresets[0]?.serviceLine || 'Implementation Consultant',
     hourlyRateId: allPresets[0]?.id || '',
     rateApplied: allPresets[0]?.hourlyRate || '150',
     hoursOrDays: '40',
@@ -39,7 +58,7 @@ export function ServiceLinesSection({
 
   // Handle Preset selection change
   const handlePresetSelect = (presetId) => {
-    const found = INITIAL_HOURLY_RATES.find((hr) => hr.id === presetId)
+    const found = allPresets.find((hr) => String(hr.id) === String(presetId))
     if (found) {
       setNewDraft((prev) => ({
         ...prev,
@@ -61,11 +80,11 @@ export function ServiceLinesSection({
     const newLine = {
       id: `srv-${Date.now()}`,
       roleName: newDraft.roleName.trim(),
-      hourlyRateId: newDraft.hourlyRateId || null,
+      serviceRateId: newDraft.hourlyRateId ? Number(newDraft.hourlyRateId) : null,
       rateApplied: Number(newDraft.rateApplied),
       hoursOrDays: Number(newDraft.hoursOrDays),
       unit: newDraft.unit,
-      discountPct: Number(newDraft.discountPct) || 0,
+      discountPct: 0, // Backend enforces no individual service line discounts
       currency,
     }
 
@@ -73,7 +92,7 @@ export function ServiceLinesSection({
     setIsAddingLine(false)
     setErrors({})
     setNewDraft({
-      roleName: allPresets[0]?.serviceLine || '',
+      roleName: allPresets[0]?.serviceLine || 'Implementation Consultant',
       hourlyRateId: allPresets[0]?.id || '',
       rateApplied: allPresets[0]?.hourlyRate || '150',
       hoursOrDays: '40',
@@ -104,7 +123,7 @@ export function ServiceLinesSection({
             Professional Service Lines ({countryName})
           </h4>
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-            Frontend Demo State
+            PostgreSQL Rate Master
           </span>
         </div>
 
@@ -145,7 +164,7 @@ export function ServiceLinesSection({
                 htmlFor="service-preset-select"
                 className="block text-[11px] font-semibold text-slate-700 mb-1"
               >
-                Hourly Rate Card Preset
+                Service Rate Preset
               </label>
               <select
                 id="service-preset-select"
@@ -154,11 +173,14 @@ export function ServiceLinesSection({
                 className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
                 <option value="">-- Custom Role Description --</option>
-                {allPresets.map((hr) => (
-                  <option key={hr.id} value={hr.id}>
-                    {hr.serviceLine} ({hr.currency} {hr.hourlyRate}/hr)
-                  </option>
-                ))}
+                {allPresets.map((hr) => {
+                  const currStr = typeof hr.currency === 'object' ? hr.currency?.code : hr.currency
+                  return (
+                    <option key={hr.id} value={hr.id}>
+                      {hr.serviceLine} ({currStr} {hr.hourlyRate}/hr)
+                    </option>
+                  )
+                })}
               </select>
             </div>
 
@@ -192,7 +214,7 @@ export function ServiceLinesSection({
             </div>
 
             {/* Billable Hours */}
-            <div className="sm:col-span-4">
+            <div className="sm:col-span-6">
               <label
                 htmlFor="service-hours-input"
                 className="block text-[11px] font-semibold text-slate-700 mb-1"
@@ -218,54 +240,35 @@ export function ServiceLinesSection({
             </div>
 
             {/* Hourly Rate */}
-            <div className="sm:col-span-4">
+            <div className="sm:col-span-6">
               <label
                 htmlFor="service-rate-input"
                 className="block text-[11px] font-semibold text-slate-700 mb-1"
               >
                 Hourly Rate ({currency}) <span className="text-rose-500">*</span>
               </label>
-              <div className="relative">
-                <input
-                  id="service-rate-input"
-                  type="number"
-                  min="0"
-                  value={newDraft.rateApplied}
-                  onChange={(e) =>
-                    setNewDraft((prev) => ({ ...prev, rateApplied: e.target.value }))
-                  }
-                  placeholder="150"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
-                />
-              </div>
+              <input
+                id="service-rate-input"
+                type="number"
+                min="0"
+                value={newDraft.rateApplied}
+                onChange={(e) =>
+                  setNewDraft((prev) => ({ ...prev, rateApplied: e.target.value }))
+                }
+                placeholder="150"
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+              />
               {errors.rateApplied && (
                 <span className="text-[10px] text-rose-600 mt-0.5 block">
                   {errors.rateApplied}
                 </span>
               )}
             </div>
+          </div>
 
-            {/* Discount % */}
-            <div className="sm:col-span-4">
-              <label
-                htmlFor="service-discount-input"
-                className="block text-[11px] font-semibold text-slate-700 mb-1"
-              >
-                Discretionary Discount (%)
-              </label>
-              <input
-                id="service-discount-input"
-                type="number"
-                min="0"
-                max="100"
-                value={newDraft.discountPct}
-                onChange={(e) =>
-                  setNewDraft((prev) => ({ ...prev, discountPct: e.target.value }))
-                }
-                placeholder="0"
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
-              />
-            </div>
+          <div className="text-[11px] text-slate-500 flex items-center gap-1">
+            <Info className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+            <span>Service discounts are applied at the product / proposal level during pricing engine calculation.</span>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-1">
@@ -298,118 +301,96 @@ export function ServiceLinesSection({
             <thead className="bg-slate-50 text-[10px] font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
                 <th scope="col" className="py-2 px-3">
-                  Service Role / Description
+                  Role / Description
                 </th>
-                <th scope="col" className="py-2 px-3">
-                  Currency
-                </th>
-                <th scope="col" className="py-2 px-3">
+                <th scope="col" className="py-2 px-3 w-28 text-center">
                   Effort (Hours)
                 </th>
-                <th scope="col" className="py-2 px-3">
-                  Rate Applied
+                <th scope="col" className="py-2 px-3 w-32 text-right">
+                  Rate ({currency})
                 </th>
-                <th scope="col" className="py-2 px-3">
-                  Discount
+                <th scope="col" className="py-2 px-3 w-32 text-right">
+                  Extended Value
                 </th>
-                <th scope="col" className="py-2 px-3 text-right">
-                  Extended Total
-                </th>
-                <th scope="col" className="py-2 px-3 text-center w-16">
+                <th scope="col" className="py-2 px-3 w-16 text-center">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {serviceLines.map((line) => {
-                const isEditing = editingLineId === line.id
+              {serviceLines.map((srv) => {
+                const isEditing = editingLineId === srv.id
 
                 return (
-                  <tr key={line.id} className="hover:bg-slate-50/60 transition-colors">
-                    {/* Role / Description */}
-                    <td className="py-2 px-3">
+                  <tr key={srv.id} className="hover:bg-slate-50/60 transition-colors">
+                    {/* Role Name */}
+                    <td className="py-2.5 px-3">
                       {isEditing ? (
                         <input
                           type="text"
-                          value={line.roleName}
+                          value={srv.roleName}
                           onChange={(e) =>
-                            handleUpdateLineField(line.id, 'roleName', e.target.value)
+                            handleUpdateLineField(srv.id, 'roleName', e.target.value)
                           }
-                          className="px-2 py-1 text-xs rounded border border-slate-300 w-full"
+                          className="w-full px-2 py-1 text-xs rounded border border-slate-300 bg-white text-slate-900"
                         />
                       ) : (
-                        <span className="font-semibold text-slate-900">
-                          {line.roleName}
-                        </span>
+                        <div>
+                          <span className="font-semibold text-slate-900">{srv.roleName}</span>
+                          {srv.serviceRateId && (
+                            <span className="ml-1.5 px-1 py-0.2 rounded text-[9px] bg-slate-100 text-slate-600 font-mono">
+                              Master #{srv.serviceRateId}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
 
-                    {/* Currency */}
-                    <td className="py-2 px-3 font-mono text-[11px] text-slate-500">
-                      {line.currency || currency}
-                    </td>
-
-                    {/* Hours */}
-                    <td className="py-2 px-3">
+                    {/* Effort (Hours) */}
+                    <td className="py-2.5 px-3 text-center">
                       {isEditing ? (
                         <input
                           type="number"
                           min="0"
-                          value={line.hoursOrDays}
+                          value={srv.hoursOrDays}
                           onChange={(e) =>
-                            handleUpdateLineField(
-                              line.id,
-                              'hoursOrDays',
-                              Math.max(0, Number(e.target.value) || 0)
-                            )
+                            handleUpdateLineField(srv.id, 'hoursOrDays', e.target.value)
                           }
-                          className="px-2 py-1 text-xs rounded border border-slate-300 w-20"
+                          className="w-20 px-1.5 py-1 text-xs text-center rounded border border-slate-300 bg-white text-slate-900 font-mono mx-auto"
                         />
                       ) : (
-                        <span>{line.hoursOrDays} hrs</span>
+                        <span className="font-mono text-slate-800">{srv.hoursOrDays} hrs</span>
                       )}
                     </td>
 
-                    {/* Rate Applied */}
-                    <td className="py-2 px-3">
+                    {/* Rate */}
+                    <td className="py-2.5 px-3 text-right">
                       {isEditing ? (
                         <input
                           type="number"
                           min="0"
-                          value={line.rateApplied}
+                          value={srv.rateApplied}
                           onChange={(e) =>
-                            handleUpdateLineField(
-                              line.id,
-                              'rateApplied',
-                              Math.max(0, Number(e.target.value) || 0)
-                            )
+                            handleUpdateLineField(srv.id, 'rateApplied', e.target.value)
                           }
-                          className="px-2 py-1 text-xs rounded border border-slate-300 w-24"
+                          className="w-24 px-1.5 py-1 text-xs text-right rounded border border-slate-300 bg-white text-slate-900 font-mono ml-auto"
                         />
                       ) : (
-                        <span>
-                          {currencySymbol} {line.rateApplied} / hr
+                        <span className="font-mono text-slate-800">
+                          {currencySymbol} {Number(srv.rateApplied).toLocaleString()}/hr
                         </span>
                       )}
                     </td>
 
-                    {/* Discount */}
-                    <td className="py-2 px-3">
-                      {line.discountPct ? `${line.discountPct}%` : '0%'}
-                    </td>
-
-                    {/* Extended Total (Backend Owned) */}
-                    <td className="py-2 px-3 text-right">
-                      <span
-                        className="text-[11px] font-mono text-slate-500 italic bg-slate-50 px-2 py-0.5 rounded border border-slate-100"
-                        title="Backend-owned calculation"
-                      >
-                        Pending backend calculation
+                    {/* Extended Value (Calculated by backend) */}
+                    <td className="py-2.5 px-3 text-right">
+                      <span className="font-mono text-[11px] text-slate-600">
+                        Backend Engine
                       </span>
                     </td>
 
                     {/* Actions */}
-                    <td className="py-2 px-3 text-center">
+                    <td className="py-2.5 px-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         {isEditing ? (
                           <button
@@ -417,27 +398,24 @@ export function ServiceLinesSection({
                             onClick={() => setEditingLineId(null)}
                             className="p-1 rounded text-emerald-600 hover:bg-emerald-50"
                             title="Done editing"
-                            aria-label="Save line edits"
                           >
                             <Check className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
                         ) : (
                           <button
                             type="button"
-                            onClick={() => setEditingLineId(line.id)}
+                            onClick={() => setEditingLineId(srv.id)}
                             className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                             title="Edit service line"
-                            aria-label={`Edit ${line.roleName}`}
                           >
                             <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                           </button>
                         )}
                         <button
                           type="button"
-                          onClick={() => handleDeleteLine(line.id)}
+                          onClick={() => handleDeleteLine(srv.id)}
                           className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"
                           title="Delete service line"
-                          aria-label={`Delete ${line.roleName}`}
                         >
                           <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                         </button>

@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { Search, Plus } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { Search, Plus, Loader2, AlertCircle, Database, Info, RefreshCw } from 'lucide-react'
 import { CatalogueTopNav } from './CatalogueTopNav'
 import { SummaryStrip } from './SummaryStrip'
 import { ProductFamiliesSidebar } from './ProductFamiliesSidebar'
@@ -10,6 +10,67 @@ import {
   INITIAL_PRODUCT_FAMILIES,
   INITIAL_PRODUCTS,
 } from '../../data/catalogueData'
+import {
+  getCatalogueFamilies,
+  createCatalogueFamily,
+  getCatalogueProducts,
+  createCatalogueProduct,
+  updateCatalogueProduct,
+  deleteCatalogueProduct,
+  getCatalogueFeatures,
+  createCatalogueFeature,
+  updateCatalogueFeature,
+  deleteCatalogueFeature,
+} from '../../api/catalogueApi'
+
+function mapBackendCatalogue(backendFamilies, backendProducts, backendFeatures) {
+  const mappedFamilies = (backendFamilies || []).map((bf) => ({
+    id: bf.id,
+    code: bf.code,
+    name: bf.name,
+    iconName: 'Layers',
+    description: `Backend Family [ID: ${bf.id}, Code: ${bf.code}] - Status: ${bf.status}`,
+    status: bf.status,
+  }))
+
+  const featureLookup = new Map()
+  if (Array.isArray(backendFeatures)) {
+    backendFeatures.forEach((feat) => {
+      if (!featureLookup.has(feat.product_id)) {
+        featureLookup.set(feat.product_id, feat)
+      }
+    })
+  }
+
+  const mappedProducts = (backendProducts || []).map((bp) => {
+    const owningFamily = mappedFamilies.find((f) => f.id === bp.product_family_id)
+    const primaryFeature = featureLookup.get(bp.id)
+
+    let displayType = 'Adrenalin Native'
+    if (primaryFeature?.classification === 'ai_enabled') {
+      displayType = 'AI Agent Module'
+    } else if (primaryFeature?.classification === 'partner') {
+      displayType = 'Partner Integrated'
+    }
+
+    return {
+      id: bp.id,
+      familyId: bp.product_family_id,
+      familyName: owningFamily?.name || 'Unassigned',
+      solution: bp.name,
+      subItem: primaryFeature ? primaryFeature.name : '—',
+      code: bp.code,
+      type: displayType,
+      status: bp.status,
+      featureId: primaryFeature?.id || null,
+      featureCode: primaryFeature?.code || '',
+      classification: primaryFeature?.classification || 'native',
+      partnerName: primaryFeature?.partner_name || '',
+    }
+  })
+
+  return { mappedFamilies, mappedProducts }
+}
 
 export function CataloguePage() {
   const [families, setFamilies] = useState(INITIAL_PRODUCT_FAMILIES)
@@ -17,10 +78,91 @@ export function CataloguePage() {
   const [selectedFamilyId, setSelectedFamilyId] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
 
+  // Backend integration state
+  const [isLoading, setIsLoading] = useState(true)
+  const [apiError, setApiError] = useState(null)
+  const [isLiveBackendData, setIsLiveBackendData] = useState(false)
+  const [mutationNotice, setMutationNotice] = useState(null)
+
   // Modal & inline states
   const [isAddFamilyOpen, setIsAddFamilyOpen] = useState(false)
   const [isAddRowOpen, setIsAddRowOpen] = useState(false)
   const [productToDelete, setProductToDelete] = useState(null)
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function fetchData() {
+      try {
+        const [backendFamilies, backendProducts, backendFeatures] = await Promise.all([
+          getCatalogueFamilies(),
+          getCatalogueProducts(),
+          getCatalogueFeatures(),
+        ])
+
+        if (!isMounted) return
+
+        if (Array.isArray(backendFamilies) && backendFamilies.length > 0) {
+          const { mappedFamilies, mappedProducts } = mapBackendCatalogue(
+            backendFamilies,
+            backendProducts,
+            backendFeatures,
+          )
+          setFamilies(mappedFamilies)
+          setProducts(mappedProducts)
+          setIsLiveBackendData(true)
+        } else {
+          setIsLiveBackendData(false)
+        }
+      } catch (err) {
+        if (!isMounted) return
+        console.warn('Backend catalogue fetch failed; using demo data:', err)
+        setApiError(err?.message || 'Failed to connect to backend catalogue API')
+        setIsLiveBackendData(false)
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    fetchData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const handleReloadBackend = async () => {
+    setIsLoading(true)
+    setApiError(null)
+    try {
+      const [backendFamilies, backendProducts, backendFeatures] = await Promise.all([
+        getCatalogueFamilies(),
+        getCatalogueProducts(),
+        getCatalogueFeatures(),
+      ])
+
+      if (Array.isArray(backendFamilies) && backendFamilies.length > 0) {
+        const { mappedFamilies, mappedProducts } = mapBackendCatalogue(
+          backendFamilies,
+          backendProducts,
+          backendFeatures,
+        )
+        setFamilies(mappedFamilies)
+        setProducts(mappedProducts)
+        setIsLiveBackendData(true)
+      } else {
+        setIsLiveBackendData(false)
+      }
+    } catch (err) {
+      console.warn('Backend catalogue fetch failed; using demo data:', err)
+      setApiError(err?.message || 'Failed to connect to backend catalogue API')
+      setIsLiveBackendData(false)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Filter products by selected family and search term
   const filteredProducts = useMemo(() => {
@@ -61,45 +203,203 @@ export function CataloguePage() {
     )
   }, [selectedFamilyId, families])
 
-  // Handle Add Family
-  const handleAddFamily = (newFamilyData) => {
-    const newId = `fam-${Date.now()}`
-    const generatedCode = newFamilyData.name
-      .split(' ')
-      .map((w) => w[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 4)
+  // Handle Add Family (Connected to backend POST /api/catalogue/families)
+  const handleAddFamily = async (newFamilyData) => {
+    const generatedCode = newFamilyData.code
+      ? newFamilyData.code.trim().toUpperCase()
+      : newFamilyData.name
+          .split(' ')
+          .map((w) => w[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 4) || 'FAM'
 
-    const newFamily = {
-      id: newId,
-      code: generatedCode || 'FAM',
-      name: newFamilyData.name,
-      description: newFamilyData.description,
-      iconName: newFamilyData.iconName,
+    if (isLiveBackendData) {
+      try {
+        const created = await createCatalogueFamily({
+          code: generatedCode,
+          name: newFamilyData.name.trim(),
+          sort_order: families.length + 1,
+          status: 'active',
+        })
+
+        await handleReloadBackend()
+        setSelectedFamilyId(created.id)
+        setIsAddFamilyOpen(false)
+        setMutationNotice(`Product family '${created.name}' successfully created in database.`)
+      } catch (err) {
+        console.error('Failed to create product family in backend:', err)
+        const detail = err.response?.data?.detail || err.message || 'Error creating family'
+        setMutationNotice(`Cannot create product family: ${detail}`)
+      }
+      return
     }
 
-    setFamilies((prev) => [...prev, newFamily])
-    setSelectedFamilyId(newId)
+    // In offline / test environment:
+    setFamilies((prev) => [...prev, newFamilyData])
+    setSelectedFamilyId(newFamilyData.id)
     setIsAddFamilyOpen(false)
   }
 
-  // Handle Add Product Row
-  const handleSaveNewProduct = (newProduct) => {
-    setProducts((prev) => [newProduct, ...prev])
+  // Handle Add Product Row (Connected to backend POST /api/catalogue/products and features)
+  const handleSaveNewProduct = async (newProduct) => {
+    let targetFamilyId = Number(newProduct.familyId)
+    if (isNaN(targetFamilyId) || targetFamilyId <= 0) {
+      const matchedFam = families.find((f) => f.id === newProduct.familyId || f.name === newProduct.familyName)
+      if (matchedFam && !isNaN(Number(matchedFam.id))) {
+        targetFamilyId = Number(matchedFam.id)
+      } else {
+        const firstNumFam = families.find((f) => !isNaN(Number(f.id)))
+        if (firstNumFam) {
+          targetFamilyId = Number(firstNumFam.id)
+        } else {
+          setProducts((prev) => [newProduct, ...prev])
+          setMutationNotice('Product created in local preview.')
+          return
+        }
+      }
+    }
+
+    try {
+      const createdProd = await createCatalogueProduct({
+        product_family_id: targetFamilyId,
+        code: newProduct.code,
+        name: newProduct.solution,
+        status: 'active',
+      })
+
+      let classification = 'native'
+      if (newProduct.type === 'AI Agent Module') {
+        classification = 'ai_enabled'
+      } else if (newProduct.type === 'Partner Integrated') {
+        classification = 'partner'
+      }
+
+      const featureName = (newProduct.subItem && newProduct.subItem !== '—')
+        ? newProduct.subItem.trim()
+        : newProduct.solution
+      const featureCode = `${createdProd.code}-001`
+      const partnerName = classification === 'partner' ? featureName : null
+
+      try {
+        await createCatalogueFeature({
+          product_id: createdProd.id,
+          code: featureCode,
+          name: featureName,
+          classification,
+          partner_name: partnerName,
+          status: 'active',
+        })
+      } catch (featErr) {
+        console.warn('Could not create feature for product:', featErr)
+      }
+
+      await handleReloadBackend()
+      setMutationNotice(`Product '${createdProd.name}' (${createdProd.code}) successfully created and persisted to database.`)
+    } catch (err) {
+      console.error('Failed to create product in backend:', err)
+      const detail = err.response?.data?.detail || err.message || 'Error creating product'
+      setMutationNotice(`Failed to create product: ${detail}`)
+    }
   }
 
-  // Handle Update Product
-  const handleUpdateProduct = (id, updatedFields) => {
-    setProducts((prev) =>
-      prev.map((prod) => (prod.id === id ? { ...prod, ...updatedFields } : prod)),
-    )
+  // Handle Update Product (Connected to backend PATCH /api/catalogue/products/{id} and features)
+  const handleUpdateProduct = async (id, updatedFields) => {
+    if (!isNaN(Number(id))) {
+      try {
+        const payload = {}
+        if (updatedFields.solution) payload.name = updatedFields.solution
+        if (updatedFields.code) payload.code = updatedFields.code
+        if (updatedFields.familyId && !isNaN(Number(updatedFields.familyId))) {
+          payload.product_family_id = Number(updatedFields.familyId)
+        }
+
+        const updatedProd = await updateCatalogueProduct(Number(id), payload)
+
+        const existingProd = products.find((p) => p.id === id)
+        const featureId = existingProd?.featureId
+
+        let classification = existingProd?.classification || 'native'
+        if (updatedFields.type === 'AI Agent Module') {
+          classification = 'ai_enabled'
+        } else if (updatedFields.type === 'Partner Integrated') {
+          classification = 'partner'
+        } else if (updatedFields.type === 'Adrenalin Native') {
+          classification = 'native'
+        }
+
+        const subItemName = (updatedFields.subItem && updatedFields.subItem !== '—')
+          ? updatedFields.subItem.trim()
+          : (existingProd?.subItem !== '—' ? existingProd?.subItem : updatedProd.name)
+        const partnerName = classification === 'partner' ? subItemName : null
+
+        if (featureId && !isNaN(Number(featureId))) {
+          try {
+            await updateCatalogueFeature(Number(featureId), {
+              name: subItemName,
+              classification,
+              partner_name: partnerName,
+            })
+          } catch (featErr) {
+            console.warn('Feature update encountered error:', featErr)
+          }
+        } else if (subItemName) {
+          try {
+            await createCatalogueFeature({
+              product_id: Number(id),
+              code: `${updatedProd.code}-001`,
+              name: subItemName,
+              classification,
+              partner_name: partnerName,
+              status: 'active',
+            })
+          } catch (featErr) {
+            console.warn('Feature creation on product update error:', featErr)
+          }
+        }
+
+        await handleReloadBackend()
+        setMutationNotice(`Product '${updatedProd.code}' successfully updated in database.`)
+      } catch (err) {
+        console.error('Failed to update product in backend:', err)
+        const detail = err.response?.data?.detail || err.message || 'Error updating product'
+        setMutationNotice(`Failed to update product: ${detail}`)
+      }
+    } else {
+      setProducts((prev) =>
+        prev.map((prod) => (prod.id === id ? { ...prod, ...updatedFields } : prod)),
+      )
+      setMutationNotice('Local demo product updated.')
+    }
   }
 
-  // Handle Delete Product Confirmation
-  const handleConfirmDelete = (id) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id))
-    setProductToDelete(null)
+  // Handle Delete Product Confirmation (Connected to backend DELETE /api/catalogue/products/{id})
+  const handleConfirmDelete = async (id) => {
+    if (!isNaN(Number(id))) {
+      try {
+        const targetProd = products.find((p) => p.id === id)
+        if (targetProd?.featureId && !isNaN(Number(targetProd.featureId))) {
+          try {
+            await deleteCatalogueFeature(Number(targetProd.featureId))
+          } catch (featDelErr) {
+            console.warn('Feature deletion before product deletion:', featDelErr)
+          }
+        }
+
+        await deleteCatalogueProduct(Number(id))
+        await handleReloadBackend()
+        setProductToDelete(null)
+        setMutationNotice(`Product ID ${id} successfully removed from database.`)
+      } catch (err) {
+        console.error('Failed to delete product in backend:', err)
+        const detail = err.response?.data?.detail || err.message || 'Error deleting product'
+        setMutationNotice(`Cannot delete product: ${detail}`)
+      }
+    } else {
+      setProducts((prev) => prev.filter((p) => p.id !== id))
+      setProductToDelete(null)
+      setMutationNotice('Demo product removed from view.')
+    }
   }
 
   return (
@@ -112,6 +412,65 @@ export function CataloguePage() {
         productLinesCount={families.length}
         totalProductsCount={products.length}
       />
+
+      {/* Backend Integration & Status Banners */}
+      <div className="bg-white border-b border-slate-200 px-4 py-1.5 flex flex-wrap items-center justify-between text-xs shrink-0 gap-2">
+        <div className="flex items-center gap-2">
+          {isLoading ? (
+            <span className="inline-flex items-center gap-1.5 text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-medium">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              <span>Connecting to Backend Catalogue API...</span>
+            </span>
+          ) : isLiveBackendData ? (
+            <span className="inline-flex items-center gap-1.5 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded font-medium">
+              <Database className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+              <span>Live Database Connected (FastAPI / PostgreSQL)</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded font-medium">
+              <Info className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
+              <span>Demo Dataset Active {apiError ? `(${apiError})` : '(Backend empty)'}</span>
+            </span>
+          )}
+
+          <span className="text-[11px] text-slate-500 hidden md:inline">
+            FastAPI Read Routes: <code className="font-mono text-slate-700">/api/catalogue/families</code>, <code className="font-mono text-slate-700">/products</code>, <code className="font-mono text-slate-700">/features</code>
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleReloadBackend}
+          disabled={isLoading}
+          className="inline-flex items-center gap-1 text-[11px] text-slate-600 hover:text-slate-900 px-2 py-0.5 rounded hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
+          title="Reload catalogue from backend"
+        >
+          <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <span>Sync Backend</span>
+        </button>
+      </div>
+
+      {/* Mutation Notice (Read-only disclaimer alert) */}
+      {mutationNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="bg-amber-100/90 border-b border-amber-300 text-amber-900 px-4 py-1.5 text-xs flex items-center justify-between animate-in fade-in shrink-0"
+        >
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" aria-hidden="true" />
+            <span>{mutationNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMutationNotice(null)}
+            className="text-amber-700 hover:text-amber-950 font-bold ml-2 cursor-pointer"
+            aria-label="Dismiss notice"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* 3. Main Workspace: Split into Left Sidebar and Right Catalogue Area */}
       <div className="flex-1 flex overflow-hidden">

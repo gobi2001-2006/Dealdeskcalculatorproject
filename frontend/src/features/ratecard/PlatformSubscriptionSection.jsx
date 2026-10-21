@@ -17,6 +17,11 @@ export function PlatformSubscriptionSection({
   onResetToSpreadsheetDemo,
   activeCurrencySymbol = '₹',
   activeCurrencyCode = 'INR',
+  isVersionLocked = false,
+  activeDeployment = 'Shared Cloud',
+  activeCountry = null,
+  selectedFamilyName = 'All Product Families',
+  pricingTiers = [],
 }) {
   const [validationErrors, setValidationErrors] = useState({})
 
@@ -45,7 +50,10 @@ export function PlatformSubscriptionSection({
     onChangeConfig(tierKey, fieldKey, rawValue)
   }
 
-  const tiers = [
+  const ACCENT_COLORS = ['border-orange-500', 'border-blue-500', 'border-emerald-500', 'border-purple-500', 'border-amber-500']
+  const ICONS = [Building2, Users, TrendingUp, Building2, Users]
+
+  const DEFAULT_TIERS = [
     {
       key: 'tier1',
       label: 'Tier 1',
@@ -72,6 +80,21 @@ export function PlatformSubscriptionSection({
     },
   ]
 
+  const tiers =
+    pricingTiers && pricingTiers.length > 0
+      ? pricingTiers.map((t, idx) => ({
+          key: `tier${idx + 1}`,
+          tierId: t.id,
+          label: t.code || `Tier ${idx + 1}`,
+          title: t.name || t.code || `Tier ${idx + 1}`,
+          sub: t.employee_max
+            ? `${t.employee_min || 0} - ${t.employee_max} employees`
+            : `>${t.employee_min || 0} employees`,
+          icon: ICONS[idx % ICONS.length],
+          accentColor: ACCENT_COLORS[idx % ACCENT_COLORS.length],
+        }))
+      : DEFAULT_TIERS
+
   return (
     <div className="space-y-4">
       {/* Top Banner & Demo Reset */}
@@ -88,6 +111,11 @@ export function PlatformSubscriptionSection({
               <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-800">
                 Excel Reference Layout
               </span>
+              {isVersionLocked && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                  Locked / Read-Only
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
               Enterprise tiered architecture: Fixed Annual Platform Access Fee + Per-Employee Monthly Subscription Fee.
@@ -98,11 +126,46 @@ export function PlatformSubscriptionSection({
         <button
           type="button"
           onClick={onResetToSpreadsheetDemo}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 shadow-2xs transition-colors cursor-pointer shrink-0"
+          disabled={isVersionLocked}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 shadow-2xs transition-colors shrink-0 ${
+            isVersionLocked
+              ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400'
+              : 'hover:bg-slate-50 hover:text-slate-900 cursor-pointer'
+          }`}
         >
           <RotateCcw className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
           <span>Reset to Spreadsheet Demo Values</span>
         </button>
+      </div>
+
+      {/* Scope Strip */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Architecture:</span>
+            <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold text-slate-800 text-[11px]">
+              {activeDeployment}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Country & Currency:</span>
+            <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold text-slate-800 text-[11px]">
+              {activeCountry?.name || 'Active'} ({activeCurrencySymbol} {activeCurrencyCode})
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] uppercase font-bold text-slate-400">Scope:</span>
+            <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-semibold text-slate-800 text-[11px]">
+              {selectedFamilyName}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400">Unit of Measure:</span>
+          <span className="px-2 py-0.5 rounded bg-orange-50 border border-orange-200 font-semibold text-orange-800 text-[11px]">
+            Active Employees (with ESS)
+          </span>
+        </div>
       </div>
 
       {/* Critical Pricing Architecture Rule Banner */}
@@ -115,8 +178,7 @@ export function PlatformSubscriptionSection({
           <div className="text-[11px] text-amber-800 leading-relaxed">
             The frontend captures parameter inputs (platform fee, consumption fee, committed employees). 
             In strict compliance with architectural constraints, client-side React code does not calculate
-            Annual Subscription Price or Total Annual Price. Calculated figures display{' '}
-            <strong className="font-semibold">Pending backend calculation</strong> until returned by the FastAPI pricing engine.
+            Annual Subscription Price or Total Annual Price. Proposal totals, discounting, and commercial contracts are evaluated by the backend PricingCalculationEngine in <strong>Page 4 — Proposal Configurator</strong>.
           </div>
         </div>
       </div>
@@ -176,12 +238,13 @@ export function PlatformSubscriptionSection({
                       type="number"
                       min="0"
                       step="any"
+                      disabled={isVersionLocked}
                       aria-label={`${tier.label} Annual Platform Fee`}
                       value={config.annualPlatformFee}
                       onChange={(e) =>
                         handleFieldChange(tier.key, 'annualPlatformFee', e.target.value)
                       }
-                      className="w-full pl-7 pr-3 py-1.5 text-xs font-mono text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      className="w-full pl-7 pr-3 py-1.5 text-xs font-mono text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                       placeholder="e.g. 100000"
                     />
                   </div>
@@ -215,12 +278,13 @@ export function PlatformSubscriptionSection({
                       type="number"
                       min="0"
                       step="any"
+                      disabled={isVersionLocked}
                       aria-label={`${tier.label} Monthly Subscription Fee`}
                       value={config.monthlySubscriptionFee}
                       onChange={(e) =>
                         handleFieldChange(tier.key, 'monthlySubscriptionFee', e.target.value)
                       }
-                      className="w-full pl-7 pr-3 py-1.5 text-xs font-mono text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                      className="w-full pl-7 pr-3 py-1.5 text-xs font-mono text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                       placeholder="e.g. 300"
                     />
                   </div>
@@ -250,12 +314,13 @@ export function PlatformSubscriptionSection({
                     type="number"
                     min="0"
                     step="1"
+                    disabled={isVersionLocked}
                     aria-label={`${tier.label} Number of Employees`}
                     value={config.employeeCount}
                     onChange={(e) =>
                       handleFieldChange(tier.key, 'employeeCount', e.target.value)
                     }
-                    className="w-full px-3 py-1.5 text-xs font-mono text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                    className="w-full px-3 py-1.5 text-xs font-mono text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                     placeholder="e.g. 10000"
                   />
                   {validationErrors[`${tier.key}-employeeCount`] && (

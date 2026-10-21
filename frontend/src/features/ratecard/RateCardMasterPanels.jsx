@@ -27,8 +27,10 @@ export function RateCardMasterPanels({
   onDeleteTier,
   deploymentModels = [],
   onAddDeploymentModel,
+  onDeleteDeploymentModel,
   pricingModels = [],
   onAddPricingModel,
+  onDeletePricingModel,
   hourlyRates = [],
   onOpenAddHourlyRate,
   onDeleteHourlyRate,
@@ -226,22 +228,27 @@ export function RateCardMasterPanels({
 
   // Coverage calculations derived strictly from actual available configuration records
   const totalFamiliesCount = families.length
-  const coveredFamilies = new Set([
-    ...packRates.map((r) => r.familyId),
-    ...featureRates.map((r) => r.familyId),
-  ]).size
+  const coveredFamiliesSet = new Set()
+  packRates.concat(featureRates).forEach((r) => {
+    if (r.familyId === 'all') {
+      families.forEach((f) => coveredFamiliesSet.add(f.id))
+    } else if (families.some((f) => f.id === r.familyId)) {
+      coveredFamiliesSet.add(r.familyId)
+    }
+  })
+  const coveredFamilies = Math.min(coveredFamiliesSet.size, totalFamiliesCount)
 
   const totalDeployments = deploymentModels.length
-  const coveredDeployments = new Set([
-    ...packRates.map((r) => r.deploymentModel),
-    ...featureRates.map((r) => r.deploymentModel),
-  ]).size
+  const coveredDeployments = deploymentModels.filter((m) =>
+    packRates.some((r) => r.deploymentModel === m.name || r.deploymentModelId === m.id) ||
+    featureRates.some((r) => r.deploymentModel === m.name || r.deploymentModelId === m.id),
+  ).length
 
   const totalPricingModels = pricingModels.length
-  const coveredPricingModels = new Set([
-    ...packRates.map((r) => r.pricingModel),
-    ...featureRates.map((r) => r.pricingModel),
-  ]).size
+  const coveredPricingModels = pricingModels.filter((pm) =>
+    packRates.some((r) => r.pricingModel === pm.code || r.pricingModel === pm.name || r.pricingModelId === pm.id) ||
+    featureRates.some((r) => r.pricingModel === pm.code || r.pricingModel === pm.name || r.pricingModelId === pm.id),
+  ).length
 
   const totalPossiblePoints = totalFamiliesCount + totalDeployments + totalPricingModels
   const currentCoveredPoints = coveredFamilies + coveredDeployments + coveredPricingModels
@@ -589,7 +596,19 @@ export function RateCardMasterPanels({
             <div className="px-4 pb-3 space-y-2">
               {deploymentModels.map((m) => (
                 <div key={m.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs space-y-1">
-                  <div className="font-semibold text-slate-900">{m.name}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-slate-900">{m.name}</div>
+                    {onDeleteDeploymentModel && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteDeploymentModel(m.id)}
+                        className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                        aria-label={`Delete ${m.name}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
                     {m.description}
                   </p>
@@ -716,10 +735,22 @@ export function RateCardMasterPanels({
               {pricingModels.map((pm) => (
                 <div key={pm.id} className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900">{pm.name}</span>
-                    <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200 text-slate-600">
-                      {pm.code}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-900">{pm.name}</span>
+                      <span className="text-[10px] font-mono bg-white px-1.5 py-0.2 rounded border border-slate-200 text-slate-600">
+                        {pm.code}
+                      </span>
+                    </div>
+                    {onDeletePricingModel && (
+                      <button
+                        type="button"
+                        onClick={() => onDeletePricingModel(pm.id)}
+                        className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                        aria-label={`Delete ${pm.name}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-500 leading-tight">
                     {pm.description}
@@ -929,12 +960,18 @@ export function RateCardMasterPanels({
                       )}
                     </div>
 
-                    {/* Day rate output (Pending backend calculation) */}
+                    {/* Day rate output (from backend daily_rate) */}
                     <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[10px]">
                       <span className="text-slate-400">Derived Day Rate:</span>
-                      <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
-                        <Clock className="w-3 h-3" /> Pending backend calculation
-                      </span>
+                      {hr.dailyRate ? (
+                        <span className="font-mono font-semibold text-slate-800">
+                          {hr.currency} {Number(hr.dailyRate).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/day
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
+                          <Clock className="w-3 h-3" /> Pending backend calculation
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}

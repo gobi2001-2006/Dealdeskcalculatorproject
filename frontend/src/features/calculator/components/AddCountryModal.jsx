@@ -8,23 +8,84 @@ import {
 } from '../../../data/rateCardData'
 import { validateContractTerm } from '../calculatorData'
 
+function getCountryCurrencyCode(country) {
+  if (!country) return 'USD'
+  if (country.currency_code) return country.currency_code
+  if (typeof country.currency === 'string') return country.currency
+  if (country.currency && typeof country.currency === 'object' && country.currency.code) {
+    return country.currency.code
+  }
+  return 'USD'
+}
+
+function getCountryCurrencySymbol(country, currencyCode = null) {
+  if (country?.currency && typeof country.currency === 'object' && country.currency.symbol) {
+    return country.currency.symbol
+  }
+  if (country?.symbol) return country.symbol
+  const code = currencyCode || getCountryCurrencyCode(country)
+  if (code === 'INR') return '₹'
+  if (code === 'EUR') return '€'
+  if (code === 'GBP') return '£'
+  return '$'
+}
+
 export function AddCountryModal({
   isOpen,
   existingCountryIds = [],
   onClose,
   onAddCountry,
+  masters = null,
 }) {
-  const availableCountries = INITIAL_COUNTRIES.filter(
-    (c) => !existingCountryIds.includes(c.id)
+  const countryList = masters?.countries?.length > 0 ? masters.countries : INITIAL_COUNTRIES
+  const tierList = masters?.tiers?.length > 0 ? masters.tiers : INITIAL_PRICING_TIERS
+  const deploymentList = masters?.deployments?.length > 0 ? masters.deployments : DEPLOYMENT_MODELS
+  const pricingModelList = masters?.pricingModels?.length > 0 ? masters.pricingModels : PRICING_MODELS
+
+  const availableCountries = countryList.filter(
+    (c) => !existingCountryIds.map(String).includes(String(c.id))
   )
-  const defaultCountry = availableCountries[0] || INITIAL_COUNTRIES[0]
+  const defaultCountry = availableCountries[0] || countryList[0] || { id: 1, name: 'India', currency: 'INR', symbol: '₹' }
 
   const [selectedCountryId, setSelectedCountryId] = useState(defaultCountry.id)
-  const [selectedTierId, setSelectedTierId] = useState('tier-1')
-  const [selectedDeploymentId, setSelectedDeploymentId] = useState('dep-shared')
-  const [selectedPricingModelId, setSelectedPricingModelId] = useState('pm-pepm')
+  const [selectedTierId, setSelectedTierId] = useState(tierList[0]?.id || 1)
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState(deploymentList[0]?.id || 1)
+
+  const getFilteredPricingModels = (depId) => {
+    if (!depId) return pricingModelList
+    if (masters?.deploymentPricingOptions?.length > 0) {
+      const allowedIds = masters.deploymentPricingOptions
+        .filter((opt) => String(opt.deployment_model_id) === String(depId))
+        .map((opt) => String(opt.pricing_model_id))
+      if (allowedIds.length > 0) {
+        return pricingModelList.filter((pm) => allowedIds.includes(String(pm.id)))
+      }
+    }
+    const depObj = deploymentList.find((d) => String(d.id) === String(depId))
+    const depCode = (depObj?.code || depObj?.name || '').toLowerCase()
+    if (depCode.includes('on_prem') || depCode.includes('on-prem')) {
+      const onPrem = pricingModelList.filter((pm) => {
+        const pmName = (pm.name || pm.code || '').toLowerCase()
+        return pmName.includes('license') || pmName.includes('amc')
+      })
+      if (onPrem.length > 0) return onPrem
+    }
+    return pricingModelList
+  }
+
+  const filteredPricingModels = getFilteredPricingModels(selectedDeploymentId)
+  const initialPricingModelId = filteredPricingModels[0]?.id || pricingModelList[0]?.id || 1
+  const [selectedPricingModelId, setSelectedPricingModelId] = useState(initialPricingModelId)
   const [contractTerm, setContractTerm] = useState('36')
   const [termError, setTermError] = useState('')
+
+  const handleDeploymentChange = (newDepId) => {
+    setSelectedDeploymentId(newDepId)
+    const nextModels = getFilteredPricingModels(newDepId)
+    if (!nextModels.some((pm) => String(pm.id) === String(selectedPricingModelId))) {
+      setSelectedPricingModelId(nextModels[0]?.id || '')
+    }
+  }
 
   if (!isOpen) return null
 
@@ -37,23 +98,27 @@ export function AddCountryModal({
     }
 
     const countryMaster =
-      INITIAL_COUNTRIES.find((c) => c.id === selectedCountryId) || INITIAL_COUNTRIES[0]
+      countryList.find((c) => String(c.id) === String(selectedCountryId)) || defaultCountry
+
+    const numericCountryId = Number(countryMaster.id) || countryMaster.id
+    const currencyCode = getCountryCurrencyCode(countryMaster)
+    const currencySymbol = getCountryCurrencySymbol(countryMaster, currencyCode)
 
     onAddCountry({
       id: `cfg-country-${Date.now()}`,
-      countryId: countryMaster.id,
+      countryId: numericCountryId,
       countryName: countryMaster.name,
-      currency: countryMaster.currency,
-      currencySymbol: countryMaster.symbol,
-      pricingTierId: selectedTierId,
-      deploymentModelId: selectedDeploymentId,
-      pricingModelId: selectedPricingModelId,
+      currency: currencyCode,
+      currencySymbol: currencySymbol,
+      pricingTierId: Number(selectedTierId) || selectedTierId,
+      deploymentModelId: Number(selectedDeploymentId) || selectedDeploymentId,
+      pricingModelId: Number(selectedPricingModelId) || selectedPricingModelId,
       contractTerm: Number(contractTerm),
       headcount: 5000,
       platformSubscriptionConfig: {
         annualPlatformFee: '100000',
         monthlySubscriptionFee: '300',
-        employeeCount: '10000',
+        employeeCount: '5000',
       },
       families: [],
       serviceLines: [],
@@ -101,7 +166,7 @@ export function AddCountryModal({
               htmlFor="modal-country-select"
               className="block text-xs font-semibold text-slate-700 mb-1"
             >
-              Country / Jurisdiction *
+              Select Country Entity <span className="text-rose-500">*</span>
             </label>
             <select
               id="modal-country-select"
@@ -109,11 +174,14 @@ export function AddCountryModal({
               onChange={(e) => setSelectedCountryId(e.target.value)}
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
             >
-              {INITIAL_COUNTRIES.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.currency} • {c.symbol})
-                </option>
-              ))}
+              {availableCountries.map((c) => {
+                const currencyCode = getCountryCurrencyCode(c)
+                return (
+                  <option key={c.id} value={c.id}>
+                    {c.name} {currencyCode ? `(${currencyCode})` : ''}
+                  </option>
+                )
+              })}
             </select>
           </div>
 
@@ -123,17 +191,17 @@ export function AddCountryModal({
                 htmlFor="modal-tier-select"
                 className="block text-xs font-semibold text-slate-700 mb-1"
               >
-                Pricing Tier *
+                Pricing Tier
               </label>
               <select
                 id="modal-tier-select"
                 value={selectedTierId}
                 onChange={(e) => setSelectedTierId(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
-                {INITIAL_PRICING_TIERS.map((tier) => (
-                  <option key={tier.id} value={tier.id}>
-                    {tier.name} ({tier.code})
+                {tierList.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
                   </option>
                 ))}
               </select>
@@ -144,17 +212,17 @@ export function AddCountryModal({
                 htmlFor="modal-deployment-select"
                 className="block text-xs font-semibold text-slate-700 mb-1"
               >
-                Deployment Model *
+                Deployment Model
               </label>
               <select
                 id="modal-deployment-select"
                 value={selectedDeploymentId}
-                onChange={(e) => setSelectedDeploymentId(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
+                onChange={(e) => handleDeploymentChange(e.target.value)}
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
-                {DEPLOYMENT_MODELS.map((dep) => (
-                  <option key={dep.id} value={dep.id}>
-                    {dep.name}
+                {deploymentList.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
                   </option>
                 ))}
               </select>
@@ -167,17 +235,17 @@ export function AddCountryModal({
                 htmlFor="modal-pricing-model-select"
                 className="block text-xs font-semibold text-slate-700 mb-1"
               >
-                Pricing Model *
+                Pricing Architecture
               </label>
               <select
                 id="modal-pricing-model-select"
                 value={selectedPricingModelId}
                 onChange={(e) => setSelectedPricingModelId(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
+                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
-                {PRICING_MODELS.map((pm) => (
-                  <option key={pm.id} value={pm.id}>
-                    {pm.name}
+                {filteredPricingModels.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -188,31 +256,29 @@ export function AddCountryModal({
                 htmlFor="modal-term-input"
                 className="block text-xs font-semibold text-slate-700 mb-1"
               >
-                Contract Term (Months) *
+                Contract Term (Months) <span className="text-rose-500">*</span>
               </label>
               <input
                 id="modal-term-input"
                 type="number"
                 min="1"
-                step="1"
+                max="120"
                 value={contractTerm}
                 onChange={(e) => {
                   setContractTerm(e.target.value)
                   setTermError('')
                 }}
-                className={`w-full px-3 py-2 text-xs rounded-lg border font-medium bg-white text-slate-900 focus:outline-none ${
-                  termError
-                    ? 'border-rose-400 focus:ring-2 focus:ring-rose-200'
-                    : 'border-slate-300 focus:border-orange-500'
-                }`}
+                className={`w-full px-3 py-2 text-xs rounded-lg border ${
+                  termError ? 'border-rose-400' : 'border-slate-300'
+                } bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-mono`}
               />
               {termError && (
-                <p className="mt-1 text-[10px] text-rose-600 font-medium">{termError}</p>
+                <p className="mt-1 text-[11px] text-rose-600 font-medium">{termError}</p>
               )}
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}

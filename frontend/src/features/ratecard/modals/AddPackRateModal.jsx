@@ -1,76 +1,110 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { X, Package, AlertCircle } from 'lucide-react'
+
+const DEFAULT_TIERS = [
+  { id: 'tier-1', code: 'Tier 1', name: 'Enterprise' },
+  { id: 'tier-2', code: 'Tier 2', name: 'Mid-Market' },
+  { id: 'tier-3', code: 'Tier 3', name: 'Growth' },
+]
 
 export function AddPackRateModal({
   isOpen,
   onClose,
   onSave,
   packs = [],
+  pricingTiers = DEFAULT_TIERS,
+  targetFamilyId = null,
+  families = [],
   activeDeployment = 'Shared Cloud',
   activePricing = 'PEPM',
   existingPackRates = [],
 }) {
-  const availablePacks = packs.filter(
-    (p) => !existingPackRates.some((r) => r.packId === p.id && r.deploymentModel === activeDeployment && r.pricingModel === activePricing),
-  )
+  const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
 
-  const [selectedPackId, setSelectedPackId] = useState(availablePacks[0]?.id || '')
-  const [tier1Rate, setTier1Rate] = useState('')
-  const [tier2Rate, setTier2Rate] = useState('')
-  const [tier3Rate, setTier3Rate] = useState('')
+  // Filter available packs:
+  // If targetFamilyId is provided, narrow down to packs in that family
+  const familyPacks = useMemo(() => {
+    if (targetFamilyId && targetFamilyId !== 'all') {
+      return packs.filter(
+        (p) =>
+          String(p.familyId) === String(targetFamilyId) ||
+          String(p.product_family_id) === String(targetFamilyId),
+      )
+    }
+    return packs
+  }, [packs, targetFamilyId])
+
+  const availablePacks = useMemo(() => {
+    return familyPacks.filter(
+      (p) =>
+        !existingPackRates.some(
+          (r) =>
+            (r.packId === p.id || r.packId === p.packId) &&
+            r.deploymentModel === activeDeployment &&
+            r.pricingModel === activePricing,
+        ),
+    )
+  }, [familyPacks, existingPackRates, activeDeployment, activePricing])
+
+  const [selectedPackId, setSelectedPackId] = useState('')
+  const [tierRates, setTierRates] = useState({})
   const [uom, setUom] = useState('Active Employees (with ESS)')
   const [error, setError] = useState('')
 
   if (!isOpen) return null
 
-  const activePack = packs.find((p) => p.id === (selectedPackId || availablePacks[0]?.id))
+  const effectivePackId = selectedPackId || availablePacks[0]?.id || ''
+  const activePack = packs.find((p) => String(p.id) === String(effectivePackId))
+
+  const handleTierRateChange = (tierId, value) => {
+    setTierRates((prev) => ({ ...prev, [tierId]: value }))
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
     setError('')
 
-    const targetPackId = selectedPackId || availablePacks[0]?.id
-    if (!targetPackId) {
+    if (!effectivePackId) {
       setError('Please select a pack from Pack Builder.')
       return
     }
 
-    const t1 = parseFloat(tier1Rate)
-    const t2 = parseFloat(tier2Rate)
-    const t3 = parseFloat(tier3Rate)
+    // Validate tier rate inputs
+    for (const tier of tiersToRender) {
+      const val = tierRates[tier.id]
+      if (val !== undefined && val !== '' && val !== null) {
+        const num = parseFloat(val)
+        if (isNaN(num) || num < 0) {
+          setError(`Rate for ${tier.name || tier.code} must be a valid non-negative number.`)
+          return
+        }
+      }
+    }
 
-    if (tier1Rate !== '' && (isNaN(t1) || t1 < 0)) {
-      setError('Tier 1 rate must be a valid non-negative number.')
-      return
-    }
-    if (tier2Rate !== '' && (isNaN(t2) || t2 < 0)) {
-      setError('Tier 2 rate must be a valid non-negative number.')
-      return
-    }
-    if (tier3Rate !== '' && (isNaN(t3) || t3 < 0)) {
-      setError('Tier 3 rate must be a valid non-negative number.')
-      return
-    }
+    const t1 = tierRates[tiersToRender[0]?.id] ?? ''
+    const t2 = tierRates[tiersToRender[1]?.id] ?? ''
+    const t3 = tierRates[tiersToRender[2]?.id] ?? ''
 
     onSave({
-      packId: targetPackId,
+      packId: activePack?.id || effectivePackId,
       packCode: activePack?.code || 'PACK-SKU',
       packName: activePack?.name || 'Commercial Pack',
-      familyId: activePack?.familyId || 'fam-ta',
+      familyId: activePack?.familyId || activePack?.product_family_id || targetFamilyId || 'fam-ta',
       deploymentModel: activeDeployment,
       pricingModel: activePricing,
       unitOfMeasure: uom,
-      tier1Rate: tier1Rate.trim() || '0',
-      tier2Rate: tier2Rate.trim() || '0',
-      tier3Rate: tier3Rate.trim() || '0',
+      tierRates,
+      tier1Rate: String(t1).trim() || '0',
+      tier2Rate: String(t2).trim() || '0',
+      tier3Rate: String(t3).trim() || '0',
     })
 
-    setTier1Rate('')
-    setTier2Rate('')
-    setTier3Rate('')
+    setTierRates({})
     setError('')
     onClose()
   }
+
+  const targetFamilyObj = families.find((f) => String(f.id) === String(targetFamilyId))
 
   return (
     <div
@@ -91,7 +125,7 @@ export function AddPackRateModal({
                 Add Pack Rate ({activeDeployment})
               </h2>
               <p className="text-xs text-slate-500">
-                Configure tier pricing for a Pack Builder solution suite
+                {targetFamilyObj ? `${targetFamilyObj.name} • ` : ''}Configure dynamic tier pricing for a Pack Builder suite
               </p>
             </div>
           </div>
@@ -121,15 +155,19 @@ export function AddPackRateModal({
             {availablePacks.length > 0 ? (
               <select
                 id="pack-select"
-                value={selectedPackId || availablePacks[0]?.id}
+                value={effectivePackId}
                 onChange={(e) => setSelectedPackId(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
-                {availablePacks.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.code}) — {p.productIds?.length || 0} products
-                  </option>
-                ))}
+                {availablePacks.map((p) => {
+                  const reqCount = (p.items || []).filter((it) => it.is_required !== false).length
+                  const optCount = (p.items || []).filter((it) => it.is_required === false).length
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.code}) — {reqCount} req, {optCount} opt features
+                    </option>
+                  )
+                })}
               </select>
             ) : (
               <div className="p-3 text-xs rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
@@ -137,6 +175,34 @@ export function AddPackRateModal({
               </div>
             )}
           </div>
+
+          {/* Active pack bundled items preview */}
+          {activePack?.items && activePack.items.length > 0 && (
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Configured Features in {activePack.name}:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {activePack.items.map((it) => (
+                  <span
+                    key={it.id || it.feature_id}
+                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                      it.is_required !== false
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full mr-1 ${
+                        it.is_required !== false ? 'bg-emerald-500' : 'bg-indigo-500'
+                      }`}
+                    />
+                    {it.name || it.feature?.name} ({it.is_required !== false ? 'Required' : 'Optional'})
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
@@ -151,51 +217,35 @@ export function AddPackRateModal({
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label htmlFor="tier1-rate-input" className="block text-xs font-semibold text-slate-700 mb-1">
-                Tier 1 (Enterprise)
-              </label>
-              <input
-                id="tier1-rate-input"
-                type="number"
-                min="0"
-                step="any"
-                value={tier1Rate}
-                onChange={(e) => setTier1Rate(e.target.value)}
-                placeholder="Rate"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="tier2-rate-input" className="block text-xs font-semibold text-slate-700 mb-1">
-                Tier 2 (Mid-Market)
-              </label>
-              <input
-                id="tier2-rate-input"
-                type="number"
-                min="0"
-                step="any"
-                value={tier2Rate}
-                onChange={(e) => setTier2Rate(e.target.value)}
-                placeholder="Rate"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-              />
-            </div>
-            <div>
-              <label htmlFor="tier3-rate-input" className="block text-xs font-semibold text-slate-700 mb-1">
-                Tier 3 (Growth)
-              </label>
-              <input
-                id="tier3-rate-input"
-                type="number"
-                min="0"
-                step="any"
-                value={tier3Rate}
-                onChange={(e) => setTier3Rate(e.target.value)}
-                placeholder="Rate"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-              />
+          {/* Dynamic Tiers Grid */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Configured Customer Tier Rates
+            </label>
+            <div className={`grid gap-3 ${tiersToRender.length <= 2 ? 'grid-cols-2' : tiersToRender.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
+              {tiersToRender.map((tier) => (
+                <div key={tier.id}>
+                  <label
+                    htmlFor={`tier-input-${tier.id}`}
+                    className="block text-[11px] font-medium text-slate-600 mb-1 truncate"
+                    title={tier.name || tier.code}
+                  >
+                    {tier.name && tier.name !== tier.code
+                      ? `${tier.code} (${tier.name})`
+                      : tier.code || tier.name}
+                  </label>
+                  <input
+                    id={`tier-input-${tier.id}`}
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={tierRates[tier.id] ?? ''}
+                    onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
+                    placeholder="Rate"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

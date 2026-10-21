@@ -41,15 +41,6 @@ export function AddCountryModal({ isOpen, onClose, onSave, existingCountries = [
       return
     }
 
-    // Check duplicate currency code (case-insensitive)
-    const isDuplicateCurrency = existingCountries.some(
-      (c) => c.currency.trim().toUpperCase() === trimmedCurrency,
-    )
-    if (isDuplicateCurrency) {
-      setError(`Currency code "${trimmedCurrency}" is already registered.`)
-      return
-    }
-
     onSave({
       name: trimmedName,
       currency: trimmedCurrency,

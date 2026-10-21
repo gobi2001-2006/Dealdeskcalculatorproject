@@ -6,9 +6,16 @@ export function FeaturesTable({
   packProductIds = [],
   selectedFeatureIds = [],
   onToggleFeature,
+  products = [],
 }) {
+  const productList = products.length > 0 ? products : INITIAL_PRODUCTS
+
   // Find all catalogue features belonging to this product family
-  const familyProducts = INITIAL_PRODUCTS.filter((p) => p.familyId === familyId)
+  const familyProducts = productList.filter(
+    (p) =>
+      String(p.product_family_id) === String(familyId) ||
+      String(p.familyId) === String(familyId)
+  )
 
   if (familyProducts.length === 0) {
     return (
@@ -62,8 +69,12 @@ export function FeaturesTable({
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {familyProducts.map((prod) => {
-                const isIncludedInPack = packProductIds.includes(prod.id)
-                const isSelectedAlaCarte = selectedFeatureIds.includes(prod.id)
+                const isIncludedInPack = packProductIds.some(
+                  (pId) => String(pId) === String(prod.id)
+                )
+                const isSelectedAlaCarte = selectedFeatureIds.some(
+                  (sId) => String(sId) === String(prod.id)
+                )
                 const isChecked = isIncludedInPack || isSelectedAlaCarte
 
                 return (
@@ -94,76 +105,53 @@ export function FeaturesTable({
                               ? 'text-emerald-600 cursor-not-allowed opacity-80'
                               : 'text-orange-600 focus:ring-orange-500 cursor-pointer'
                           }`}
-                          aria-label={`Select ${prod.subItem || prod.solution}`}
+                          aria-label={`Select ${prod.name || prod.subItem || prod.solution}`}
                         />
                       </label>
                     </td>
 
-                    {/* Feature name */}
-                    <td className="py-2.5 px-3">
-                      <div className="font-semibold text-slate-900 text-xs">
-                        {prod.subItem}
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate max-w-xs">
-                        {prod.solution}
-                      </div>
+                    {/* Name */}
+                    <td className="py-2.5 px-3 font-medium text-slate-900">
+                      {prod.name || prod.subItem || prod.solution}
                     </td>
 
-                    {/* SKU Code */}
+                    {/* Code */}
                     <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
                       {prod.code}
                     </td>
 
-                    {/* Type badge */}
-                    <td className="py-2.5 px-3">
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          prod.type === 'AI Agent Module'
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : prod.type === 'Partner Integrated'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : 'bg-slate-100 text-slate-700 border border-slate-200'
-                        }`}
-                      >
-                        {prod.type}
-                      </span>
+                    {/* Classification */}
+                    <td className="py-2.5 px-3 text-[11px] text-slate-500">
+                      {prod.classification || prod.productType || 'Standard Module'}
                     </td>
 
-                    {/* Pack Status Badge */}
+                    {/* Pack Status */}
                     <td className="py-2.5 px-3">
                       {isIncludedInPack ? (
-                        <span
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs"
-                          title="Included in base pack — will not be double-charged"
-                        >
-                          <Lock className="w-2.5 h-2.5 text-emerald-600" aria-hidden="true" />
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                          <Lock className="w-3 h-3 text-emerald-700" aria-hidden="true" />
                           <span>Included in Pack</span>
                         </span>
                       ) : isSelectedAlaCarte ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-100 text-orange-800 border border-orange-200">
-                          <CheckCircle2 className="w-2.5 h-2.5 text-orange-600" aria-hidden="true" />
-                          <span>À la Carte Added</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-800">
+                          <CheckCircle2 className="w-3 h-3 text-orange-600" aria-hidden="true" />
+                          <span>À la Carte Add-on</span>
                         </span>
                       ) : (
                         <span className="text-[10px] text-slate-400">Available</span>
                       )}
                     </td>
 
-                    {/* Pricing column */}
-                    <td className="py-2.5 px-3 text-right">
+                    {/* Pricing */}
+                    <td className="py-2.5 px-3 text-right text-[11px] font-medium text-slate-500">
                       {isIncludedInPack ? (
-                        <span className="text-[11px] font-medium text-emerald-700">
-                          Covered in Pack
-                        </span>
+                        <span className="text-emerald-700 font-semibold">Bundled</span>
                       ) : isSelectedAlaCarte ? (
-                        <span
-                          className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 italic"
-                          title="Pricing pending backend calculation"
-                        >
-                          <span>Pending backend pricing</span>
+                        <span className="text-orange-700 font-semibold font-mono">
+                          Backend Rate Card
                         </span>
                       ) : (
-                        <span className="text-[11px] text-slate-400">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
                   </tr>

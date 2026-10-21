@@ -13,6 +13,10 @@ export function PackEditor({
   existingPacks = [],
   onSavePack,
   onCancel,
+  onDuplicate,
+  onDelete,
+  onCreateVersion,
+  onActivateVersion,
 }) {
   // Form fields initialized once on mount (component has key={selectedPackId})
   const [name, setName] = useState(pack?.name || '')
@@ -21,6 +25,9 @@ export function PackEditor({
   const [familyId, setFamilyId] = useState(pack?.familyId || '')
   const [color, setColor] = useState(pack?.color || '#F26522')
   const [productIds, setProductIds] = useState(pack?.productIds || [])
+  const [requiredProductIds, setRequiredProductIds] = useState(
+    pack?.requiredProductIds || pack?.productIds || [],
+  )
   const [notes, setNotes] = useState(pack?.notes || '')
   const [validationErrors, setValidationErrors] = useState({})
 
@@ -46,8 +53,10 @@ export function PackEditor({
   const handleToggleProduct = (productId) => {
     setProductIds((prev) => {
       if (prev.includes(productId)) {
+        setRequiredProductIds((req) => req.filter((id) => id !== productId))
         return prev.filter((id) => id !== productId)
       }
+      setRequiredProductIds((req) => [...req, productId])
       return [...prev, productId]
     })
   }
@@ -55,6 +64,16 @@ export function PackEditor({
   // Remove product from selection
   const handleRemoveProduct = (productId) => {
     setProductIds((prev) => prev.filter((id) => id !== productId))
+    setRequiredProductIds((prev) => prev.filter((id) => id !== productId))
+  }
+
+  // Toggle item requirement (required vs optional)
+  const handleToggleRequired = (productId) => {
+    setRequiredProductIds((prev) =>
+      prev.includes(productId)
+        ? prev.filter((id) => id !== productId)
+        : [...prev, productId],
+    )
   }
 
   // Live dynamic product-type counts
@@ -85,14 +104,19 @@ export function PackEditor({
     }
 
     onSavePack({
-      id: isNewPack ? `pack-${Date.now()}` : pack.id,
+      id: isNewPack ? (typeof pack?.id === 'number' ? pack.id : `pack-${Date.now()}`) : pack.id,
       name: trimmedName,
       description: description.trim(),
       code: code.trim().toUpperCase(),
       familyId,
       color,
       productIds,
+      requiredProductIds,
       notes: notes.trim(),
+      variant: pack?.variant || 'standard',
+      versionId: pack?.versionId,
+      versionNo: pack?.versionNo,
+      versionStatus: pack?.versionStatus,
     })
   }
 
@@ -102,6 +126,7 @@ export function PackEditor({
       <div className="flex-1 overflow-y-auto p-4 sm:p-5">
         {/* Editor Metadata Header */}
         <PackEditorHeader
+          pack={pack}
           isNewPack={isNewPack}
           formValues={{
             name,
@@ -115,6 +140,10 @@ export function PackEditor({
           selectedCount={productIds.length}
           validationErrors={validationErrors}
           onCancel={onCancel}
+          onDuplicate={onDuplicate ? () => onDuplicate(pack) : undefined}
+          onDelete={onDelete ? () => onDelete(pack) : undefined}
+          onCreateVersion={onCreateVersion ? () => onCreateVersion(pack) : undefined}
+          onActivateVersion={onActivateVersion ? () => onActivateVersion(pack) : undefined}
         />
 
         {/* Product Selection Panel with accordion and selected items summary */}
@@ -122,8 +151,10 @@ export function PackEditor({
           families={families}
           allProducts={allProducts}
           selectedProductIds={productIds}
+          requiredProductIds={requiredProductIds}
           onToggleProduct={handleToggleProduct}
           onRemoveProduct={handleRemoveProduct}
+          onToggleRequired={handleToggleRequired}
         />
 
         {/* Notes & Scope Card */}

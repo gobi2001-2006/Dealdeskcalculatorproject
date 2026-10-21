@@ -7,8 +7,8 @@
  * - Rate Card & Masters: INITIAL_COUNTRIES, INITIAL_PRICING_TIERS, DEPLOYMENT_MODELS, PRICING_MODELS, INITIAL_HOURLY_RATES
  * 
  * CRITICAL PRICING RULE:
- * Pricing is backend-owned. The frontend does not calculate commercial totals (PEPM, discounts, FCV).
- * When backend pricing API is pending, status displays 'Pricing pending backend calculation'.
+ * Pricing is strictly backend-owned. The frontend does not calculate commercial totals (PEPM, discounts, FCV).
+ * Calculations are executed via POST /api/proposals/{id}/calculate and snapshots retrieved from the database.
  */
 
 import { INITIAL_COUNTRIES } from '../../data/rateCardData'
@@ -19,30 +19,38 @@ import { INITIAL_PACKS } from '../../data/packsData'
  * Master currency catalogue extracted and normalized from rate cards and country records.
  */
 export const MASTER_CURRENCIES = [
-  { code: 'USD', symbol: '$', name: 'US Dollar', country: 'North America / Global' },
-  { code: 'EUR', symbol: '€', name: 'Euro', country: 'Europe' },
-  { code: 'GBP', symbol: '£', name: 'British Pound', country: 'United Kingdom' },
-  { code: 'INR', symbol: '₹', name: 'Indian Rupee', country: 'India' },
-  { code: 'AED', symbol: 'AED', name: 'UAE Dirham', country: 'United Arab Emirates' },
-  { code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal', country: 'Saudi Arabia' },
-  { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit', country: 'Malaysia' },
-  { code: 'PHP', symbol: '₱', name: 'Philippine Peso', country: 'Philippines' },
-  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling', country: 'Kenya' },
-  { code: 'ZAR', symbol: 'R', name: 'South African Rand', country: 'South Africa' },
+  { id: 1, code: 'USD', symbol: '$', name: 'US Dollar', country: 'North America / Global' },
+  { id: 2, code: 'INR', symbol: '₹', name: 'Indian Rupee', country: 'India' },
+  { id: 3, code: 'EUR', symbol: '€', name: 'Euro', country: 'Europe' },
+  { id: 4, code: 'GBP', symbol: '£', name: 'British Pound', country: 'United Kingdom' },
+  { id: 5, code: 'AED', symbol: 'AED', name: 'UAE Dirham', country: 'United Arab Emirates' },
+  { id: 6, code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal', country: 'Saudi Arabia' },
+  { id: 7, code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit', country: 'Malaysia' },
+  { id: 8, code: 'PHP', symbol: '₱', name: 'Philippine Peso', country: 'Philippines' },
+  { id: 9, code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling', country: 'Kenya' },
+  { id: 10, code: 'ZAR', symbol: 'R', name: 'South African Rand', country: 'South Africa' },
 ]
 
 export const INITIAL_CLIENT_INFO = {
+  proposalId: null,
+  proposalCode: '',
+  customerId: null,
   clientName: 'Acme Global Enterprise',
+  dealId: null,
   dealCode: 'DEAL-2026-0042',
   reportingCurrency: 'USD',
+  reportingCurrencyId: null,
   notes: 'Multi-region enterprise transformation. Initial scope covering India and North America operations.',
 }
 
 /**
  * Creates a default country configuration for the proposal.
+ * Fully compatible with existing Pages 5 and 6 and real backend IDs.
  */
 export function createDefaultCountryConfig(countryId = 'c-in', index = 1) {
-  const countryMaster = INITIAL_COUNTRIES.find((c) => c.id === countryId) || INITIAL_COUNTRIES[0]
+  const countryMaster =
+    INITIAL_COUNTRIES.find((c) => c.id === countryId || String(c.id) === String(countryId)) ||
+    INITIAL_COUNTRIES[0]
 
   return {
     id: `cfg-country-${Date.now()}-${index}`,
@@ -137,21 +145,26 @@ export function validateServiceLine(service) {
 }
 
 /**
- * Formats a Proposal into the FastAPI Wave 5 Pydantic schema structure
- * for audit snapshots, local draft persistence, and future backend serialization.
+ * Formats a Proposal into the FastAPI Pydantic schema structure
+ * for audit snapshots, database persistence, and JSON preview.
  */
 export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
-  const proposalCode = clientInfo.dealCode || `PROP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`
-  
+  const proposalCode =
+    clientInfo.proposalCode ||
+    clientInfo.dealCode ||
+    `PROP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`
+
   let lineNumber = 1
   const lineItems = []
   const serviceLines = []
 
   const serializedCountries = countryConfigs.map((country, cIdx) => {
     // Collect line items for packs and à la carte features
-    country.families.forEach((fam) => {
+    (country.families || []).forEach((fam) => {
       if (fam.selectedPackId) {
-        const pack = INITIAL_PACKS.find((p) => p.id === fam.selectedPackId)
+        const pack = INITIAL_PACKS.find(
+          (p) => p.id === fam.selectedPackId || p.versions?.some((v) => v.id === fam.selectedPackId)
+        )
         lineItems.push({
           line_number: lineNumber++,
           country_id: country.countryId,
@@ -160,12 +173,12 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
           item_name: pack?.name || 'Selected Commercial Pack',
           item_code: pack?.code || 'PACK-CUSTOM',
           family_id: fam.familyId,
-          uom_id: 1, // UOM: Active Employees (with ESS)
+          uom_id: 1, // UOM: Employee
           quantity: country.headcount || 1,
-          list_unit_price: null, // Backend owned
+          list_unit_price: null,
           discount_pct: 0,
-          net_unit_price: null, // Backend owned
-          extended_amount: null, // Backend owned
+          net_unit_price: null,
+          extended_amount: null,
           currency: country.currency,
           status: 'pending_backend_calculation',
         })
@@ -180,15 +193,15 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
             country_id: country.countryId,
             pack_version_id: null,
             feature_id: featId,
-            item_name: product?.subItem || product?.solution || 'À la carte Feature',
+            item_name: product?.subItem || product?.solution || product?.name || 'À la carte Feature',
             item_code: product?.code || 'FEAT-CUSTOM',
             family_id: fam.familyId,
             uom_id: 1,
             quantity: country.headcount || 1,
-            list_unit_price: null, // Backend owned
+            list_unit_price: null,
             discount_pct: 0,
-            net_unit_price: null, // Backend owned
-            extended_amount: null, // Backend owned
+            net_unit_price: null,
+            extended_amount: null,
             currency: country.currency,
             status: 'pending_backend_calculation',
           })
@@ -197,15 +210,15 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
     })
 
     // Collect service lines
-    country.serviceLines.forEach((srv) => {
+    ;(country.serviceLines || []).forEach((srv) => {
       serviceLines.push({
         country_id: country.countryId,
         role_name: srv.roleName,
-        service_rate_id: srv.hourlyRateId || null,
+        service_rate_id: srv.serviceRateId || srv.hourlyRateId || null,
         days_or_hours: Number(srv.hoursOrDays) || 0,
         rate_applied: Number(srv.rateApplied) || 0,
         discount_pct: Number(srv.discountPct) || 0,
-        extended_amount: null, // Backend owned
+        extended_amount: null,
         currency: srv.currency || country.currency,
         status: 'pending_backend_calculation',
       })
@@ -227,11 +240,13 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
 
   return {
     proposal: {
+      id: clientInfo.proposalId || null,
       code: proposalCode,
       deal_code: clientInfo.dealCode,
       customer_name: clientInfo.clientName,
       reporting_currency: clientInfo.reportingCurrency,
-      status: 'draft',
+      reporting_currency_id: Number(clientInfo.reportingCurrencyId) || null,
+      status: clientInfo.status || 'draft',
       notes: clientInfo.notes,
       created_at: new Date().toISOString(),
     },
@@ -239,10 +254,102 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
     proposal_line_items: lineItems,
     proposal_service_lines: serviceLines,
     calculation_summary: {
-      pricing_fcv: 'Pending backend calculation',
-      services_total: 'Pending backend calculation',
-      grand_total: 'Pending backend calculation',
-      authoritative_pricing_engine: 'FastAPI Backend Engine (Wave 5)',
+      pricing_fcv: 'Authoritative backend calculation',
+      services_total: 'Authoritative backend calculation',
+      grand_total: 'Authoritative backend calculation',
+      authoritative_pricing_engine: 'FastAPI Backend Engine (Phase D)',
     },
+  }
+}
+
+/**
+ * Transforms a backend ProposalDetailResponse into frontend state for proposal reload.
+ */
+export function deserializeBackendProposal(backendProposal) {
+  const clientInfo = {
+    proposalId: backendProposal.id,
+    proposalCode: backendProposal.code,
+    customerId: backendProposal.customer_id,
+    clientName: backendProposal.customer?.name || backendProposal.deal?.name || 'Saved Customer',
+    dealId: backendProposal.deal_id,
+    dealCode: backendProposal.deal?.code || '',
+    reportingCurrency: backendProposal.currency?.code || 'USD',
+    reportingCurrencyId: backendProposal.currency_id,
+    status: backendProposal.status,
+    notes: '',
+  }
+
+  const draftVersion =
+    (backendProposal.versions || []).find((v) => v.status === 'draft') ||
+    backendProposal.versions?.[0]
+  const lineItems = draftVersion?.line_items || []
+  const serviceLines = draftVersion?.service_lines || []
+
+  const countryConfigs = (backendProposal.countries || []).map((c, idx) => {
+    const countryMaster = c.country || {}
+    const currencyCode = countryMaster.currency?.code || 'USD'
+    const currencySymbol = countryMaster.currency?.symbol || '$'
+
+    const packItems = lineItems.filter((li) => li.pack_version_id != null)
+    const featureItems = lineItems.filter((li) => li.feature_id != null)
+
+    const families = [
+      {
+        id: `fam-cfg-${Date.now()}-${idx + 1}`,
+        familyId: 'fam-ta',
+        headcount: c.user_headcount || 1000,
+        selectedPackId: packItems[0]?.pack_version_id || 'pack-ta-growth',
+        selectedFeatureIds: featureItems.map((f) => f.feature_id),
+      },
+    ]
+
+    const srvLines = serviceLines.map((sl, sIdx) => ({
+      id: `srv-${sl.id || Date.now()}-${sIdx}`,
+      roleName: sl.role_name,
+      serviceRateId: sl.service_rate_id,
+      hourlyRateId: sl.service_rate_id ? `hr-${sl.service_rate_id}` : 'hr-1',
+      rateApplied: Number(sl.rate_applied) || 0,
+      hoursOrDays: Number(sl.days_or_hours) || 1,
+      unit: 'Hours',
+      discountPct: Number(sl.discount_pct) || 0,
+      currency: sl.currency?.code || currencyCode,
+    }))
+
+    return {
+      id: `cfg-country-${c.id || Date.now()}-${idx + 1}`,
+      countryId: c.country_id,
+      countryName: countryMaster.name || `Country ${c.country_id}`,
+      currency: currencyCode,
+      currencySymbol: currencySymbol,
+      pricingTierId: backendProposal.customer?.customer_tier_id || 'tier-1',
+      deploymentModelId: c.deployment_model_id || 'dep-shared',
+      pricingModelId: c.pricing_model_id || 'pm-pepm',
+      contractTerm: 36,
+      headcount: c.user_headcount || 1000,
+      platformSubscriptionConfig: {
+        annualPlatformFee: '100000',
+        monthlySubscriptionFee: '300',
+        employeeCount: String(c.user_headcount || 1000),
+      },
+      families,
+      serviceLines: srvLines.length > 0 ? srvLines : [
+        {
+          id: `srv-cfg-${Date.now()}-1`,
+          roleName: 'Enterprise Solution Architecture',
+          hourlyRateId: 'hr-1',
+          rateApplied: 220,
+          hoursOrDays: 40,
+          unit: 'Hours',
+          discountPct: 0,
+          currency: currencyCode,
+        },
+      ],
+    }
+  })
+
+  return {
+    clientInfo,
+    countryConfigs:
+      countryConfigs.length > 0 ? countryConfigs : [createDefaultCountryConfig('c-in', 1)],
   }
 }
