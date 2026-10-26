@@ -1,9 +1,54 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import apiClient from '../api/client'
 import { CataloguePage } from '../features/catalogue/CataloguePage'
+import { installFakeApi, httpError } from './fixtures/fakeApi'
+import * as fx from './fixtures/backendRecords'
 
-function renderCataloguePage() {
+vi.mock('../api/client')
+
+/** A small in-memory catalogue backend that persists creates/deletes for the test. */
+function catalogueBackend(overrides = {}) {
+  const db = {
+    families: [...fx.families, { id: 11, code: 'PAY', name: 'Payroll & Benefits', status: 'active' }],
+    products: [...fx.products, { id: 22, product_family_id: 11, code: 'PAY_ENG', name: 'Payroll Engine', status: 'active' }],
+    features: [...fx.features, { id: 33, product_id: 22, code: 'PAY_ENG-001', name: 'Gross-to-Net', classification: 'partner', partner_name: 'Gross-to-Net', status: 'active' }],
+  }
+  let next = 100
+  const api = installFakeApi(apiClient, {
+    'GET /catalogue/families': () => db.families,
+    'GET /catalogue/products': () => db.products,
+    'GET /catalogue/features': () => db.features,
+    'POST /catalogue/families': (body) => {
+      const rec = { id: next++, ...body }
+      db.families.push(rec)
+      return rec
+    },
+    'POST /catalogue/products': (body) => {
+      const rec = { id: next++, ...body }
+      db.products.push(rec)
+      return rec
+    },
+    'POST /catalogue/features': (body) => {
+      const rec = { id: next++, ...body }
+      db.features.push(rec)
+      return rec
+    },
+    'DELETE /catalogue/features/:id': (_b, { id }) => {
+      db.features = db.features.filter((f) => String(f.id) !== id)
+      return null
+    },
+    'DELETE /catalogue/products/:id': (_b, { id }) => {
+      db.products = db.products.filter((p) => String(p.id) !== id)
+      return null
+    },
+    ...overrides,
+  })
+  return { api, db }
+}
+
+function renderPage() {
   return render(
     <MemoryRouter>
       <CataloguePage />
@@ -11,176 +56,118 @@ function renderCataloguePage() {
   )
 }
 
-describe('Product Catalogue Feature Tests', () => {
-  it('renders the top navigation, summary strip, sidebar, and initial product catalogue', () => {
-    renderCataloguePage()
+describe('Page 1 — Product Catalogue', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-    // 1. Top navigation
-    expect(screen.getByText('DEAL DESK')).toBeInTheDocument()
-    expect(screen.getByText('Commercial Engine')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Product Catalog/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Pack Builder/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Proposal Configurator/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Proposal Summary/i })).toBeInTheDocument()
-
-    // 2. Summary strip
-    expect(screen.getByText(/Global Enterprise Master/i)).toBeInTheDocument()
-    expect(screen.getByText('Client')).toBeInTheDocument()
-    expect(screen.getByText('Product Lines')).toBeInTheDocument()
-
-    // 3. Left sidebar - L1 Families
+  it('renders saved families and products from the backend', async () => {
+    catalogueBackend()
+    renderPage()
+    expect(await screen.findByText('Live Database Connected (FastAPI / PostgreSQL)')).toBeInTheDocument()
     const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
-    expect(within(sidebar).getByText('All Products')).toBeInTheDocument()
     expect(within(sidebar).getByText('Talent Acquisition')).toBeInTheDocument()
-    expect(within(sidebar).getByText('Core HR & Workforce')).toBeInTheDocument()
-    expect(within(sidebar).getByRole('button', { name: /Add a new product family/i })).toBeInTheDocument()
-
-    // 4. Products table
-    expect(screen.getByText('TA-ATS-001')).toBeInTheDocument()
-    expect(screen.getByText('Applicant Tracking System (ATS)')).toBeInTheDocument()
-
-    // 5. Product types legend indicators
-    expect(screen.getAllByText('Adrenalin Native').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('AI Agent Module').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Partner Integrated').length).toBeGreaterThan(0)
+    expect(within(sidebar).getByText('Payroll & Benefits')).toBeInTheDocument()
+    expect(screen.getByText('TA_MAX')).toBeInTheDocument()
+    expect(screen.getByText('PAY_ENG')).toBeInTheDocument()
+    expect(screen.queryByText(/Global Enterprise Master/)).not.toBeInTheDocument()
   })
 
-  it('filters products when a family is selected in the sidebar', () => {
-    renderCataloguePage()
-
-    const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
-    const payrollButton = within(sidebar).getByRole('button', { name: /Payroll & Benefits/i })
-
-    fireEvent.click(payrollButton)
-
-    // Heading should change to selected family
-    expect(screen.getByRole('heading', { name: /Payroll & Benefits/i, level: 1 })).toBeInTheDocument()
-
-    // Payroll products should be visible
-    expect(screen.getByText('PAY-ENG-001')).toBeInTheDocument()
-    expect(screen.getByText('Multi-Country Payroll Engine')).toBeInTheDocument()
-
-    // Talent Acquisition products should NOT be visible
-    expect(screen.queryByText('TA-ATS-001')).not.toBeInTheDocument()
-  })
-
-  it('filters products via search input across name, sub-item, and code', () => {
-    renderCataloguePage()
-
-    const searchInput = screen.getByRole('searchbox', { name: /Search name or code/i })
-
-    // Search by code
-    fireEvent.change(searchInput, { target: { value: 'TA-ATS-001' } })
-    expect(screen.getByText('Applicant Tracking System (ATS)')).toBeInTheDocument()
-    expect(screen.queryByText('CHR-ORG-001')).not.toBeInTheDocument()
-
-    // Clear and search by partner
-    fireEvent.change(searchInput, { target: { value: 'HackerRank' } })
-    expect(screen.getByText('Technical Assessment Platform')).toBeInTheDocument()
-    expect(screen.getByText('TA-PRT-005')).toBeInTheDocument()
-    expect(screen.queryByText('Multi-Country Payroll Engine')).not.toBeInTheDocument()
-  })
-
-  it('allows creating a new product family and selects it with 0 products', async () => {
-    renderCataloguePage()
-
-    // Click + Add Family button
-    const addFamilyBtn = screen.getByRole('button', { name: /Add a new product family/i })
-    fireEvent.click(addFamilyBtn)
-
-    // Modal opens
-    expect(screen.getByRole('heading', { name: /Add Product Family/i })).toBeInTheDocument()
-
-    const nameInput = screen.getByLabelText(/Family Name/i)
-    fireEvent.change(nameInput, { target: { value: 'Compensation & Equity' } })
-
-    const createBtn = screen.getByRole('button', { name: /Create Family/i })
-    fireEvent.click(createBtn)
-
-    // Family is created and appears in sidebar
-    await waitFor(() => {
-      const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
-      expect(within(sidebar).getByText('Compensation & Equity')).toBeInTheDocument()
+  it('shows an error and no demo catalogue when the backend is unavailable', async () => {
+    installFakeApi(apiClient, {
+      'GET /catalogue/families': () => { throw httpError(503, 'Database connection failed') },
+      'GET /catalogue/products': () => [],
+      'GET /catalogue/features': () => [],
     })
-
-    // It is selected and shows 0 items
-    expect(screen.getByRole('heading', { name: /Compensation & Equity/i, level: 1 })).toBeInTheDocument()
-    expect(screen.getByText(/0 items/i)).toBeInTheDocument()
-    expect(screen.getByText(/No products in this family yet/i)).toBeInTheDocument()
-  })
-
-  it('rejects duplicate family names ignoring letter case and surrounding whitespace', () => {
-    renderCataloguePage()
-
-    const addFamilyBtn = screen.getByRole('button', { name: /Add a new product family/i })
-    fireEvent.click(addFamilyBtn)
-
-    const nameInput = screen.getByLabelText(/Family Name/i)
-    // Try to add existing "Talent Acquisition" with lowercase and extra spaces
-    fireEvent.change(nameInput, { target: { value: '   talent acquisition   ' } })
-
-    const createBtn = screen.getByRole('button', { name: /Create Family/i })
-    fireEvent.click(createBtn)
-
-    // Inline error message should display
-    expect(
-      screen.getByText(/A product family with this name already exists/i),
-    ).toBeInTheDocument()
-
-    // Modal should remain open
-    expect(screen.getByRole('heading', { name: /Add Product Family/i })).toBeInTheDocument()
-  })
-
-  it('allows adding a new product row and updates product counts', () => {
-    renderCataloguePage()
-
-    expect(screen.getByText(/Showing 22 of 22 products/i)).toBeInTheDocument()
-
-    // Click + Add Row
-    const addRowBtn = screen.getByRole('button', { name: /Add product row/i })
-    fireEvent.click(addRowBtn)
-
-    // Inline form inputs appear
-    const solutionInput = screen.getByLabelText(/New solution name/i)
-    const subItemInput = screen.getByLabelText(/New partner or sub-item/i)
-    const codeInput = screen.getByLabelText(/New product code/i)
-
-    fireEvent.change(solutionInput, { target: { value: 'AI Candidate Sifter Pro' } })
-    fireEvent.change(subItemInput, { target: { value: 'High-volume candidate funnel filter' } })
-    fireEvent.change(codeInput, { target: { value: 'TA-SIFT-999' } })
-
-    const saveBtn = screen.getByRole('button', { name: /Save product row/i })
-    fireEvent.click(saveBtn)
-
-    // New product is present in table
-    expect(screen.getByText('AI Candidate Sifter Pro')).toBeInTheDocument()
-    expect(screen.getByText('TA-SIFT-999')).toBeInTheDocument()
-
-    // Total count incremented to 23
-    expect(screen.getByText(/Showing 23 of 23 products/i)).toBeInTheDocument()
-  })
-
-  it('provides a delete action with confirmation interaction', () => {
-    renderCataloguePage()
-
-    expect(screen.getByText('TA-ATS-001')).toBeInTheDocument()
-
-    // Click Delete on TA-ATS-001
-    const deleteBtn = screen.getByRole('button', { name: /Delete product TA-ATS-001/i })
-    fireEvent.click(deleteBtn)
-
-    // Delete confirmation modal opens
-    expect(screen.getByRole('heading', { name: /Delete Product/i })).toBeInTheDocument()
-    expect(screen.getByText(/Are you sure you want to remove/i)).toBeInTheDocument()
-
-    // Confirm Delete
-    const confirmBtn = screen.getByRole('button', { name: /Confirm Delete/i })
-    fireEvent.click(confirmBtn)
-
-    // Product is removed
+    renderPage()
+    expect(await screen.findByText(/Catalogue backend unavailable \(Database connection failed\)/)).toBeInTheDocument()
     expect(screen.queryByText('TA-ATS-001')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Applicant Tracking System/)).not.toBeInTheDocument()
+  })
 
-    // Total count decrements to 21
-    expect(screen.getByText(/Showing 21 of 21 products/i)).toBeInTheDocument()
+  it('filters by family and by search text', async () => {
+    catalogueBackend()
+    renderPage()
+    await screen.findByText('PAY_ENG')
+    const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
+    fireEvent.click(within(sidebar).getByRole('button', { name: /Payroll & Benefits/i }))
+    expect(screen.getByRole('heading', { name: /Payroll & Benefits/i, level: 1 })).toBeInTheDocument()
+    expect(screen.getByText('PAY_ENG')).toBeInTheDocument()
+    expect(screen.queryByText('TA_MAX')).not.toBeInTheDocument()
+
+    fireEvent.click(within(sidebar).getByText('All Products'))
+    fireEvent.change(screen.getByLabelText(/Search name or code/i), { target: { value: 'add-ons' } })
+    expect(screen.getByText('TA_ADD')).toBeInTheDocument()
+    expect(screen.queryByText('TA_MAX')).not.toBeInTheDocument()
+  })
+
+  it('creates a product family through the API and selects it', async () => {
+    const { api } = catalogueBackend()
+    renderPage()
+    await screen.findByText('TA_MAX')
+    fireEvent.click(screen.getByRole('button', { name: /Add a new product family/i }))
+    fireEvent.change(screen.getByLabelText(/Family Name/i), { target: { value: 'Compensation & Equity' } })
+    fireEvent.click(screen.getByRole('button', { name: /Create Family/i }))
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Compensation & Equity/i, level: 1 })).toBeInTheDocument())
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/catalogue/families').body).toMatchObject({
+      name: 'Compensation & Equity',
+      status: 'active',
+    })
+  })
+
+  it('rejects a duplicate family name regardless of case and spaces', async () => {
+    const { api } = catalogueBackend()
+    renderPage()
+    await screen.findByText('TA_MAX')
+    fireEvent.click(screen.getByRole('button', { name: /Add a new product family/i }))
+    fireEvent.change(screen.getByLabelText(/Family Name/i), { target: { value: '   talent acquisition   ' } })
+    fireEvent.click(screen.getByRole('button', { name: /Create Family/i }))
+    expect(screen.getByText(/A product family with this name already exists/i)).toBeInTheDocument()
+    expect(api.calls.some((c) => c.method === 'POST')).toBe(false)
+  })
+
+  it('creates a product and its feature in the chosen family', async () => {
+    const { api } = catalogueBackend()
+    renderPage()
+    await screen.findByText('TA_MAX')
+    const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
+    fireEvent.click(within(sidebar).getByRole('button', { name: /Talent Acquisition/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Add product row/i }))
+    fireEvent.change(screen.getByLabelText(/New solution name/i), { target: { value: 'Candidate Sifter' } })
+    fireEvent.change(screen.getByLabelText(/New partner or sub-item/i), { target: { value: 'Funnel filter' } })
+    fireEvent.change(screen.getByLabelText(/New product code/i), { target: { value: 'TA-SIFT-999' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save product row/i }))
+
+    expect(await screen.findByText('TA-SIFT-999')).toBeInTheDocument()
+    expect(api.calls.find((c) => c.path === '/catalogue/products' && c.method === 'POST').body).toMatchObject({
+      product_family_id: 10, code: 'TA-SIFT-999', name: 'Candidate Sifter',
+    })
+    expect(api.calls.find((c) => c.path === '/catalogue/features' && c.method === 'POST').body).toMatchObject({
+      name: 'Funnel filter', code: 'TA-SIFT-999-001',
+    })
+  })
+
+  it('refuses to delete a product that has more features than the row shows', async () => {
+    const { api } = catalogueBackend()
+    renderPage()
+    await screen.findByText('TA_MAX') // TA Max has two features (Recruit, AI Agent)
+    fireEvent.click(screen.getByRole('button', { name: /Delete product TA_MAX/i }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Confirm Delete/i }))
+    expect(await screen.findByText(/it has 2 features/)).toBeInTheDocument()
+    expect(api.calls.some((c) => c.method === 'DELETE')).toBe(false)
+  })
+
+  it('deletes a single-feature product (feature first, then product)', async () => {
+    const { api } = catalogueBackend()
+    renderPage()
+    await screen.findByText('TA_ADD')
+    fireEvent.click(screen.getByRole('button', { name: /Delete product TA_ADD/i }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Confirm Delete/i }))
+    await waitFor(() => expect(screen.queryByText('TA_ADD')).not.toBeInTheDocument())
+    expect(api.calls.filter((c) => c.method === 'DELETE').map((c) => c.path)).toEqual([
+      '/catalogue/features/32',
+      '/catalogue/products/21',
+    ])
   })
 })

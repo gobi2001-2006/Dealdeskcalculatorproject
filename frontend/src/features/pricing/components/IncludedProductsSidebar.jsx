@@ -2,34 +2,13 @@ import {
   Globe,
   Layers,
   Package,
-  Sparkles,
   ArrowRight,
-  Users,
-  Building,
-  DollarSign,
-  Award,
-  Clock,
-  Briefcase,
-  HeartHandshake,
-  ShieldCheck,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { INITIAL_PRODUCT_FAMILIES } from '../../../data/catalogueData'
-import { INITIAL_PACKS } from '../../../data/packsData'
-
-const ICON_MAP = {
-  Users,
-  Building,
-  DollarSign,
-  Award,
-  Clock,
-  Sparkles,
-  Briefcase,
-  HeartHandshake,
-  ShieldCheck,
-}
+import { buildCatalogueLookup } from '../../../utils/catalogueLookup'
 
 export function IncludedProductsSidebar({
+  lookup = buildCatalogueLookup(),
   countryConfigs = [],
   focusedCountryId,
   focusedFamilyId,
@@ -148,26 +127,16 @@ export function IncludedProductsSidebar({
               {/* Country Context Badges */}
               <div className="px-3 py-2 border-b border-slate-100 text-[10px] text-slate-600 flex flex-wrap gap-1 bg-white">
                 <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium">
-                  {country.pricingTierId === 'tier-1'
-                    ? 'Tier 1'
-                    : country.pricingTierId === 'tier-2'
-                    ? 'Tier 2'
-                    : 'Tier 3'}
+                  {lookup.tierName(country.pricingTierId)}
                 </span>
                 <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium">
-                  {country.deploymentModelId === 'dep-shared'
-                    ? 'Shared'
-                    : country.deploymentModelId === 'dep-private'
-                    ? 'Private'
-                    : 'On-Prem'}
+                  {lookup.deploymentName(country.deploymentModelId)}
                 </span>
                 <span className="px-1.5 py-0.5 rounded bg-orange-100/70 text-orange-800 font-semibold">
-                  {country.pricingModelId === 'pm-platform'
-                    ? 'Platform'
-                    : 'PEPM'}
+                  {lookup.pricingModelName(country.pricingModelId)}
                 </span>
                 <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium">
-                  {country.contractTerm}m
+                  {country.contractTerm ? `${country.contractTerm}m` : 'term not set'}
                 </span>
               </div>
 
@@ -179,16 +148,9 @@ export function IncludedProductsSidebar({
                   </div>
                 ) : (
                   country.families.map((fam) => {
-                    const familyMaster =
-                      INITIAL_PRODUCT_FAMILIES.find((f) => f.id === fam.familyId) || {
-                        name: 'Product Family',
-                        code: 'FAM',
-                        iconName: 'Package',
-                      }
-                    const pack = fam.selectedPackId
-                      ? INITIAL_PACKS.find((p) => p.id === fam.selectedPackId)
-                      : null
-                    const FamilyIcon = ICON_MAP[familyMaster.iconName] || Package
+                    const familyMaster = lookup.family(fam.familyId)
+                    const pack = fam.selectedPackId ? lookup.packVersion(fam.selectedPackId) : null
+                    const FamilyIcon = Package
                     const isFamilyFocused =
                       isCountryFocused && focusedFamilyId === fam.id
 
@@ -223,7 +185,7 @@ export function IncludedProductsSidebar({
                             <div className="text-[10px] text-slate-500 truncate mt-0.5 flex items-center gap-1">
                               <span
                                 className="w-1.5 h-1.5 rounded-full shrink-0"
-                                style={{ backgroundColor: pack.color || '#F26522' }}
+                                style={{ backgroundColor: '#F26522' }}
                                 aria-hidden="true"
                               />
                               <span className="truncate">{pack.name}</span>

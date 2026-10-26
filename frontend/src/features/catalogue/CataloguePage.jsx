@@ -7,10 +7,6 @@ import { ProductTable } from './ProductTable'
 import { AddFamilyModal } from './AddFamilyModal'
 import { DeleteConfirmModal } from './DeleteConfirmModal'
 import {
-  INITIAL_PRODUCT_FAMILIES,
-  INITIAL_PRODUCTS,
-} from '../../data/catalogueData'
-import {
   getCatalogueFamilies,
   createCatalogueFamily,
   getCatalogueProducts,
@@ -33,9 +29,13 @@ function mapBackendCatalogue(backendFamilies, backendProducts, backendFeatures) 
     status: bf.status,
   }))
 
+  // The table shows one row per product with its first feature; featureCount tells
+  // the user (and the delete action) when a product has more features than shown.
   const featureLookup = new Map()
+  const featureCount = new Map()
   if (Array.isArray(backendFeatures)) {
     backendFeatures.forEach((feat) => {
+      featureCount.set(feat.product_id, (featureCount.get(feat.product_id) || 0) + 1)
       if (!featureLookup.has(feat.product_id)) {
         featureLookup.set(feat.product_id, feat)
       }
@@ -63,6 +63,7 @@ function mapBackendCatalogue(backendFamilies, backendProducts, backendFeatures) 
       type: displayType,
       status: bp.status,
       featureId: primaryFeature?.id || null,
+      featureCount: featureCount.get(bp.id) || 0,
       featureCode: primaryFeature?.code || '',
       classification: primaryFeature?.classification || 'native',
       partnerName: primaryFeature?.partner_name || '',
@@ -73,8 +74,9 @@ function mapBackendCatalogue(backendFamilies, backendProducts, backendFeatures) 
 }
 
 export function CataloguePage() {
-  const [families, setFamilies] = useState(INITIAL_PRODUCT_FAMILIES)
-  const [products, setProducts] = useState(INITIAL_PRODUCTS)
+  // Only saved records are shown; an unavailable backend shows an error, never demo data.
+  const [families, setFamilies] = useState([])
+  const [products, setProducts] = useState([])
   const [selectedFamilyId, setSelectedFamilyId] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -102,22 +104,17 @@ export function CataloguePage() {
 
         if (!isMounted) return
 
-        if (Array.isArray(backendFamilies) && backendFamilies.length > 0) {
-          const { mappedFamilies, mappedProducts } = mapBackendCatalogue(
-            backendFamilies,
-            backendProducts,
-            backendFeatures,
-          )
-          setFamilies(mappedFamilies)
-          setProducts(mappedProducts)
-          setIsLiveBackendData(true)
-        } else {
-          setIsLiveBackendData(false)
-        }
+        const { mappedFamilies, mappedProducts } = mapBackendCatalogue(
+          backendFamilies,
+          backendProducts,
+          backendFeatures,
+        )
+        setFamilies(mappedFamilies)
+        setProducts(mappedProducts)
+        setIsLiveBackendData(true)
       } catch (err) {
         if (!isMounted) return
-        console.warn('Backend catalogue fetch failed; using demo data:', err)
-        setApiError(err?.message || 'Failed to connect to backend catalogue API')
+        setApiError(err?.response?.data?.detail || err?.message || 'Failed to connect to backend catalogue API')
         setIsLiveBackendData(false)
       } finally {
         if (isMounted) {
@@ -143,21 +140,16 @@ export function CataloguePage() {
         getCatalogueFeatures(),
       ])
 
-      if (Array.isArray(backendFamilies) && backendFamilies.length > 0) {
-        const { mappedFamilies, mappedProducts } = mapBackendCatalogue(
-          backendFamilies,
-          backendProducts,
-          backendFeatures,
-        )
-        setFamilies(mappedFamilies)
-        setProducts(mappedProducts)
-        setIsLiveBackendData(true)
-      } else {
-        setIsLiveBackendData(false)
-      }
+      const { mappedFamilies, mappedProducts } = mapBackendCatalogue(
+        backendFamilies,
+        backendProducts,
+        backendFeatures,
+      )
+      setFamilies(mappedFamilies)
+      setProducts(mappedProducts)
+      setIsLiveBackendData(true)
     } catch (err) {
-      console.warn('Backend catalogue fetch failed; using demo data:', err)
-      setApiError(err?.message || 'Failed to connect to backend catalogue API')
+      setApiError(err?.response?.data?.detail || err?.message || 'Failed to connect to backend catalogue API')
       setIsLiveBackendData(false)
     } finally {
       setIsLoading(false)
@@ -235,29 +227,19 @@ export function CataloguePage() {
       return
     }
 
-    // In offline / test environment:
-    setFamilies((prev) => [...prev, newFamilyData])
-    setSelectedFamilyId(newFamilyData.id)
-    setIsAddFamilyOpen(false)
+    setMutationNotice('Cannot create product family: the catalogue backend is not available.')
   }
 
   // Handle Add Product Row (Connected to backend POST /api/catalogue/products and features)
   const handleSaveNewProduct = async (newProduct) => {
-    let targetFamilyId = Number(newProduct.familyId)
-    if (isNaN(targetFamilyId) || targetFamilyId <= 0) {
-      const matchedFam = families.find((f) => f.id === newProduct.familyId || f.name === newProduct.familyName)
-      if (matchedFam && !isNaN(Number(matchedFam.id))) {
-        targetFamilyId = Number(matchedFam.id)
-      } else {
-        const firstNumFam = families.find((f) => !isNaN(Number(f.id)))
-        if (firstNumFam) {
-          targetFamilyId = Number(firstNumFam.id)
-        } else {
-          setProducts((prev) => [newProduct, ...prev])
-          setMutationNotice('Product created in local preview.')
-          return
-        }
-      }
+    const targetFamilyId = Number(newProduct.familyId)
+    if (!isLiveBackendData) {
+      setMutationNotice('Cannot create product: the catalogue backend is not available.')
+      return
+    }
+    if (!Number.isInteger(targetFamilyId) || !families.some((f) => Number(f.id) === targetFamilyId)) {
+      setMutationNotice('Select a saved product family for the new product.')
+      return
     }
 
     try {
@@ -291,11 +273,14 @@ export function CataloguePage() {
           status: 'active',
         })
       } catch (featErr) {
-        console.warn('Could not create feature for product:', featErr)
+        await handleReloadBackend()
+        const detail = featErr.response?.data?.detail || featErr.message
+        setMutationNotice(`Product '${createdProd.name}' was created, but its feature could not be saved: ${detail}`)
+        return
       }
 
       await handleReloadBackend()
-      setMutationNotice(`Product '${createdProd.name}' (${createdProd.code}) successfully created and persisted to database.`)
+      setMutationNotice(`Product '${createdProd.name}' (${createdProd.code}) saved.`)
     } catch (err) {
       console.error('Failed to create product in backend:', err)
       const detail = err.response?.data?.detail || err.message || 'Error creating product'
@@ -341,7 +326,7 @@ export function CataloguePage() {
               partner_name: partnerName,
             })
           } catch (featErr) {
-            console.warn('Feature update encountered error:', featErr)
+            throw new Error(`product saved, but feature update failed: ${featErr.response?.data?.detail || featErr.message}`, { cause: featErr })
           }
         } else if (subItemName) {
           try {
@@ -354,7 +339,7 @@ export function CataloguePage() {
               status: 'active',
             })
           } catch (featErr) {
-            console.warn('Feature creation on product update error:', featErr)
+            throw new Error(`product saved, but feature creation failed: ${featErr.response?.data?.detail || featErr.message}`, { cause: featErr })
           }
         }
 
@@ -366,39 +351,36 @@ export function CataloguePage() {
         setMutationNotice(`Failed to update product: ${detail}`)
       }
     } else {
-      setProducts((prev) =>
-        prev.map((prod) => (prod.id === id ? { ...prod, ...updatedFields } : prod)),
-      )
-      setMutationNotice('Local demo product updated.')
+      setMutationNotice('Cannot update product: it is not a saved record.')
     }
   }
 
   // Handle Delete Product Confirmation (Connected to backend DELETE /api/catalogue/products/{id})
   const handleConfirmDelete = async (id) => {
-    if (!isNaN(Number(id))) {
-      try {
-        const targetProd = products.find((p) => p.id === id)
-        if (targetProd?.featureId && !isNaN(Number(targetProd.featureId))) {
-          try {
-            await deleteCatalogueFeature(Number(targetProd.featureId))
-          } catch (featDelErr) {
-            console.warn('Feature deletion before product deletion:', featDelErr)
-          }
-        }
-
-        await deleteCatalogueProduct(Number(id))
-        await handleReloadBackend()
-        setProductToDelete(null)
-        setMutationNotice(`Product ID ${id} successfully removed from database.`)
-      } catch (err) {
-        console.error('Failed to delete product in backend:', err)
-        const detail = err.response?.data?.detail || err.message || 'Error deleting product'
-        setMutationNotice(`Cannot delete product: ${detail}`)
+    if (isNaN(Number(id))) {
+      setMutationNotice('Cannot delete product: it is not a saved record.')
+      return
+    }
+    const targetProd = products.find((p) => p.id === id)
+    if ((targetProd?.featureCount || 0) > 1) {
+      setMutationNotice(
+        `Cannot delete product: it has ${targetProd.featureCount} features. Remove the extra features first.`,
+      )
+      return
+    }
+    try {
+      if (targetProd?.featureId) {
+        // The backend refuses to delete a product that still has features.
+        await deleteCatalogueFeature(Number(targetProd.featureId))
       }
-    } else {
-      setProducts((prev) => prev.filter((p) => p.id !== id))
+      await deleteCatalogueProduct(Number(id))
+      await handleReloadBackend()
       setProductToDelete(null)
-      setMutationNotice('Demo product removed from view.')
+      setMutationNotice(`Product ID ${id} deleted.`)
+    } catch (err) {
+      await handleReloadBackend()
+      const detail = err.response?.data?.detail || err.message || 'Error deleting product'
+      setMutationNotice(`Cannot delete product: ${detail}`)
     }
   }
 
@@ -429,7 +411,7 @@ export function CataloguePage() {
           ) : (
             <span className="inline-flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded font-medium">
               <Info className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />
-              <span>Demo Dataset Active {apiError ? `(${apiError})` : '(Backend empty)'}</span>
+              <span>Catalogue backend unavailable{apiError ? ` (${apiError})` : ''}</span>
             </span>
           )}
 

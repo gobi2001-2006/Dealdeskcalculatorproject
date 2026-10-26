@@ -488,31 +488,34 @@ def create_pack_service(
                 for it in items:
                     fid = it.feature_id if hasattr(it, "feature_id") else it["feature_id"]
                     is_req = it.is_required if hasattr(it, "is_required") else it.get("is_required", True)
-                    feat = db.get(Feature, fid)
-                    if feat:
-                        db.add(
-                            PackItem(
-                                pack_version_id=ver.id,
-                                feature_id=fid,
-                                is_required=is_req,
-                            )
+                    if db.get(Feature, fid) is None:
+                        raise ResourceNotFoundError(f"Feature with id {fid} not found")
+                    db.add(
+                        PackItem(
+                            pack_version_id=ver.id,
+                            feature_id=fid,
+                            is_required=is_req,
                         )
+                    )
             elif feature_ids:
                 req_set = set(required_feature_ids) if required_feature_ids is not None else set(feature_ids)
                 for fid in set(feature_ids):
-                    feat = db.get(Feature, fid)
-                    if feat:
-                        db.add(
-                            PackItem(
-                                pack_version_id=ver.id,
-                                feature_id=fid,
-                                is_required=(fid in req_set),
-                            )
+                    if db.get(Feature, fid) is None:
+                        raise ResourceNotFoundError(f"Feature with id {fid} not found")
+                    db.add(
+                        PackItem(
+                            pack_version_id=ver.id,
+                            feature_id=fid,
+                            is_required=(fid in req_set),
                         )
+                    )
 
         db.commit()
         db.refresh(pack)
         return pack
+    except ResourceNotFoundError:
+        db.rollback()
+        raise
     except IntegrityError as exc:
         db.rollback()
         logger.warning("Integrity error creating pack: %s", exc)
@@ -630,10 +633,25 @@ def update_pack_version_service(db: Session, pack_version_id: int, data: PackVer
         raise ResourceNotFoundError(f"PackVersion with id {pack_version_id} not found")
     if ver.status == "locked" and data.status != "locked":
         raise ProposalConflictError("Cannot modify a locked pack version")
+    if ver.status == "superseded" and data.status not in (None, "superseded"):
+        raise ProposalConflictError("A superseded pack version cannot be reactivated; create a new version")
 
     update_dict = data.model_dump(exclude_unset=True)
     for field, val in update_dict.items():
         setattr(ver, field, val)
+
+    # One active version per pack: activating a version supersedes the previously active one,
+    # so "the active version" used by the configurator is never ambiguous.
+    if update_dict.get("status") == "active":
+        others = db.execute(
+            select(PackVersion).where(
+                PackVersion.pack_id == ver.pack_id,
+                PackVersion.id != ver.id,
+                PackVersion.status == "active",
+            )
+        ).scalars().all()
+        for other in others:
+            other.status = "superseded"
 
     if ver.status == "locked" and not ver.locked_at:
         ver.locked_at = datetime.now(timezone.utc)
@@ -658,8 +676,8 @@ def add_item_to_pack_version(
     ver = db.get(PackVersion, pack_version_id)
     if not ver:
         raise ResourceNotFoundError(f"PackVersion with id {pack_version_id} not found")
-    if ver.status == "locked":
-        raise ProposalConflictError("Cannot add items to a locked pack version")
+    if ver.status in ("locked", "superseded"):
+        raise ProposalConflictError(f"Cannot add items to a {ver.status} pack version")
 
     feat = db.get(Feature, feature_id)
     if not feat:
@@ -690,8 +708,8 @@ def remove_item_from_pack_version(db: Session, pack_version_id: int, feature_id:
     ver = db.get(PackVersion, pack_version_id)
     if not ver:
         raise ResourceNotFoundError(f"PackVersion with id {pack_version_id} not found")
-    if ver.status == "locked":
-        raise ProposalConflictError("Cannot remove items from a locked pack version")
+    if ver.status in ("locked", "superseded"):
+        raise ProposalConflictError(f"Cannot remove items from a {ver.status} pack version")
 
     item = db.execute(
         select(PackItem).where(
@@ -721,8 +739,8 @@ def update_item_in_pack_version(
     ver = db.get(PackVersion, pack_version_id)
     if not ver:
         raise ResourceNotFoundError(f"PackVersion with id {pack_version_id} not found")
-    if ver.status == "locked":
-        raise ProposalConflictError("Cannot modify items in a locked pack version")
+    if ver.status in ("locked", "superseded"):
+        raise ProposalConflictError(f"Cannot modify items in a {ver.status} pack version")
 
     item = db.execute(
         select(PackItem).where(
@@ -753,8 +771,8 @@ def sync_pack_version_items_service(
     ver = db.get(PackVersion, pack_version_id)
     if not ver:
         raise ResourceNotFoundError(f"PackVersion with id {pack_version_id} not found")
-    if ver.status == "locked":
-        raise ProposalConflictError("Cannot modify items in a locked pack version")
+    if ver.status in ("locked", "superseded"):
+        raise ProposalConflictError(f"Cannot modify items in a {ver.status} pack version")
 
     existing_items = db.execute(
         select(PackItem).where(PackItem.pack_version_id == pack_version_id)

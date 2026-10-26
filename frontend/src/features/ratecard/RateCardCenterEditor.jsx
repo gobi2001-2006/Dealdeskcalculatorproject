@@ -13,7 +13,6 @@ import {
   TableProperties,
   Layers,
   Wrench,
-  Percent,
   Package,
   Plus,
 } from 'lucide-react'
@@ -22,23 +21,18 @@ import { FeatureRatesSection } from './FeatureRatesSection'
 import { PlatformSubscriptionSection } from './PlatformSubscriptionSection'
 import { ServiceRatesSection } from './ServiceRatesSection'
 import { RateCardRegistryTable } from './RateCardRegistryTable'
-import {
-  DEPLOYMENT_MODELS,
-  PRICING_MODELS,
-  INITIAL_PRICING_TIERS,
-} from '../../data/rateCardData'
 import { getCurrencySymbol } from './rateCardFormatters'
 
 export function RateCardCenterEditor({
   apiError = null,
   selectedDeployment,
   onChangeDeployment,
-  deploymentModels = DEPLOYMENT_MODELS,
+  deploymentModels = [],
   selectedPricingModel,
   onChangePricingModel,
-  pricingModels = PRICING_MODELS,
+  pricingModels = [],
   deploymentPricingOptions = [],
-  pricingTiers = INITIAL_PRICING_TIERS,
+  pricingTiers = [],
   selectedCountryId,
   onChangeCountry,
   countries = [],
@@ -66,9 +60,6 @@ export function RateCardCenterEditor({
   onRemoveFeatureRate,
   onOpenAddFeatureRate,
   // Platform + Subscription
-  platformConfig,
-  onChangePlatformConfig,
-  onResetPlatformDemo,
   isVersionLocked = false,
   // Full Registry Table Data & Handlers
   rawRateCards = [],
@@ -229,8 +220,7 @@ export function RateCardCenterEditor({
           prPricingLower.includes('subscription'))) ||
       (isLicenseAMC &&
         (prPricingLower.includes('license') ||
-          prPricingLower.includes('amc') ||
-          pr.pricingModelId === 3))
+          prPricingLower.includes('amc')))
 
     const matchFamily =
       selectedFamilyId === 'all' ||
@@ -275,16 +265,13 @@ export function RateCardCenterEditor({
       frPricingLower === activePricingNameLower ||
       (isPEPM &&
         (frPricingLower === 'pepm' ||
-          frPricingLower.includes('per employee') ||
-          fr.pricingModelId === 1)) ||
+          frPricingLower.includes('per employee'))) ||
       (isPlatformSubscription &&
         (frPricingLower.includes('platform') ||
-          frPricingLower.includes('subscription') ||
-          fr.pricingModelId === 2)) ||
+          frPricingLower.includes('subscription'))) ||
       (isLicenseAMC &&
         (frPricingLower.includes('license') ||
-          frPricingLower.includes('amc') ||
-          fr.pricingModelId === 3))
+          frPricingLower.includes('amc')))
 
     const matchFamily =
       selectedFamilyId === 'all' ||
@@ -903,9 +890,6 @@ export function RateCardCenterEditor({
         /* Section 3: Platform + Subscription with Pack & Feature Configuration */
         <div className="space-y-8">
           <PlatformSubscriptionSection
-            platformConfig={platformConfig}
-            onChangeConfig={onChangePlatformConfig}
-            onResetToSpreadsheetDemo={onResetPlatformDemo}
             activeCurrencySymbol={activeCurrencySymbol}
             activeCurrencyCode={activeCountry?.currency}
             isVersionLocked={isVersionLocked}

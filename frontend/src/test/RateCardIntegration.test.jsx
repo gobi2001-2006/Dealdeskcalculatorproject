@@ -161,6 +161,8 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
         tier_id: 1,
         pack_version_id: 38,
         feature_id: null,
+        uom_id: 1,
+        uom: { id: 1, code: 'employee', name: 'Active Employees (with ESS)' },
         unit_rate: 85.0,
       },
       {
@@ -437,7 +439,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
       ).toBeInTheDocument()
     })
 
-    // UOM label is displayed
+    // The UOM label comes from the saved rate card's unit of measure (not a hardcoded label)
     expect(screen.getAllByText('Active Employees (with ESS)').length).toBeGreaterThan(0)
   })
 

@@ -1,9 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useMemo, useCallback } from 'react'
-import {
-  INITIAL_CLIENT_INFO,
-  createDefaultCountryConfig,
-} from '../features/calculator/calculatorData'
+import { INITIAL_CLIENT_INFO } from '../features/calculator/calculatorData'
 
 export const ProposalContext = createContext(null)
 
@@ -14,12 +11,11 @@ export function ProposalProvider({ children, initialProposal = null }) {
   )
   const [clientErrors, setClientErrors] = useState({})
 
-  // Phase B: Country Configurations
-  // Defaults to 1 configured country (India) unless provided
+  // Phase B: Country Configurations (a new proposal starts with none)
   const [countryConfigs, setCountryConfigs] = useState(
     initialProposal?.countryConfigs !== undefined
       ? initialProposal.countryConfigs
-      : [createDefaultCountryConfig('c-in', 1, false)]
+      : []
   )
 
   // Focused country/section context for Page 5
@@ -28,20 +24,20 @@ export function ProposalProvider({ children, initialProposal = null }) {
   )
   const [focusedFamilyId, setFocusedFamilyId] = useState(null)
 
-  // Page 5: Line-item discounts state
-  // Keyed by `${countryId}:${familyId}:${itemId}` -> { type: 'percentage'|'fixed', value: string|number, reason: string }
+  // Page 5: Line-item discounts (percentage only), saved on the backend line item.
+  // Keyed by line target `pack:<pack_version_id>` / `feature:<feature_id>` -> { value, reason }
   const [lineItemDiscounts, setLineItemDiscounts] = useState(
     initialProposal?.lineItemDiscounts || {}
   )
 
-  // Page 5: Overall country-level discounts
-  // Keyed by countryId -> { type: 'percentage', value: string|number, reason: string }
+  // Page 5: Overall subscription discount (percentage), sent to the calculation for every product.
+  // Key 'proposal' -> { value, reason }
   const [overallDiscounts, setOverallDiscounts] = useState(
     initialProposal?.overallDiscounts || {}
   )
 
-  // Page 5: Service-line discounts
-  // Keyed by serviceLineId -> { type: 'percentage'|'fixed', value: string|number, reason: string }
+  // Page 5: Overall services discount (percentage, one per product - never per service line).
+  // Key 'proposal' -> { value, reason }
   const [serviceDiscounts, setServiceDiscounts] = useState(
     initialProposal?.serviceDiscounts || {}
   )
@@ -187,12 +183,12 @@ export function useProposal() {
       clientErrors: {},
       setClientErrors: () => {},
       updateClientInfo: () => {},
-      countryConfigs: [createDefaultCountryConfig('c-in', 1, false)],
+      countryConfigs: [],
       setCountryConfigs: () => {},
       addCountry: () => {},
       updateCountry: () => {},
       removeCountry: () => {},
-      focusedCountryId: 'c-in',
+      focusedCountryId: null,
       setFocusedCountryId: () => {},
       focusedFamilyId: null,
       setFocusedFamilyId: () => {},

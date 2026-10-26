@@ -45,6 +45,7 @@ import {
   getRateCards,
   upsertRateCard,
   deleteRateCardGroup,
+  getUnitsOfMeasure,
 } from '../../api/ratesApi'
 
 import {
@@ -55,24 +56,40 @@ import {
 
 import { getPacks } from '../../api/packsApi'
 
-// Initial Datasets (Used as offline fallback)
-import {
-  INITIAL_PRODUCT_FAMILIES,
-  INITIAL_PRODUCTS,
-} from '../../data/catalogueData'
-import { INITIAL_PACKS } from '../../data/packsData'
-import {
-  INITIAL_COUNTRIES,
-  INITIAL_PRICING_TIERS,
-  DEPLOYMENT_MODELS,
-  PRICING_MODELS,
-  INITIAL_HOURLY_RATES,
-  INITIAL_EXCHANGE_RATES,
-  INITIAL_PACK_RATES,
-  INITIAL_FEATURE_RATES,
-  SPREADSHEET_DEMO_PLATFORM_CONFIG,
-} from '../../data/rateCardData'
 import { getCurrencySymbol } from './rateCardFormatters'
+
+// Writes must reference saved records: an unresolved id stops the save instead of
+// silently falling back to an arbitrary record such as id 1.
+function requireId(value, label) {
+  const n = Number(value)
+  if (Number.isInteger(n) && n > 0) return n
+  throw new Error(`${label} is not a saved record. Reload the page and select it again.`)
+}
+
+// A price typed by the user: blank -> undefined (not sent), otherwise a non-negative number.
+function parseAmount(value, label = 'Rate') {
+  if (value === undefined || value === null || String(value).trim() === '') return undefined
+  const n = Number(value)
+  if (Number.isNaN(n) || n < 0) throw new Error(`${label} must be a non-negative number.`)
+  return n
+}
+
+// The pack version a rate card prices: the active version, otherwise the newest one.
+function pricedPackVersion(bp) {
+  const versions = [...(bp?.pack_versions || bp?.versions || [])].sort((a, b) => b.version_no - a.version_no)
+  return versions.find((v) => v.status === 'active') || versions[0] || null
+}
+
+// The customer tier an edited rate cell belongs to. Cells are keyed by the tier's database id
+// (tier_<id> / fixed_tier_<id>); legacy positional keys map to the tier list order.
+function tierFromField(field, tiers) {
+  const f = String(field).replace(/^fixed_/, '')
+  const byId = f.match(/^tier_(\d+)$/)
+  if (byId) return tiers.find((t) => String(t.id) === byId[1]) || null
+  const legacy = f.match(/^tier([123])Rate$/)
+  if (legacy) return tiers[Number(legacy[1]) - 1] || null
+  return null
+}
 
 // Helper to extract human-readable error from backend responses (including Pydantic 422 lists)
 function formatApiError(err, fallback = 'Network connection failed') {
@@ -90,18 +107,18 @@ function formatApiError(err, fallback = 'Network connection failed') {
 
 export function RateCardPage() {
   // 1. Shared Catalogue & Pack Data
-  const [families, setFamilies] = useState(INITIAL_PRODUCT_FAMILIES)
-  const [products, setProducts] = useState(INITIAL_PRODUCTS)
+  const [families, setFamilies] = useState([])
+  const [products, setProducts] = useState([])
   const [features, setFeatures] = useState([])
-  const [packs, setPacks] = useState(INITIAL_PACKS)
+  const [packs, setPacks] = useState([])
 
   // 2. Master Data Catalogs
-  const [countries, setCountries] = useState(INITIAL_COUNTRIES)
-  const [pricingTiers, setPricingTiers] = useState(INITIAL_PRICING_TIERS)
-  const [deploymentModels, setDeploymentModels] = useState(DEPLOYMENT_MODELS)
-  const [pricingModels, setPricingModels] = useState(PRICING_MODELS)
-  const [hourlyRates, setHourlyRates] = useState(INITIAL_HOURLY_RATES)
-  const [exchangeRates, setExchangeRates] = useState(INITIAL_EXCHANGE_RATES)
+  const [countries, setCountries] = useState([])
+  const [pricingTiers, setPricingTiers] = useState([])
+  const [deploymentModels, setDeploymentModels] = useState([])
+  const [pricingModels, setPricingModels] = useState([])
+  const [hourlyRates, setHourlyRates] = useState([])
+  const [exchangeRates, setExchangeRates] = useState([])
   const [currenciesList, setCurrenciesList] = useState([])
   const [deploymentPricingOptions, setDeploymentPricingOptions] = useState([])
 
@@ -113,9 +130,9 @@ export function RateCardPage() {
   // 4. Selection Contexts
   const [selectedFamilyId, setSelectedFamilyId] = useState('all')
   const [modalFamilyId, setModalFamilyId] = useState(null)
-  const [selectedDeployment, setSelectedDeployment] = useState('Shared Cloud')
-  const [selectedPricingModel, setSelectedPricingModel] = useState('PEPM')
-  const [selectedCountryId, setSelectedCountryId] = useState('c-in')
+  const [selectedDeployment, setSelectedDeployment] = useState('')
+  const [selectedPricingModel, setSelectedPricingModel] = useState('')
+  const [selectedCountryId, setSelectedCountryId] = useState('')
   const [mobileView, setMobileView] = useState('center') // 'products' | 'center' | 'masters'
 
   const activeCountry =
@@ -127,9 +144,9 @@ export function RateCardPage() {
   const activeCurrencySymbol = getCurrencySymbol(activeCountry, '$')
 
   // 5. Rate Cards State (Independent state for PEPM & Platform Subscription)
-  const [packRates, setPackRates] = useState(INITIAL_PACK_RATES)
-  const [featureRates, setFeatureRates] = useState(INITIAL_FEATURE_RATES)
-  const [platformConfig, setPlatformConfig] = useState(SPREADSHEET_DEMO_PLATFORM_CONFIG)
+  const [packRates, setPackRates] = useState([])
+  const [featureRates, setFeatureRates] = useState([])
+  const [uoms, setUoms] = useState([])
   const [rawRateCards, setRawRateCards] = useState([])
 
   // 6. Backend Integration State
@@ -188,13 +205,13 @@ export function RateCardPage() {
       cards.forEach((rc) => {
         const depObj =
           deploymentsList.find((d) => d.id === rc.deployment_model_id) || {
-            name: 'Shared Cloud',
+            name: rc.deployment_model?.name || `Deployment #${rc.deployment_model_id}`,
             id: rc.deployment_model_id,
           }
         const pmObj =
           pricingModelsList.find((p) => p.id === rc.pricing_model_id) || {
-            code: 'PEPM',
-            name: 'PEPM',
+            code: rc.pricing_model?.code || `pricing-model-${rc.pricing_model_id}`,
+            name: rc.pricing_model?.name || `Pricing model #${rc.pricing_model_id}`,
             id: rc.pricing_model_id,
           }
 
@@ -229,7 +246,9 @@ export function RateCardPage() {
               pricingModel: pmObj.code,
               pricingModelId: rc.pricing_model_id,
               countryId: rc.country_id,
-              unitOfMeasure: 'Active Employees (with ESS)',
+              unitOfMeasure: rc.uom?.name || `UoM #${rc.uom_id}`,
+              uomId: rc.uom_id,
+              currencyCode: rc.currency?.code || '',
               tier1Rate: '',
               tier2Rate: '',
               tier3Rate: '',
@@ -246,15 +265,6 @@ export function RateCardPage() {
             row.tier2Rate = rateVal
             row.fixed_tier2Rate = fixedVal
           } else if (tierIdx === 2) {
-            row.tier3Rate = rateVal
-            row.fixed_tier3Rate = fixedVal
-          } else if (rc.tier_id === 1) {
-            row.tier1Rate = rateVal
-            row.fixed_tier1Rate = fixedVal
-          } else if (rc.tier_id === 2) {
-            row.tier2Rate = rateVal
-            row.fixed_tier2Rate = fixedVal
-          } else if (rc.tier_id === 3) {
             row.tier3Rate = rateVal
             row.fixed_tier3Rate = fixedVal
           }
@@ -296,7 +306,9 @@ export function RateCardPage() {
                 (featObj?.classification || rc.feature?.classification) === 'ai_enabled'
                   ? 'AI Agent Module'
                   : 'Adrenalin Native',
-              unitOfMeasure: 'Active Employees (with ESS)',
+              unitOfMeasure: rc.uom?.name || `UoM #${rc.uom_id}`,
+              uomId: rc.uom_id,
+              currencyCode: rc.currency?.code || '',
               tier1Rate: '',
               tier2Rate: '',
               tier3Rate: '',
@@ -308,13 +320,13 @@ export function RateCardPage() {
           )
           const rateVal = String(rc.unit_rate ?? '')
           const fixedVal = String(rc.fixed_fee ?? '')
-          if (tierIdx === 0 || rc.tier_id === 1 || String(rc.tier_id).endsWith('1')) {
+          if (tierIdx === 0) {
             row.tier1Rate = rateVal
             row.fixed_tier1Rate = fixedVal
-          } else if (tierIdx === 1 || rc.tier_id === 2 || String(rc.tier_id).endsWith('2')) {
+          } else if (tierIdx === 1) {
             row.tier2Rate = rateVal
             row.fixed_tier2Rate = fixedVal
-          } else if (tierIdx === 2 || rc.tier_id === 3 || String(rc.tier_id).endsWith('3')) {
+          } else if (tierIdx === 2) {
             row.tier3Rate = rateVal
             row.fixed_tier3Rate = fixedVal
           }
@@ -323,12 +335,6 @@ export function RateCardPage() {
           row[rc.tier_id] = rateVal
           row[`fixed_tier_${rc.tier_id}`] = fixedVal
           row[`fixed_${rc.tier_id}Rate`] = fixedVal
-          if (tierIdx >= 0) {
-            row[`tier_${tierIdx + 1}`] = rateVal
-            row[`tier${tierIdx + 1}Rate`] = rateVal
-            row[`fixed_tier_${tierIdx + 1}`] = fixedVal
-            row[`fixed_tier${tierIdx + 1}Rate`] = fixedVal
-          }
         }
       })
 
@@ -343,46 +349,6 @@ export function RateCardPage() {
         setFeatureRates([])
       }
 
-      // Check for Platform + Subscription rate cards to initialize platformConfig
-      const platCards = cards.filter((rc) => {
-        const pmObj = pricingModelsList.find((p) => p.id === rc.pricing_model_id)
-        const isPlat =
-          pmObj?.code === 'platform_subscription' ||
-          pmObj?.code === 'Platform Subscription' ||
-          (pmObj?.name || '').includes('Platform')
-        return isPlat || rc.fixed_fee != null
-      })
-
-      if (platCards.length > 0) {
-        setPlatformConfig((prev) => {
-          const next = { ...prev }
-          platCards.forEach((rc) => {
-            const tierIdx = tiersList.findIndex((t) => t.id === rc.tier_id)
-            const tierKey =
-              tierIdx === 0
-                ? 'tier1'
-                : tierIdx === 1
-                ? 'tier2'
-                : tierIdx === 2
-                ? 'tier3'
-                : `tier${rc.tier_id}`
-            if (next[tierKey]) {
-              next[tierKey] = {
-                ...next[tierKey],
-                annualPlatformFee:
-                  rc.fixed_fee != null
-                    ? String(rc.fixed_fee)
-                    : next[tierKey].annualPlatformFee,
-                monthlySubscriptionFee:
-                  rc.unit_rate != null
-                    ? String(rc.unit_rate)
-                    : next[tierKey].monthlySubscriptionFee,
-              }
-            }
-          })
-          return next
-        })
-      }
     },
     [deploymentModels, pricingModels, pricingTiers, packs, products],
   )
@@ -411,6 +377,9 @@ export function RateCardPage() {
     async function fetchData() {
       setIsLoading(true)
       setApiError(null)
+      Promise.resolve(getUnitsOfMeasure?.())
+        .then((list) => isMounted && setUoms(Array.isArray(list) ? list : []))
+        .catch(() => isMounted && setUoms([]))
 
       try {
         let fetchErr = null
@@ -475,7 +444,7 @@ export function RateCardPage() {
       if (Array.isArray(backendCountries) && backendCountries.length > 0) {
         // 1. Countries
         const mappedCountries = backendCountries.map((c) => {
-          const currCode = c.currency?.code || c.currency_code || 'USD'
+          const currCode = c.currency?.code || c.currency_code || ''
           const sym =
             c.currency?.symbol && c.currency.symbol !== '$'
               ? c.currency.symbol
@@ -540,7 +509,8 @@ export function RateCardPage() {
             code: pm.code,
             name: pm.name,
             description: pm.description || '',
-            unitOfMeasure: 'Active Employees (with ESS)',
+            uomLockedId: pm.uom_locked_id || null,
+            unitOfMeasure: pm.uom_locked?.name || '',
           }))
           setPricingModels(mappedPricingModels)
 
@@ -569,7 +539,7 @@ export function RateCardPage() {
             countryId: sr.country_id,
             serviceLine: sr.role_name,
             country: sr.country?.name || '',
-            currency: sr.currency?.code || sr.country?.currency?.code || 'USD',
+            currency: sr.currency?.code || sr.country?.currency?.code || '',
             hourlyRate: String(sr.hourly_rate),
             dailyRate: sr.daily_rate != null ? String(sr.daily_rate) : null,
             standardHoursPerDay: sr.hours_per_day,
@@ -582,11 +552,11 @@ export function RateCardPage() {
         if (Array.isArray(backendFxRates)) {
           const mappedFx = backendFxRates.map((fx) => ({
             id: fx.id,
-            sourceCurrency: fx.from_currency?.code || 'USD',
-            targetCurrency: fx.to_currency?.code || 'INR',
+            sourceCurrency: fx.from_currency?.code || `currency #${fx.from_currency_id}`,
+            targetCurrency: fx.to_currency?.code || `currency #${fx.to_currency_id}`,
             ratePerUnit: String(fx.rate),
             effectiveDate: String(fx.effective_date),
-            source: fx.source || 'Corporate Treasury',
+            source: fx.rate_source || '—',
           }))
           setExchangeRates(mappedFx)
         }
@@ -661,7 +631,7 @@ export function RateCardPage() {
 
         if (Array.isArray(backendPacks) && backendPacks.length > 0) {
           mappedPacks = backendPacks.map((bp) => {
-            const latestVer = bp.pack_versions?.[0] || bp.versions?.[0]
+            const latestVer = pricedPackVersion(bp)
             const rawItems = latestVer?.pack_items || []
             const mappedItems = rawItems.map((it) => ({
               id: it.id,
@@ -731,7 +701,10 @@ export function RateCardPage() {
             backendProducts,
           )
         } else {
+          // No saved rates for this version: show none (never keep earlier or demo rows).
           setRawRateCards([])
+          setPackRates([])
+          setFeatureRates([])
         }
 
         setIsLiveBackendData(true)
@@ -780,29 +753,24 @@ export function RateCardPage() {
       return
     }
 
-    // Determine tier number and all alias keys
-    let tierNum = 1
+    // Determine the edited tier exactly (never from digits that happen to be in the key)
     const clean = String(field).toLowerCase()
-    if (clean.includes('3')) tierNum = 3
-    else if (clean.includes('2')) tierNum = 2
-    else tierNum = 1
-
-    const tierObj = pricingTiers[tierNum - 1] || { id: tierNum }
-    const tierIdVal = tierObj.id
+    const tierObj = tierFromField(field, pricingTiers)
+    const tierIdVal = tierObj?.id ?? null
+    const tierNum = tierObj ? pricingTiers.indexOf(tierObj) + 1 : null
     const isFixed = clean.includes('fixed')
 
     const fieldAliases = { [field]: value }
-    if (isFixed) {
-      fieldAliases[`fixed_tier_${tierIdVal}`] = value
-      fieldAliases[`fixed_tier${tierNum}Rate`] = value
-      fieldAliases[`fixed_${tierIdVal}Rate`] = value
-      fieldAliases[`fixed_tier_${tierNum}`] = value
-    } else {
-      fieldAliases[`tier_${tierIdVal}`] = value
-      fieldAliases[`tier${tierNum}Rate`] = value
-      fieldAliases[`${tierIdVal}Rate`] = value
-      fieldAliases[`tier_${tierNum}`] = value
-      fieldAliases[`tier${tierNum}`] = value
+    if (tierIdVal !== null) {
+      if (isFixed) {
+        fieldAliases[`fixed_tier_${tierIdVal}`] = value
+        fieldAliases[`fixed_${tierIdVal}Rate`] = value
+        if (tierNum <= 3) fieldAliases[`fixed_tier${tierNum}Rate`] = value
+      } else {
+        fieldAliases[`tier_${tierIdVal}`] = value
+        fieldAliases[`${tierIdVal}Rate`] = value
+        if (tierNum <= 3) fieldAliases[`tier${tierNum}Rate`] = value
+      }
     }
 
     setPackRates((prev) =>
@@ -822,14 +790,14 @@ export function RateCardPage() {
         if (!rateRow || !rateRow.packVersionId) return
 
         const isFixedField = String(field).toLowerCase().includes('fixed')
-        let tierId = 1
+        let tierId = null
         const cleanField = String(field).replace(/^fixed_/, '')
         if (cleanField === 'tier1Rate' || cleanField === '1Rate') {
-          tierId = pricingTiers[0]?.id || 1
+          tierId = requireId(pricingTiers[0]?.id, 'Customer tier')
         } else if (cleanField === 'tier2Rate' || cleanField === '2Rate') {
-          tierId = pricingTiers[1]?.id || 2
+          tierId = requireId(pricingTiers[1]?.id, 'Customer tier')
         } else if (cleanField === 'tier3Rate' || cleanField === '3Rate') {
-          tierId = pricingTiers[2]?.id || 3
+          tierId = requireId(pricingTiers[2]?.id, 'Customer tier')
         } else {
           const m1 = cleanField.match(/^tier_(\d+)$/)
           const m2 = cleanField.match(/^(\d+)Rate$/)
@@ -845,29 +813,30 @@ export function RateCardPage() {
               (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
           ) || countries[0]
         const activeCountryId =
-          typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
+          requireId(activeCountryObj?.id, 'Country')
         const countryIdToPersist =
           typeof rateRow.countryId === 'number' ? rateRow.countryId : activeCountryId
 
         const payload = {
-          rate_card_version_id: activeVersion?.id || 1,
+          rate_card_version_id: requireId(activeVersion?.id, 'Rate card version'),
           country_id: countryIdToPersist,
-          deployment_model_id: rateRow.deploymentModelId || 1,
-          pricing_model_id: rateRow.pricingModelId || 1,
-          tier_id: tierId,
+          deployment_model_id: requireId(rateRow.deploymentModelId, 'Deployment model'),
+          pricing_model_id: requireId(rateRow.pricingModelId, 'Pricing model'),
+          tier_id: requireId(tierId, 'Customer tier'),
           pack_version_id: rateRow.packVersionId,
+          ...(rateRow.uomId ? { uom_id: rateRow.uomId } : {}),
         }
         if (isFixedField) {
-          payload.fixed_fee = parseFloat(value) || 0
+          payload.fixed_fee = parseAmount(value)
           const existingUnit = rateRow[`tier_${tierId}`] ?? rateRow[`tier${tierId}Rate`]
           if (existingUnit !== undefined && existingUnit !== '') {
-            payload.unit_rate = parseFloat(existingUnit) || 0
+            payload.unit_rate = parseAmount(existingUnit)
           }
         } else {
-          payload.unit_rate = parseFloat(value) || 0
+          payload.unit_rate = parseAmount(value)
           const existingFixed = rateRow[`fixed_tier_${tierId}`] ?? rateRow[`fixed_tier${tierId}Rate`]
           if (existingFixed !== undefined && existingFixed !== '') {
-            payload.fixed_fee = parseFloat(existingFixed) || 0
+            payload.fixed_fee = parseAmount(existingFixed)
           }
         }
 
@@ -911,10 +880,10 @@ export function RateCardPage() {
                   (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
               ) || countries[0]
             const activeCountryId =
-              typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
-            const depId = rate.deploymentModelId || 1
-            const pmId = rate.pricingModelId || 1
-            const versionId = activeVersion?.id || 1
+              requireId(activeCountryObj?.id, 'Country')
+            const depId = requireId(rate.deploymentModelId, 'Deployment model')
+            const pmId = requireId(rate.pricingModelId, 'Pricing model')
+            const versionId = requireId(activeVersion?.id, 'Rate card version')
 
             await deleteRateCardGroup({
               rate_card_version_id: versionId,
@@ -959,27 +928,27 @@ export function RateCardPage() {
               (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
           ) || countries[0]
         const activeCountryId =
-          typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
+          requireId(activeCountryObj?.id, 'Country')
 
         const activeDepObj =
           deploymentModels.find(
             (d) => d.name === (newRate.deploymentModel || selectedDeployment),
           ) || deploymentModels[0]
-        const depId = typeof activeDepObj?.id === 'number' ? activeDepObj.id : 1
+        const depId = requireId(activeDepObj?.id, 'Deployment model')
 
         const activePmObj =
           pricingModels.find(
             (p) => p.code === (newRate.pricingModel || selectedPricingModel),
           ) || pricingModels[0]
-        const pmId = typeof activePmObj?.id === 'number' ? activePmObj.id : 1
+        const pmId = requireId(activePmObj?.id, 'Pricing model')
 
         const packObj = packs.find(
           (p) => p.id === newRate.packId || p.packId === newRate.packId,
         )
         const packVersionId =
-          packObj?.latestVersionId || packObj?.versions?.[0]?.id || 38
+          requireId(packObj?.latestVersionId, 'Pack version')
 
-        const versionId = activeVersion?.id || 1
+        const versionId = requireId(activeVersion?.id, 'Rate card version')
 
         // Upsert across all dynamic tiers
         const tierEntries = pricingTiers.map((tier, idx) => {
@@ -1009,7 +978,7 @@ export function RateCardPage() {
             entry.fixed !== ''
 
           if (hasRate || hasFixed) {
-            const tierId = typeof entry.tier.id === 'number' ? entry.tier.id : 1
+            const tierId = requireId(entry.tier.id, 'Customer tier')
             const payload = {
               rate_card_version_id: versionId,
               country_id: activeCountryId,
@@ -1017,12 +986,13 @@ export function RateCardPage() {
               pricing_model_id: pmId,
               tier_id: tierId,
               pack_version_id: packVersionId,
+              ...(newRate.uomId ? { uom_id: Number(newRate.uomId) } : {}),
             }
             if (hasRate) {
-              payload.unit_rate = parseFloat(entry.rate) || 0
+              payload.unit_rate = parseAmount(entry.rate)
             }
             if (hasFixed) {
-              payload.fixed_fee = parseFloat(entry.fixed) || 0
+              payload.fixed_fee = parseAmount(entry.fixed)
             }
             await upsertRateCard(payload)
           }
@@ -1052,7 +1022,7 @@ export function RateCardPage() {
           pricingModel: activePmObj.code,
           pricingModelId: pmId,
           countryId: activeCountryId,
-          unitOfMeasure: newRate.uom || newRate.unitOfMeasure || 'Active Employees (with ESS)',
+          unitOfMeasure: newRate.unitOfMeasure || '',
           tier1Rate: newRate.tier1Rate || newRate.tierRates?.[pricingTiers[0]?.id] || '',
           tier2Rate: newRate.tier2Rate || newRate.tierRates?.[pricingTiers[1]?.id] || '',
           tier3Rate: newRate.tier3Rate || newRate.tierRates?.[pricingTiers[2]?.id] || '',
@@ -1100,12 +1070,7 @@ export function RateCardPage() {
           )
         }
       } else {
-        const rateWithId = {
-          ...newRate,
-          id: newRate.id || `pr-${Date.now()}`,
-        }
-        setPackRates((prev) => [...prev, rateWithId])
-        showToast(`Pack rate for "${newRate.packName}" configured.`)
+        showToast('Cannot save pack rate: the backend is not available.', 'error')
       }
     } catch (err) {
       showToast(
@@ -1156,29 +1121,24 @@ export function RateCardPage() {
         ? Number(featObj.id)
         : null
 
-    // Determine tier number and all alias keys
-    let tierNum = 1
+    // Determine the edited tier exactly (never from digits that happen to be in the key)
     const clean = String(field).toLowerCase()
-    if (clean.includes('3')) tierNum = 3
-    else if (clean.includes('2')) tierNum = 2
-    else tierNum = 1
-
-    const tierObj = pricingTiers[tierNum - 1] || { id: tierNum }
-    const tierIdVal = tierObj.id
+    const tierObj = tierFromField(field, pricingTiers)
+    const tierIdVal = tierObj?.id ?? null
+    const tierNum = tierObj ? pricingTiers.indexOf(tierObj) + 1 : null
     const isFixed = clean.includes('fixed')
 
     const fieldAliases = { [field]: value }
-    if (isFixed) {
-      fieldAliases[`fixed_tier_${tierIdVal}`] = value
-      fieldAliases[`fixed_tier${tierNum}Rate`] = value
-      fieldAliases[`fixed_${tierIdVal}Rate`] = value
-      fieldAliases[`fixed_tier_${tierNum}`] = value
-    } else {
-      fieldAliases[`tier_${tierIdVal}`] = value
-      fieldAliases[`tier${tierNum}Rate`] = value
-      fieldAliases[`${tierIdVal}Rate`] = value
-      fieldAliases[`tier_${tierNum}`] = value
-      fieldAliases[`tier${tierNum}`] = value
+    if (tierIdVal !== null) {
+      if (isFixed) {
+        fieldAliases[`fixed_tier_${tierIdVal}`] = value
+        fieldAliases[`fixed_${tierIdVal}Rate`] = value
+        if (tierNum <= 3) fieldAliases[`fixed_tier${tierNum}Rate`] = value
+      } else {
+        fieldAliases[`tier_${tierIdVal}`] = value
+        fieldAliases[`${tierIdVal}Rate`] = value
+        if (tierNum <= 3) fieldAliases[`tier${tierNum}Rate`] = value
+      }
     }
 
     setFeatureRates((prev) => {
@@ -1237,9 +1197,9 @@ export function RateCardPage() {
           deploymentModelId: activeDepObj.id,
           pricingModel: activePmObj.code,
           pricingModelId: activePmObj.id,
-          countryId: activeCountryObj?.id || selectedCountryId || 1,
+          countryId: activeCountryObj?.id ?? null,
           productType: featObj?.productType || 'Adrenalin Native',
-          unitOfMeasure: 'Active Employees (with ESS)',
+          unitOfMeasure: '',
           ...fieldAliases,
         }
         return [...prev, newRow]
@@ -1263,7 +1223,7 @@ export function RateCardPage() {
               (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
           ) || countries[0]
         const activeCountryId =
-          typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
+          requireId(activeCountryObj?.id, 'Country')
 
         const activeDepObj =
           deploymentModels.find(
@@ -1311,34 +1271,33 @@ export function RateCardPage() {
           return
         }
 
-        const tierId = typeof tierIdVal === 'number' ? tierIdVal : tierNum
+        const tierId = typeof tierIdVal === 'number' ? tierIdVal : null
 
         const payload = {
-          rate_card_version_id: activeVersion?.id || 1,
+          rate_card_version_id: requireId(activeVersion?.id, 'Rate card version'),
           country_id: typeof rateRow?.countryId === 'number' ? rateRow.countryId : activeCountryId,
-          deployment_model_id: rateRow?.deploymentModelId || activeDepObj.id || 1,
-          pricing_model_id: rateRow?.pricingModelId || activePmObj.id || 1,
-          tier_id: tierId,
+          deployment_model_id: requireId(rateRow?.deploymentModelId || activeDepObj?.id, 'Deployment model'),
+          pricing_model_id: requireId(rateRow?.pricingModelId || activePmObj?.id, 'Pricing model'),
+          tier_id: requireId(tierId, 'Customer tier'),
           feature_id: targetFeatureId,
+          ...(rateRow?.uomId ? { uom_id: rateRow.uomId } : {}),
         }
 
         if (isFixed) {
-          payload.fixed_fee = parseFloat(value) || 0
+          payload.fixed_fee = parseAmount(value)
           const existingUnit =
             rateRow?.[`tier_${tierId}`] ??
-            rateRow?.[`tier${tierNum}Rate`] ??
-            rateRow?.[`tier_${tierNum}`]
+            rateRow?.[`tier${tierNum}Rate`]
           if (existingUnit !== undefined && existingUnit !== '') {
-            payload.unit_rate = parseFloat(existingUnit) || 0
+            payload.unit_rate = parseAmount(existingUnit)
           }
         } else {
-          payload.unit_rate = parseFloat(value) || 0
+          payload.unit_rate = parseAmount(value)
           const existingFixed =
             rateRow?.[`fixed_tier_${tierId}`] ??
-            rateRow?.[`fixed_tier${tierNum}Rate`] ??
-            rateRow?.[`fixed_tier_${tierNum}`]
+            rateRow?.[`fixed_tier${tierNum}Rate`]
           if (existingFixed !== undefined && existingFixed !== '') {
-            payload.fixed_fee = parseFloat(existingFixed) || 0
+            payload.fixed_fee = parseAmount(existingFixed)
           }
         }
 
@@ -1400,10 +1359,10 @@ export function RateCardPage() {
                   (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
               ) || countries[0]
             const activeCountryId =
-              typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
-            const depId = rate.deploymentModelId || 1
-            const pmId = rate.pricingModelId || 1
-            const versionId = activeVersion?.id || 1
+              requireId(activeCountryObj?.id, 'Country')
+            const depId = requireId(rate.deploymentModelId, 'Deployment model')
+            const pmId = requireId(rate.pricingModelId, 'Pricing model')
+            const versionId = requireId(activeVersion?.id, 'Rate card version')
 
             await deleteRateCardGroup({
               rate_card_version_id: versionId,
@@ -1448,13 +1407,13 @@ export function RateCardPage() {
               (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
           ) || countries[0]
         const activeCountryId =
-          typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
+          requireId(activeCountryObj?.id, 'Country')
 
         const activeDepObj =
           deploymentModels.find(
             (d) => d.name === (newRate.deploymentModel || selectedDeployment),
           ) || deploymentModels[0]
-        const depId = typeof activeDepObj?.id === 'number' ? activeDepObj.id : 1
+        const depId = requireId(activeDepObj?.id, 'Deployment model')
 
         const activePmObj =
           pricingModels.find(
@@ -1466,9 +1425,7 @@ export function RateCardPage() {
         const pmId =
           typeof newRate.pricingModelId === 'number' && !isNaN(newRate.pricingModelId)
             ? newRate.pricingModelId
-            : typeof activePmObj?.id === 'number'
-            ? activePmObj.id
-            : 1
+            : requireId(activePmObj?.id, 'Pricing model')
         let featureId = null
         if (typeof newRate.featureId === 'number' && !isNaN(newRate.featureId)) {
           featureId = newRate.featureId
@@ -1493,33 +1450,10 @@ export function RateCardPage() {
         }
 
         if (!featureId) {
-          console.warn('Feature ID could not be resolved for backend persistence; saving locally.')
-          const localRate = {
-            ...newRate,
-            id: newRate.id || `fr-feat-${newRate.productCode || Date.now()}-${depId}-${pmId}`,
-            deploymentModel: activeDepObj.name,
-            deploymentModelId: depId,
-            pricingModel: activePmObj.code,
-            pricingModelId: pmId,
-          }
-          setFeatureRates((prev) => {
-            const idx = prev.findIndex(
-              (r) =>
-                r.id === localRate.id ||
-                (localRate.featureName && r.featureName === localRate.featureName),
-            )
-            if (idx >= 0) {
-              const next = [...prev]
-              next[idx] = { ...next[idx], ...localRate }
-              return next
-            }
-            return [...prev, localRate]
-          })
-          showToast(`Feature rate for "${newRate.featureName}" configured locally.`)
-          return
+          throw new Error('the feature is not a saved catalogue record')
         }
 
-        const versionId = activeVersion?.id || 1
+        const versionId = requireId(activeVersion?.id, 'Rate card version')
 
         // Upsert across all dynamic tiers
         const tierEntries = pricingTiers.map((tier, idx) => {
@@ -1538,7 +1472,7 @@ export function RateCardPage() {
             entry.rate !== null &&
             entry.rate !== ''
           ) {
-            const tierId = typeof entry.tier.id === 'number' ? entry.tier.id : 1
+            const tierId = requireId(entry.tier.id, 'Customer tier')
             await upsertRateCard({
               rate_card_version_id: versionId,
               country_id: activeCountryId,
@@ -1546,7 +1480,8 @@ export function RateCardPage() {
               pricing_model_id: pmId,
               tier_id: tierId,
               feature_id: featureId,
-              unit_rate: parseFloat(entry.rate) || 0,
+              unit_rate: parseAmount(entry.rate),
+              ...(newRate.uomId ? { uom_id: Number(newRate.uomId) } : {}),
             })
           }
         }
@@ -1564,7 +1499,7 @@ export function RateCardPage() {
           pricingModelId: pmId,
           countryId: activeCountryId,
           productType: newRate.productType || 'Adrenalin Native',
-          unitOfMeasure: newRate.uom || newRate.unitOfMeasure || 'Active Employees (with ESS)',
+          unitOfMeasure: newRate.unitOfMeasure || '',
           tier1Rate: newRate.tier1Rate || newRate.tierRates?.[pricingTiers[0]?.id] || '',
           tier2Rate: newRate.tier2Rate || newRate.tierRates?.[pricingTiers[1]?.id] || '',
           tier3Rate: newRate.tier3Rate || newRate.tierRates?.[pricingTiers[2]?.id] || '',
@@ -1599,48 +1534,7 @@ export function RateCardPage() {
           `Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`,
         )
       } else {
-        const activeDepObj =
-          deploymentModels.find(
-            (d) => d.name === (newRate.deploymentModel || selectedDeployment),
-          ) || deploymentModels[0]
-        const depId = typeof activeDepObj?.id === 'number' ? activeDepObj.id : 1
-
-        const activePmObj =
-          pricingModels.find(
-            (p) =>
-              p.code === (newRate.pricingModel || selectedPricingModel) ||
-              p.name === (newRate.pricingModel || selectedPricingModel) ||
-              p.id === newRate.pricingModelId,
-          ) || pricingModels[0]
-        const pmId =
-          typeof newRate.pricingModelId === 'number' && !isNaN(newRate.pricingModelId)
-            ? newRate.pricingModelId
-            : typeof activePmObj?.id === 'number'
-            ? activePmObj.id
-            : 1
-
-        const rateWithId = {
-          ...newRate,
-          id: newRate.id || `fr-feat-${newRate.featureId || Date.now()}-${depId}-${pmId}`,
-          deploymentModel: activeDepObj.name,
-          deploymentModelId: depId,
-          pricingModel: activePmObj.code,
-          pricingModelId: pmId,
-        }
-        setFeatureRates((prev) => {
-          const matchIdx = prev.findIndex(
-            (r) =>
-              r.id === rateWithId.id ||
-              (rateWithId.featureId && r.featureId && String(r.featureId) === String(rateWithId.featureId)),
-          )
-          if (matchIdx >= 0) {
-            const next = [...prev]
-            next[matchIdx] = { ...next[matchIdx], ...rateWithId }
-            return next
-          }
-          return [...prev, rateWithId]
-        })
-        showToast(`Feature rate for "${newRate.featureName}" configured.`)
+        showToast('Cannot save feature rate: the backend is not available.', 'error')
       }
     } catch (err) {
       showToast(
@@ -1648,107 +1542,6 @@ export function RateCardPage() {
         'error',
       )
     }
-  }
-
-  const handleChangePlatformConfig = (tierKey, fieldKey, value) => {
-    if (isVersionLocked) {
-      showToast(
-        `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
-        'error',
-      )
-      return
-    }
-
-    setPlatformConfig((prev) => {
-      const updatedTier = {
-        ...prev[tierKey],
-        [fieldKey]: value,
-      }
-      const updatedConfig = {
-        ...prev,
-        [tierKey]: updatedTier,
-      }
-
-      if (isLiveBackendData) {
-        const timerKey = `plat-${tierKey}-${fieldKey}`
-        if (debounceTimers.current[timerKey]) {
-          clearTimeout(debounceTimers.current[timerKey])
-        }
-        debounceTimers.current[timerKey] = setTimeout(async () => {
-          try {
-            const activeCountryObj =
-              countries.find(
-                (c) =>
-                  String(c.id) === String(selectedCountryId) ||
-                  (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
-              ) || countries[0]
-            const activeCountryId =
-              typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
-
-            const activeDepObj =
-              deploymentModels.find(
-                (d) => d.name === selectedDeployment || d.code === selectedDeployment,
-              ) || deploymentModels[0]
-            const depId = typeof activeDepObj?.id === 'number' ? activeDepObj.id : 1
-
-            const isLicenseAmc =
-              String(selectedPricingModel).toLowerCase().includes('license') ||
-              String(selectedPricingModel).toLowerCase().includes('amc')
-
-            const platPm =
-              pricingModels.find(
-                (p) =>
-                  isLicenseAmc
-                    ? p.code === 'license_amc' || (p.name || '').toLowerCase().includes('license')
-                    : p.code === 'platform_subscription' ||
-                      p.code === selectedPricingModel ||
-                      (p.name || '').toLowerCase().includes('platform'),
-              ) || pricingModels[0]
-            const pmId = typeof platPm?.id === 'number' ? platPm.id : (isLicenseAmc ? 3 : 2)
-
-            let tierId = 1
-            if (tierKey === 'tier1') tierId = pricingTiers[0]?.id || 1
-            else if (tierKey === 'tier2') tierId = pricingTiers[1]?.id || 2
-            else if (tierKey === 'tier3') tierId = pricingTiers[2]?.id || 3
-
-            const packObj = packs[0]
-            const packVersionId =
-              packObj?.latestVersionId || packObj?.versions?.[0]?.id || 38
-
-            await upsertRateCard({
-              rate_card_version_id: activeVersion?.id || 1,
-              country_id: activeCountryId,
-              deployment_model_id: depId,
-              pricing_model_id: pmId,
-              tier_id: tierId,
-              pack_version_id: packVersionId,
-              fixed_fee: parseFloat(updatedTier.annualPlatformFee) || 0,
-              unit_rate: parseFloat(updatedTier.monthlySubscriptionFee) || 0,
-            })
-            showToast(`${platPm.name || 'Rate'} updated in PostgreSQL database.`)
-          } catch (err) {
-            showToast(
-              `Failed to persist rate: ${formatApiError(err)}`,
-              'error',
-            )
-          }
-        }, 600)
-      }
-
-      return updatedConfig
-    })
-  }
-
-  const handleResetPlatformDemo = () => {
-    if (isVersionLocked) {
-      showToast(
-        `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
-        'error',
-      )
-      return
-    }
-    setPlatformConfig(SPREADSHEET_DEMO_PLATFORM_CONFIG)
-    showToast('Platform Subscription values reset to Excel demonstration preset.')
   }
 
   // --- Handlers: Right Master Data Panels ---
@@ -2149,9 +1942,8 @@ export function RateCardPage() {
             (c) =>
               c.name.toLowerCase() === newRate.country.toLowerCase() ||
               String(c.id) === String(newRate.country),
-          ) || countries[0]
-        const countryId =
-          typeof countryMatch?.id === 'number' ? countryMatch.id : 1
+          )
+        const countryId = requireId(countryMatch?.id, 'Country')
 
         const created = await createServiceRate({
           country_id: countryId,
@@ -2163,12 +1955,12 @@ export function RateCardPage() {
           id: created.id,
           countryId: created.country_id,
           serviceLine: created.role_name,
-          country: created.country?.name || countryMatch?.name || 'India',
+          country: created.country?.name || countryMatch?.name || '',
           currency:
             created.currency?.code ||
             created.country?.currency?.code ||
-            countryMatch?.currency ||
-            'INR',
+            countryMatch?.currency?.code ||
+            '',
           hourlyRate: String(created.hourly_rate),
           dailyRate: created.daily_rate != null ? String(created.daily_rate) : null,
           standardHoursPerDay: created.hours_per_day,
@@ -2178,12 +1970,7 @@ export function RateCardPage() {
           `Service rate for "${newRate.serviceLine}" saved to database.`,
         )
       } else {
-        const hourlyWithId = {
-          ...newRate,
-          id: newRate.id || `hr-${Date.now()}`,
-        }
-        setHourlyRates((prev) => [...prev, hourlyWithId])
-        showToast(`Service rate for "${newRate.serviceLine}" added.`)
+        showToast('Cannot save service rate: the backend is not available.', 'error')
       }
     } catch (err) {
       showToast(
@@ -2346,7 +2133,7 @@ export function RateCardPage() {
     })
   }
 
-  const handleUpdateRegistryRate = async ({ id, raw, fixed_fee, unit_rate }) => {
+  const handleUpdateRegistryRate = async ({ raw, fixed_fee, unit_rate }) => {
     if (isVersionLocked) {
       showToast(
         `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
@@ -2587,9 +2374,6 @@ export function RateCardPage() {
             setIsAddFeatureRateOpen(true)
           }}
           // Platform + Subscription
-          platformConfig={platformConfig}
-          onChangePlatformConfig={handleChangePlatformConfig}
-          onResetPlatformDemo={handleResetPlatformDemo}
           // Full Registry Table Data & Handlers
           rawRateCards={rawRateCards}
           onUpdateRegistryRate={handleUpdateRegistryRate}
@@ -2695,6 +2479,8 @@ export function RateCardPage() {
         families={families}
         activeDeployment={selectedDeployment}
         activePricing={selectedPricingModel}
+        uoms={uoms}
+        lockedUomId={pricingModels.find((pm) => pm.code === selectedPricingModel || pm.name === selectedPricingModel)?.uomLockedId || null}
         activeCurrencySymbol={activeCurrencySymbol}
         existingPackRates={packRates}
       />
@@ -2713,6 +2499,8 @@ export function RateCardPage() {
         families={families}
         activeDeployment={selectedDeployment}
         activePricing={selectedPricingModel}
+        uoms={uoms}
+        lockedUomId={pricingModels.find((pm) => pm.code === selectedPricingModel || pm.name === selectedPricingModel)?.uomLockedId || null}
         activeCurrencySymbol={activeCurrencySymbol}
         existingFeatureRates={featureRates}
       />

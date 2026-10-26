@@ -1,44 +1,26 @@
-import { useEffect } from 'react'
 import { Building, Globe2, AlertCircle, CheckCircle2 } from 'lucide-react'
-import { MASTER_CURRENCIES } from '../calculatorData'
 
 export function ClientConfigCard({
   clientInfo,
   onChangeClientInfo,
   errors = {},
   customers = [],
-  currencies = MASTER_CURRENCIES,
+  currencies = [],
   onSelectCustomerTier = null,
 }) {
-  const currencyList = currencies.length > 0 ? currencies : MASTER_CURRENCIES
-
+  // Only saved currency records; nothing is pre-selected on the user's behalf.
+  const currencyList = currencies
   const selectedCurrencyObj =
     currencyList.find(
-      (c) =>
-        (clientInfo.reportingCurrencyId && Number(c.id) === Number(clientInfo.reportingCurrencyId)) ||
-        c.code === clientInfo.reportingCurrency
-    ) || currencyList[0]
-
-  useEffect(() => {
-    if (
-      selectedCurrencyObj &&
-      (!clientInfo.reportingCurrencyId ||
-        Number(clientInfo.reportingCurrencyId) !== Number(selectedCurrencyObj.id) ||
-        clientInfo.reportingCurrency !== selectedCurrencyObj.code)
-    ) {
-      onChangeClientInfo('reportingCurrencyId', Number(selectedCurrencyObj.id) || selectedCurrencyObj.id)
-      onChangeClientInfo('reportingCurrency', selectedCurrencyObj.code)
-    }
-  }, [selectedCurrencyObj, clientInfo.reportingCurrencyId, clientInfo.reportingCurrency, onChangeClientInfo])
+      (c) => clientInfo.reportingCurrencyId && Number(c.id) === Number(clientInfo.reportingCurrencyId)
+    ) || null
 
   const handleCurrencySelect = (currencyVal) => {
     const found = currencyList.find(
       (c) => String(c.id) === String(currencyVal) || c.code === currencyVal
     )
-    if (found) {
-      onChangeClientInfo('reportingCurrencyId', Number(found.id) || found.id)
-      onChangeClientInfo('reportingCurrency', found.code)
-    }
+    onChangeClientInfo('reportingCurrencyId', found ? Number(found.id) : null)
+    onChangeClientInfo('reportingCurrency', found ? found.code : '')
   }
 
   const handleCustomerSelect = (selectedCustomerId) => {
@@ -49,6 +31,7 @@ export function ClientConfigCard({
     const found = customers.find((c) => String(c.id) === String(selectedCustomerId))
     if (found) {
       onChangeClientInfo('customerId', found.id)
+      onChangeClientInfo('dealId', null)
       onChangeClientInfo('clientName', found.name)
       if (found.customer_tier_id && onSelectCustomerTier) {
         onSelectCustomerTier(found.customer_tier_id)
@@ -142,6 +125,7 @@ export function ClientConfigCard({
                 onChange={(e) => {
                   onChangeClientInfo('clientName', e.target.value)
                   onChangeClientInfo('customerId', null)
+                  onChangeClientInfo('dealId', null)
                 }}
                 placeholder="e.g. Demo Technologies"
                 className={`w-full h-10 px-3 text-xs rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
@@ -195,10 +179,13 @@ export function ClientConfigCard({
               </div>
               <select
                 id="reporting-currency-select"
-                value={selectedCurrencyObj?.id || clientInfo.reportingCurrencyId || ''}
+                value={selectedCurrencyObj?.id || ''}
                 onChange={(e) => handleCurrencySelect(e.target.value)}
                 className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
               >
+                <option value="">
+                  {currencyList.length === 0 ? '-- No currencies loaded --' : '-- Select currency --'}
+                </option>
                 {currencyList.map((currency) => (
                   <option key={currency.id} value={currency.id}>
                     {currency.code} — {currency.name}
@@ -276,10 +263,13 @@ export function ClientConfigCard({
               </div>
               <select
                 id="reporting-currency-select"
-                value={selectedCurrencyObj?.id || clientInfo.reportingCurrencyId || ''}
+                value={selectedCurrencyObj?.id || ''}
                 onChange={(e) => handleCurrencySelect(e.target.value)}
                 className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
               >
+                <option value="">
+                  {currencyList.length === 0 ? '-- No currencies loaded --' : '-- Select currency --'}
+                </option>
                 {currencyList.map((currency) => (
                   <option key={currency.id} value={currency.id}>
                     {currency.code} — {currency.name}
@@ -298,22 +288,32 @@ export function ClientConfigCard({
         >
           <Globe2 className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" aria-hidden="true" />
           <div className="text-xs text-slate-700 space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-slate-900">
-                Consolidation Currency:
-              </span>
-              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-600 text-white font-mono shadow-2xs">
-                {selectedCurrencyObj.code} ({selectedCurrencyObj.symbol})
-              </span>
-              <span className="text-[11px] text-slate-500">
-                ({selectedCurrencyObj.name})
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              All regional country rate cards and inputs remain preserved in their native currencies (e.g. INR, AED, SAR).
-              Consolidated totals across jurisdictions are converted to{' '}
-              <strong className="text-slate-900">{selectedCurrencyObj.code}</strong> by the backend calculation engine using official treasury FX peg rates.
-            </p>
+            {selectedCurrencyObj ? (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-slate-900">
+                    Consolidation Currency:
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-600 text-white font-mono shadow-2xs">
+                    {selectedCurrencyObj.code}{selectedCurrencyObj.symbol ? ` (${selectedCurrencyObj.symbol})` : ''}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    ({selectedCurrencyObj.name})
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Rate cards stay in their native currencies. Consolidated totals are converted to{' '}
+                  <strong className="text-slate-900">{selectedCurrencyObj.code}</strong> by the backend calculation engine
+                  using the FX rates saved on the Rate Card &amp; Masters page.
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                {currencyList.length === 0
+                  ? 'No currencies could be loaded from the backend. Add currencies on the Rate Card & Masters page.'
+                  : 'Select the reporting currency the proposal totals will be converted to.'}
+              </p>
+            )}
           </div>
         </div>
 
@@ -324,6 +324,7 @@ export function ClientConfigCard({
             className="block text-xs font-semibold text-slate-700 mb-1.5"
           >
             Internal Deal Notes & Commercial Terms
+            <span className="ml-1 font-normal text-slate-400">(kept on this screen only - the backend has no notes field yet)</span>
           </label>
           <textarea
             id="client-notes-input"

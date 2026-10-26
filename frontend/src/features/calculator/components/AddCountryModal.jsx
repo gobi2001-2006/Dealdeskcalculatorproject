@@ -1,27 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Globe, X } from 'lucide-react'
-import {
-  INITIAL_COUNTRIES,
-  INITIAL_PRICING_TIERS,
-  DEPLOYMENT_MODELS,
-  PRICING_MODELS,
-} from '../../../data/rateCardData'
-import { validateContractTerm } from '../calculatorData'
+import { validateContractTerm, countryCurrencyCode as getCountryCurrencyCode } from '../calculatorData'
 import { getCurrencySymbol } from '../../ratecard/rateCardFormatters'
-
-function getCountryCurrencyCode(country) {
-  if (!country) return 'USD'
-  if (country.currency_code) return country.currency_code
-  if (typeof country.currency === 'string') return country.currency
-  if (country.currency && typeof country.currency === 'object' && country.currency.code) {
-    return country.currency.code
-  }
-  return 'USD'
-}
 
 function getCountryCurrencySymbol(country, currencyCode = null) {
   const code = currencyCode || getCountryCurrencyCode(country)
-  return getCurrencySymbol(country, code) || getCurrencySymbol(code) || '$'
+  if (!code) return ''
+  return country?.currency?.symbol || getCurrencySymbol(country, code) || getCurrencySymbol(code) || ''
 }
 
 export function AddCountryModal({
@@ -31,72 +16,52 @@ export function AddCountryModal({
   onAddCountry,
   masters = null,
 }) {
-  const countryList = masters?.countries?.length > 0 ? masters.countries : INITIAL_COUNTRIES
-  const tierList = masters?.tiers?.length > 0 ? masters.tiers : INITIAL_PRICING_TIERS
-  const deploymentList = masters?.deployments?.length > 0 ? masters.deployments : DEPLOYMENT_MODELS
-  const pricingModelList = masters?.pricingModels?.length > 0 ? masters.pricingModels : PRICING_MODELS
+  // Only saved master records; nothing is invented when the backend returns none.
+  const countryList = masters?.countries || []
+  const tierList = masters?.tiers || []
+  const deploymentList = masters?.deployments || []
+  const pricingModelList = masters?.pricingModels || []
 
   const availableCountries = countryList.filter(
     (c) => !existingCountryIds.map(String).includes(String(c.id))
   )
-  const defaultCountry = availableCountries[0] || countryList[0] || { id: 1, name: 'India', currency: 'INR', symbol: '₹' }
 
-  const [selectedCountryId, setSelectedCountryId] = useState(defaultCountry.id)
-  const [selectedTierId, setSelectedTierId] = useState(tierList[0]?.id || 1)
-  const [selectedDeploymentId, setSelectedDeploymentId] = useState(deploymentList[0]?.id || 1)
-
-  const getFilteredPricingModels = (depId) => {
-    if (!depId) return pricingModelList
-    if (masters?.deploymentPricingOptions?.length > 0) {
-      const allowedIds = masters.deploymentPricingOptions
-        .filter((opt) => String(opt.deployment_model_id) === String(depId))
-        .map((opt) => String(opt.pricing_model_id))
-      if (allowedIds.length > 0) {
-        return pricingModelList.filter((pm) => allowedIds.includes(String(pm.id)))
-      }
-    }
-    const depObj = deploymentList.find((d) => String(d.id) === String(depId))
-    const depCode = (depObj?.code || depObj?.name || '').toLowerCase()
-    if (depCode.includes('on_prem') || depCode.includes('on-prem')) {
-      const onPrem = pricingModelList.filter((pm) => {
-        const pmName = (pm.name || pm.code || '').toLowerCase()
-        return pmName.includes('license') || pmName.includes('amc')
-      })
-      if (onPrem.length > 0) return onPrem
-    }
-    return pricingModelList
-  }
-
-  const filteredPricingModels = getFilteredPricingModels(selectedDeploymentId)
-  const initialPricingModelId = filteredPricingModels[0]?.id || pricingModelList[0]?.id || 1
-  const [selectedPricingModelId, setSelectedPricingModelId] = useState(initialPricingModelId)
-  const [contractTerm, setContractTerm] = useState('36')
+  const [selectedCountryId, setSelectedCountryId] = useState('')
+  const [selectedTierId, setSelectedTierId] = useState('')
+  const [selectedDeploymentId, setSelectedDeploymentId] = useState('')
+  const [selectedPricingModelId, setSelectedPricingModelId] = useState('')
+  const [contractTerm, setContractTerm] = useState('')
+  const [headcount, setHeadcount] = useState('')
+  const [formError, setFormError] = useState('')
   const [termError, setTermError] = useState('')
 
-  // Sync state when modal opens or master lists change
+  const getFilteredPricingModels = (depId) => {
+    if (!depId) return []
+    const allowedIds = (masters?.deploymentPricingOptions || [])
+      .filter((opt) => String(opt.deployment_model_id) === String(depId))
+      .map((opt) => String(opt.pricing_model_id))
+    return pricingModelList.filter((pm) => allowedIds.includes(String(pm.id)))
+  }
+  const filteredPricingModels = getFilteredPricingModels(selectedDeploymentId)
+
+  // Reset the form each time the dialog opens.
   useEffect(() => {
     if (isOpen) {
-      if (defaultCountry && !availableCountries.some((c) => String(c.id) === String(selectedCountryId))) {
-        setSelectedCountryId(defaultCountry.id)
-      }
-      if (tierList.length > 0 && !tierList.some((t) => String(t.id) === String(selectedTierId))) {
-        setSelectedTierId(tierList[0].id)
-      }
-      if (deploymentList.length > 0 && !deploymentList.some((d) => String(d.id) === String(selectedDeploymentId))) {
-        const nextDepId = deploymentList[0].id
-        setSelectedDeploymentId(nextDepId)
-        const nextModels = getFilteredPricingModels(nextDepId)
-        setSelectedPricingModelId(nextModels[0]?.id || pricingModelList[0]?.id || 1)
-      }
+      setSelectedCountryId('') // eslint-disable-line react-hooks/set-state-in-effect
+      setSelectedTierId('')
+      setSelectedDeploymentId('')
+      setSelectedPricingModelId('')
+      setContractTerm('')
+      setHeadcount('')
+      setFormError('')
       setTermError('')
     }
-  }, [isOpen, masters])
+  }, [isOpen])
 
   const handleDeploymentChange = (newDepId) => {
     setSelectedDeploymentId(newDepId)
-    const nextModels = getFilteredPricingModels(newDepId)
-    if (!nextModels.some((pm) => String(pm.id) === String(selectedPricingModelId))) {
-      setSelectedPricingModelId(nextModels[0]?.id || '')
+    if (!getFilteredPricingModels(newDepId).some((pm) => String(pm.id) === String(selectedPricingModelId))) {
+      setSelectedPricingModelId('')
     }
   }
 
@@ -109,30 +74,30 @@ export function AddCountryModal({
       setTermError(err)
       return
     }
+    const qty = Number(headcount)
+    if (!selectedCountryId || !selectedTierId || !selectedDeploymentId || !selectedPricingModelId) {
+      setFormError('Select a country, customer tier, deployment model and pricing model.')
+      return
+    }
+    if (!Number.isInteger(qty) || qty <= 0) {
+      setFormError('Headcount must be a positive whole number.')
+      return
+    }
 
-    const countryMaster =
-      countryList.find((c) => String(c.id) === String(selectedCountryId)) || defaultCountry
-
-    const numericCountryId = Number(countryMaster.id) || countryMaster.id
+    const countryMaster = countryList.find((c) => String(c.id) === String(selectedCountryId))
     const currencyCode = getCountryCurrencyCode(countryMaster)
-    const currencySymbol = getCountryCurrencySymbol(countryMaster, currencyCode)
 
     onAddCountry({
       id: `cfg-country-${Date.now()}`,
-      countryId: numericCountryId,
+      countryId: Number(countryMaster.id),
       countryName: countryMaster.name,
       currency: currencyCode,
-      currencySymbol: currencySymbol,
-      pricingTierId: Number(selectedTierId) || selectedTierId,
-      deploymentModelId: Number(selectedDeploymentId) || selectedDeploymentId,
-      pricingModelId: Number(selectedPricingModelId) || selectedPricingModelId,
+      currencySymbol: getCountryCurrencySymbol(countryMaster, currencyCode),
+      pricingTierId: Number(selectedTierId),
+      deploymentModelId: Number(selectedDeploymentId),
+      pricingModelId: Number(selectedPricingModelId),
       contractTerm: Number(contractTerm),
-      headcount: 5000,
-      platformSubscriptionConfig: {
-        annualPlatformFee: '100000',
-        monthlySubscriptionFee: '300',
-        employeeCount: '5000',
-      },
+      headcount: qty,
       families: [],
       serviceLines: [],
     })
@@ -187,6 +152,7 @@ export function AddCountryModal({
               onChange={(e) => setSelectedCountryId(e.target.value)}
               className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
             >
+              <option value="">{availableCountries.length ? '-- Select country --' : '-- No countries available --'}</option>
               {availableCountries.map((c) => {
                 const currencyCode = getCountryCurrencyCode(c)
                 return (
@@ -212,6 +178,7 @@ export function AddCountryModal({
                 onChange={(e) => setSelectedTierId(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
+                <option value="">-- Select tier --</option>
                 {tierList.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
@@ -233,6 +200,7 @@ export function AddCountryModal({
                 onChange={(e) => handleDeploymentChange(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
+                <option value="">-- Select deployment --</option>
                 {deploymentList.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
@@ -256,6 +224,7 @@ export function AddCountryModal({
                 onChange={(e) => setSelectedPricingModelId(e.target.value)}
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
+                <option value="">{selectedDeploymentId ? '-- Select pricing model --' : '-- Choose deployment first --'}</option>
                 {filteredPricingModels.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -290,6 +259,27 @@ export function AddCountryModal({
               )}
             </div>
           </div>
+
+          <div>
+            <label htmlFor="modal-headcount-input" className="block text-xs font-semibold text-slate-700 mb-1">
+              Headcount / quantity <span className="text-rose-500">*</span>
+            </label>
+            <input
+              id="modal-headcount-input"
+              type="number"
+              min="1"
+              value={headcount}
+              onChange={(e) => {
+                setHeadcount(e.target.value)
+                setFormError('')
+              }}
+              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-mono"
+            />
+          </div>
+
+          {formError && (
+            <p role="alert" className="text-[11px] text-rose-600 font-medium">{formError}</p>
+          )}
 
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
             <button

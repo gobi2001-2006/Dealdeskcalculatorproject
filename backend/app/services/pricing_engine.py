@@ -160,6 +160,16 @@ def resolve_rate_card(
         pricing_model_id=pricing_model_id,
     )
     if rate_card is None:
+        uom_hint = PricingCalculationEngine(db)._other_uom_hint(
+            rate_card_version_id=rate_card_version_id,
+            pack_version_id=pack_version_id,
+            feature_id=feature_id,
+            country_id=country_id,
+            tier_id=tier_id,
+            uom_id=uom_id,
+            deployment_model_id=deployment_model_id,
+            pricing_model_id=pricing_model_id,
+        )
         c_obj = db.get(Country, country_id) if country_id else None
         d_obj = db.get(DeploymentModel, deployment_model_id) if deployment_model_id else None
         p_obj = db.get(PricingModel, pricing_model_id) if pricing_model_id else None
@@ -169,7 +179,7 @@ def resolve_rate_card(
         p_str = p_obj.name if p_obj else f"pricing_model_id={pricing_model_id}"
         t_str = t_obj.name if t_obj else f"tier_id={tier_id}"
         raise MissingRateCardMatchError(
-            f"No saved rate card exists for {d_str} + {p_str} in {c_str} for {t_str}. "
+            f"No saved rate card exists for {d_str} + {p_str} in {c_str} for {t_str}.{uom_hint} "
             "Configure the rate card before calculating the proposal."
         )
     return rate_card
@@ -348,7 +358,10 @@ class PricingCalculationEngine:
         total_proposal_reporting = Decimal("0.00")
         total_proposal_annual_reporting = Decimal("0.00")
         total_proposal_contract_reporting = Decimal("0.00")
-        term_dec = Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
+        total_subscription_annual_reporting = Decimal("0.00")
+        total_subscription_contract_reporting = Decimal("0.00")
+        total_services_reporting = Decimal("0.00")
+        term_dec =Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
 
         for prod_key in sorted(all_product_keys):
             p_items = product_items_map.get(prod_key, [])
@@ -419,6 +432,11 @@ class PricingCalculationEngine:
             pair_str = fx["pair"]
             product_reporting_total = quantize_currency(product_native_total * fx_rate_multiplier)
             contract_product_reporting_total = quantize_currency(contract_product_native_total * fx_rate_multiplier)
+            # Reporting-currency split so the UI never converts amounts itself. Services are the
+            # remainder, so subscription + services always equals the product reporting total exactly.
+            subscription_reporting_total = quantize_currency(sub_total_after_discount * fx_rate_multiplier)
+            service_reporting_total = product_reporting_total - subscription_reporting_total
+            contract_subscription_reporting_total = contract_product_reporting_total - service_reporting_total
 
             product_results.append({
                 "product_id": meta.get("product_id"),
@@ -450,10 +468,16 @@ class PricingCalculationEngine:
                 "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
                 "product_reporting_total": float(product_reporting_total),
                 "contract_product_reporting_total": float(contract_product_reporting_total),
+                "subscription_reporting_total": float(subscription_reporting_total),
+                "contract_subscription_reporting_total": float(contract_subscription_reporting_total),
+                "service_reporting_total": float(service_reporting_total),
                 "line_items": p_items,
                 "service_lines": p_services,
             })
 
+            total_subscription_annual_reporting += subscription_reporting_total
+            total_subscription_contract_reporting += contract_subscription_reporting_total
+            total_services_reporting += service_reporting_total
             total_proposal_annual_reporting += product_reporting_total
             total_proposal_contract_reporting += contract_product_reporting_total
             total_proposal_reporting += product_reporting_total
@@ -473,6 +497,7 @@ class PricingCalculationEngine:
 
         # 6. Build Snapshot Payload (JSON-safe — no Decimal values)
         snapshot_payload = {
+            "inputs_fingerprint": self._inputs_fingerprint(proposal, version),
             "proposal_id": proposal.id,
             "proposal_code": proposal.code,
             "proposal_version_id": version.id,
@@ -494,6 +519,9 @@ class PricingCalculationEngine:
             "total_proposal_annual_reporting_currency": float(total_proposal_annual_reporting),
             "total_proposal_contract_reporting_currency": float(total_proposal_contract_reporting),
             "total_proposal_reporting_currency": float(total_proposal_reporting),
+            "total_subscription_annual_reporting_currency": float(total_subscription_annual_reporting),
+            "total_subscription_contract_reporting_currency": float(total_subscription_contract_reporting),
+            "total_services_reporting_currency": float(total_services_reporting),
             "products": serialisable_product_results,
             "all_subscription_line_items": [_strip_dec(li) for li in line_item_results],
             "all_service_lines": service_line_results,
@@ -520,8 +548,43 @@ class PricingCalculationEngine:
             "contract_term_months": int(term_dec),
             "total_proposal_annual_reporting_currency": float(total_proposal_annual_reporting),
             "total_proposal_contract_reporting_currency": float(total_proposal_contract_reporting),
+            "is_stale": False,
             "snapshot_payload": snapshot_payload,
         }
+
+    @staticmethod
+    def _inputs_fingerprint(proposal: Proposal, version: ProposalVersion) -> str:
+        """Hash of the persisted inputs a calculation depends on.
+
+        Comparing it with the current data tells the UI whether a saved snapshot is stale
+        (a line, quantity, discount, country block or service line changed after pricing).
+        Request-only inputs (product discounts, contract term) are recorded in the snapshot
+        itself and are not part of this hash.
+        """
+        import hashlib
+        import json
+
+        def dec(v: Any) -> Optional[str]:
+            return None if v is None else str(Decimal(v).normalize())
+
+        data = {
+            "currency_id": proposal.currency_id,
+            "customer_tier_id": proposal.customer.customer_tier_id if proposal.customer else None,
+            "rate_card_version_id": version.rate_card_version_id,
+            "countries": sorted(
+                [c.country_id, c.deployment_model_id, c.pricing_model_id, c.user_headcount, bool(c.is_primary_deployment)]
+                for c in proposal.countries
+            ),
+            "lines": sorted(
+                [li.id, li.pack_version_id, li.feature_id, li.uom_id, dec(li.quantity), dec(li.discount_pct)]
+                for li in version.line_items
+            ),
+            "services": sorted(
+                [sl.id, sl.service_rate_id, sl.role_name, dec(sl.days_or_hours), dec(sl.discount_pct)]
+                for sl in version.service_lines
+            ),
+        }
+        return hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()
 
     def get_latest_calculation(self, proposal_id: int) -> Dict[str, Any]:
         """Retrieve the most recent saved CalculationSnapshot without recalculating."""
@@ -541,8 +604,12 @@ class PricingCalculationEngine:
 
         reporting_curr_code = snapshot.snapshot_payload.get("reporting_currency_code", "USD")
         total_reporting = snapshot.snapshot_payload.get("total_proposal_reporting_currency", 0.0)
+        stored_fp = snapshot.snapshot_payload.get("inputs_fingerprint")
+        # None = unknown (snapshot written before fingerprints existed).
+        is_stale = None if stored_fp is None else stored_fp != self._inputs_fingerprint(proposal, version)
 
         return {
+            "is_stale": is_stale,
             "snapshot_id": snapshot.id,
             "proposal_id": proposal.id,
             "proposal_version_id": version.id,
@@ -633,8 +700,18 @@ class PricingCalculationEngine:
             d_name = self.db.get(DeploymentModel, deployment_model_id).name if deployment_model_id and self.db.get(DeploymentModel, deployment_model_id) else f"Deployment {deployment_model_id}"
             p_name = self.db.get(PricingModel, pricing_model_id).name if pricing_model_id and self.db.get(PricingModel, pricing_model_id) else f"Pricing Model {pricing_model_id}"
             t_name = self.db.get(CustomerTier, default_tier_id).name if default_tier_id and self.db.get(CustomerTier, default_tier_id) else f"Tier {default_tier_id}"
+            uom_hint = self._other_uom_hint(
+                rate_card_version_id=rate_card_version_id,
+                pack_version_id=item.pack_version_id,
+                feature_id=item.feature_id,
+                country_id=default_country_id,
+                tier_id=default_tier_id,
+                uom_id=item.uom_id,
+                deployment_model_id=deployment_model_id,
+                pricing_model_id=pricing_model_id,
+            )
             raise MissingRateCardMatchError(
-                f"No saved rate card exists for {d_name} + {p_name} in {c_name} for {t_name} ('{target_name}', line {item.line_number}). "
+                f"No saved rate card exists for {d_name} + {p_name} in {c_name} for {t_name} ('{target_name}', line {item.line_number}).{uom_hint} "
                 "Configure the rate card before calculating the proposal."
             )
 
@@ -746,6 +823,23 @@ class PricingCalculationEngine:
         service_rate = None
         if service_line.service_rate_id:
             service_rate = self.db.get(ServiceRate, service_line.service_rate_id)
+            if service_rate is None:
+                raise MissingServiceRateError(
+                    f"Service rate {service_line.service_rate_id} for '{service_line.role_name}' no longer exists"
+                )
+            # A pinned rate must still be usable for the priced country today.
+            today = date.today()
+            if default_country_id and service_rate.country_id != default_country_id:
+                raise MissingServiceRateError(
+                    f"Service rate {service_rate.id} ('{service_rate.role_name}') belongs to country_id="
+                    f"{service_rate.country_id}, but the proposal is priced for country_id={default_country_id}"
+                )
+            if service_rate.status != "active" or service_rate.valid_from > today or (
+                service_rate.valid_to is not None and service_rate.valid_to < today
+            ):
+                raise MissingServiceRateError(
+                    f"Service rate {service_rate.id} ('{service_rate.role_name}') is not active/valid on {today.isoformat()}"
+                )
         elif default_country_id:
             # Match by role name & country, valid today
             today = date.today()
@@ -941,26 +1035,49 @@ class PricingCalculationEngine:
                 "Set the deployment model and pricing model on the proposal country to disambiguate."
             )
 
-        # Fallback: if exact UOM doesn't match, check if there's an exact unique rate card ignoring uom_id
-        fallback_stmt = select(RateCard).where(
+        # No silent fallback to a row with a different unit of measure: the UoM is one of the
+        # six pricing dimensions (FSD section 8). Callers report the miss as a blocking error.
+        return None
+
+    def _other_uom_hint(
+        self,
+        *,
+        rate_card_version_id: int,
+        pack_version_id: Optional[int],
+        feature_id: Optional[int],
+        country_id: Optional[int],
+        tier_id: Optional[int],
+        uom_id: int,
+        deployment_model_id: Optional[int],
+        pricing_model_id: Optional[int],
+    ) -> str:
+        """Explain a miss caused only by the unit of measure (rates exist under another UoM)."""
+        stmt = select(RateCard).where(
             RateCard.rate_card_version_id == rate_card_version_id,
             RateCard.country_id == country_id,
             RateCard.tier_id == tier_id,
+            RateCard.uom_id != uom_id,
         )
         if pack_version_id is not None:
-            fallback_stmt = fallback_stmt.where(RateCard.pack_version_id == pack_version_id)
+            stmt = stmt.where(RateCard.pack_version_id == pack_version_id)
         else:
-            fallback_stmt = fallback_stmt.where(RateCard.feature_id == feature_id)
+            stmt = stmt.where(RateCard.feature_id == feature_id)
         if deployment_model_id is not None:
-            fallback_stmt = fallback_stmt.where(RateCard.deployment_model_id == deployment_model_id)
+            stmt = stmt.where(RateCard.deployment_model_id == deployment_model_id)
         if pricing_model_id is not None:
-            fallback_stmt = fallback_stmt.where(RateCard.pricing_model_id == pricing_model_id)
-
-        fallback_matches = self.db.scalars(fallback_stmt).all()
-        if len(fallback_matches) == 1:
-            return fallback_matches[0]
-
-        return None
+            stmt = stmt.where(RateCard.pricing_model_id == pricing_model_id)
+        others = self.db.scalars(stmt).all()
+        if not others:
+            return ""
+        requested = self.db.get(UnitOfMeasure, uom_id)
+        requested_name = requested.code if requested else f"uom_id={uom_id}"
+        available = sorted(
+            {(r.uom.code if r.uom else f"uom_id={r.uom_id}") for r in others}
+        )
+        return (
+            f" A rate exists for unit of measure {available} but the line uses '{requested_name}'; "
+            "the line's unit of measure must match the rate card."
+        )
 
     # -----------------------------------------------------------------------
     # Proposal Context Loader

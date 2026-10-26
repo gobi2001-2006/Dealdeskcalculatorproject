@@ -36,10 +36,12 @@ from app.models.proposals import (
 from app.models.rate_card import RateCardVersion, ServiceRate
 from app.schemas.proposals import (
     ProposalCountryCreate,
+    ProposalCountryUpdate,
     ProposalCreate,
     ProposalLineItemCreate,
     ProposalLineItemUpdate,
     ProposalServiceLineCreate,
+    ProposalServiceLineUpdate,
     ProposalUpdate,
 )
 
@@ -935,6 +937,198 @@ def add_proposal_service_line(
     except IntegrityError as exc:
         db.rollback()
         raise conflict_from_integrity_error(exc) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+# =============================================================================
+# Country blocks and service lines: update / delete
+# (same rules as line items: only a draft proposal and a draft version may change)
+# =============================================================================
+
+def _require_draft_proposal(db: Session, proposal_id: int) -> Proposal:
+    proposal = db.get(Proposal, proposal_id)
+    if not proposal:
+        raise ProposalNotFoundError(f"Proposal with id {proposal_id} not found")
+    if proposal.status != "draft":
+        raise LifecycleStateError(
+            f"Cannot modify a proposal in '{proposal.status}' status; must be draft"
+        )
+    return proposal
+
+
+def _get_country_block(db: Session, proposal_id: int, proposal_country_id: int) -> ProposalCountry:
+    block = db.get(ProposalCountry, proposal_country_id)
+    if not block or block.proposal_id != proposal_id:
+        raise ResourceNotFoundError(
+            f"Proposal country {proposal_country_id} not found on proposal {proposal_id}"
+        )
+    return block
+
+
+def update_proposal_country(
+    *,
+    db: Session,
+    proposal_id: int,
+    proposal_country_id: int,
+    data: ProposalCountryUpdate,
+) -> ProposalCountry:
+    """Update a country block (country, deployment model, pricing model, headcount, primary flag)."""
+    try:
+        _require_draft_proposal(db, proposal_id)
+        block = _get_country_block(db, proposal_id, proposal_country_id)
+        update_dict = data.model_dump(exclude_unset=True)
+
+        if "proposal_id" in update_dict and update_dict["proposal_id"] != proposal_id:
+            raise ProposalValidationError("A country block cannot be moved to another proposal")
+        update_dict.pop("proposal_id", None)
+
+        if "country_id" in update_dict and update_dict["country_id"] != block.country_id:
+            if not db.get(Country, update_dict["country_id"]):
+                raise ResourceNotFoundError(f"Country with id {update_dict['country_id']} not found")
+            clash = db.execute(
+                select(ProposalCountry.id).where(
+                    ProposalCountry.proposal_id == proposal_id,
+                    ProposalCountry.country_id == update_dict["country_id"],
+                )
+            ).first()
+            if clash:
+                raise ProposalConflictError(
+                    f"Country {update_dict['country_id']} is already added to proposal {proposal_id}"
+                )
+
+        dep_id = update_dict.get("deployment_model_id", block.deployment_model_id)
+        pm_id = update_dict.get("pricing_model_id", block.pricing_model_id)
+        if (dep_id is None) != (pm_id is None):
+            raise ProposalValidationError("Deployment model and pricing model must be set together")
+        if dep_id is not None and {"deployment_model_id", "pricing_model_id"} & update_dict.keys():
+            if not db.get(DeploymentModel, dep_id):
+                raise ResourceNotFoundError(f"Deployment model with id {dep_id} not found")
+            if not db.get(PricingModel, pm_id):
+                raise ResourceNotFoundError(f"Pricing model with id {pm_id} not found")
+            if db.get(DeploymentPricingOption, (dep_id, pm_id)) is None:
+                raise ProposalValidationError(
+                    f"Pricing model {pm_id} is not available for deployment model {dep_id}"
+                )
+
+        if update_dict.get("is_primary_deployment") is True and not block.is_primary_deployment:
+            has_primary = db.execute(
+                select(ProposalCountry.id).where(
+                    ProposalCountry.proposal_id == proposal_id,
+                    ProposalCountry.is_primary_deployment.is_(True),
+                    ProposalCountry.id != block.id,
+                )
+            ).first()
+            if has_primary:
+                raise ProposalConflictError(f"Proposal {proposal_id} already has a primary deployment country")
+
+        for field, value in update_dict.items():
+            setattr(block, field, value)
+        db.commit()
+        db.refresh(block)
+        return block
+    except (ProposalNotFoundError, ResourceNotFoundError, ProposalConflictError, ProposalValidationError, LifecycleStateError):
+        db.rollback()
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        raise conflict_from_integrity_error(exc) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+def delete_proposal_country(*, db: Session, proposal_id: int, proposal_country_id: int) -> bool:
+    """Remove a country block from a draft proposal."""
+    try:
+        _require_draft_proposal(db, proposal_id)
+        block = _get_country_block(db, proposal_id, proposal_country_id)
+        db.delete(block)
+        db.commit()
+        return True
+    except (ProposalNotFoundError, ResourceNotFoundError, LifecycleStateError):
+        db.rollback()
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        raise conflict_from_integrity_error(exc) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _get_draft_service_line(db: Session, proposal_id: int, service_line_id: int) -> ProposalServiceLine:
+    line = db.get(ProposalServiceLine, service_line_id)
+    if not line:
+        raise ResourceNotFoundError(f"Service line with id {service_line_id} not found")
+    version = db.get(ProposalVersion, line.proposal_version_id)
+    if not version or version.proposal_id != proposal_id:
+        raise ProposalValidationError(
+            f"Service line {service_line_id} does not belong to proposal {proposal_id}"
+        )
+    if version.status != "draft":
+        raise LifecycleStateError(
+            f"Cannot modify a service line on a proposal version in '{version.status}' status"
+        )
+    return line
+
+
+def update_proposal_service_line(
+    *,
+    db: Session,
+    proposal_id: int,
+    service_line_id: int,
+    data: ProposalServiceLineUpdate,
+) -> ProposalServiceLine:
+    """Update a service line (role, rate reference, effort) on a draft version."""
+    try:
+        _require_draft_proposal(db, proposal_id)
+        line = _get_draft_service_line(db, proposal_id, service_line_id)
+        update_dict = data.model_dump(exclude_unset=True)
+
+        if "proposal_version_id" in update_dict and update_dict["proposal_version_id"] != line.proposal_version_id:
+            raise ProposalValidationError("A service line cannot be moved to another proposal version")
+        update_dict.pop("proposal_version_id", None)
+
+        if update_dict.get("service_rate_id") is not None:
+            if not db.get(ServiceRate, update_dict["service_rate_id"]):
+                raise ResourceNotFoundError(f"Service rate with id {update_dict['service_rate_id']} not found")
+        if "currency_id" in update_dict and not db.get(Currency, update_dict["currency_id"]):
+            raise ResourceNotFoundError(f"Currency with id {update_dict['currency_id']} not found")
+        if update_dict.get("discount_pct"):
+            raise ProposalValidationError(
+                "Individual service-line discounts are not permitted; apply one overall "
+                "service discount per product when calculating"
+            )
+
+        for field, value in update_dict.items():
+            setattr(line, field, value)
+        db.commit()
+        db.refresh(line)
+        return line
+    except (ProposalNotFoundError, ResourceNotFoundError, ProposalValidationError, LifecycleStateError):
+        db.rollback()
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        raise conflict_from_integrity_error(exc) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+
+def delete_proposal_service_line(*, db: Session, proposal_id: int, service_line_id: int) -> bool:
+    """Remove a service line from a draft version."""
+    try:
+        _require_draft_proposal(db, proposal_id)
+        line = _get_draft_service_line(db, proposal_id, service_line_id)
+        db.delete(line)
+        db.commit()
+        return True
+    except (ProposalNotFoundError, ResourceNotFoundError, ProposalValidationError, LifecycleStateError):
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise

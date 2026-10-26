@@ -76,7 +76,14 @@ class RateCardResolveRequest(BaseModel):
     deployment_model_id: int = Field(..., gt=0)
     pricing_model_id: int = Field(..., gt=0)
     tier_id: int = Field(..., gt=0)
-    uom_id: Optional[int] = Field(None, gt=0, description="UOM ID; defaults to employee UOM or model-locked UOM")
+    uom_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description=(
+            "UOM ID. If omitted: the pricing model's locked UoM, otherwise the UoM of the single "
+            "rate-card row for the other dimensions (409 if several rows differ only by UoM)."
+        ),
+    )
     pack_version_id: Optional[int] = Field(None, gt=0)
     feature_id: Optional[int] = Field(None, gt=0)
 
@@ -160,22 +167,17 @@ def resolve_rates(request: RateCardResolveRequest, db: Session = Depends(get_db)
     try:
         version_id = resolve_active_rate_card_version(db, request.rate_card_version_id).id
 
+        # The unit of measure is a pricing dimension. When the caller names one, the match is
+        # strict. When it does not, a pricing model with a locked UoM supplies it; otherwise the
+        # UoM is taken from the rate card itself, which must then have exactly one row for the
+        # other five dimensions (several rows -> the caller must choose the UoM).
         resolved_uom_id = request.uom_id
         if not resolved_uom_id:
             pm = db.get(PricingModel, request.pricing_model_id)
             if pm and pm.uom_locked_id:
                 resolved_uom_id = pm.uom_locked_id
-            else:
-                emp_uom = db.execute(
-                    select(UnitOfMeasure).where(UnitOfMeasure.code == "employee")
-                ).scalars().first()
-                if emp_uom:
-                    resolved_uom_id = emp_uom.id
-                else:
-                    default_uom = db.execute(select(UnitOfMeasure).order_by(UnitOfMeasure.id)).scalars().first()
-                    resolved_uom_id = default_uom.id if default_uom else 1
 
-        try:
+        if resolved_uom_id:
             rate_card = resolve_rate_card(
                 db,
                 rate_card_version_id=version_id,
@@ -187,8 +189,7 @@ def resolve_rates(request: RateCardResolveRequest, db: Session = Depends(get_db)
                 pack_version_id=request.pack_version_id,
                 feature_id=request.feature_id,
             )
-        except MissingRateCardMatchError:
-            # Fallback check: if rate was saved under another standard UOM (e.g. employee vs candidate)
+        else:
             stmt = select(RateCard).where(
                 RateCard.rate_card_version_id == version_id,
                 RateCard.country_id == request.country_id,
@@ -200,11 +201,20 @@ def resolve_rates(request: RateCardResolveRequest, db: Session = Depends(get_db)
                 stmt = stmt.where(RateCard.pack_version_id == request.pack_version_id)
             else:
                 stmt = stmt.where(RateCard.feature_id == request.feature_id)
-            fallback_matches = db.scalars(stmt).all()
-            if len(fallback_matches) == 1:
-                rate_card = fallback_matches[0]
+            matches = db.scalars(stmt).all()
+            if len(matches) == 1:
+                rate_card = matches[0]
+            elif len(matches) > 1:
+                uoms = sorted({(m.uom.code if m.uom else str(m.uom_id)) for m in matches})
+                raise AmbiguousRateCardMatchError(
+                    f"{len(matches)} rate cards match these dimensions with different units of measure "
+                    f"{uoms}; specify uom_id to choose one."
+                )
             else:
-                raise
+                raise MissingRateCardMatchError(
+                    "No saved rate card exists for this country, deployment model, pricing model, tier "
+                    "and pack/feature in the active rate-card version. Configure it on the Rate Card page."
+                )
     except DOMAIN_ERRORS as exc:
         raise http_error(exc) from exc
     except MissingRateCardMatchError as exc:
@@ -392,10 +402,14 @@ def upsert_rate_card_entry(payload: RateCardUpsertPayload, db: Session = Depends
             if emp_uom:
                 uom_id = emp_uom.id
         if not uom_id:
-            default_uom = db.execute(select(UnitOfMeasure).order_by(UnitOfMeasure.id)).scalars().first()
-            if not default_uom:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No unit of measure found in database")
-            uom_id = default_uom.id
+            # Never fall back to an arbitrary unit: the UoM is a pricing dimension.
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"uom_id is required: pricing model {payload.pricing_model_id} has no locked unit of measure. "
+                    "Choose the unit of measure for this rate."
+                ),
+            )
 
     try:
         return service_upsert_rate_card(

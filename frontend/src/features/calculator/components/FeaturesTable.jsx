@@ -1,42 +1,51 @@
 import { useState, useEffect, useRef } from 'react'
 import { CheckCircle2, Lock, Sparkles, Loader2, AlertCircle } from 'lucide-react'
-import { INITIAL_PRODUCTS } from '../../../data/catalogueData'
 import { resolveRateCard } from '../../../api/ratesApi'
+import { describeApiError } from '../../../api/proposalsApi'
 
+/**
+ * Standalone (à la carte) features of one product family.
+ *
+ * Rows are catalogue FEATURES (GET /api/catalogue/features) whose product belongs to the
+ * family; the id sent to the backend is the feature id. Features contained in the selected
+ * pack version are locked so they cannot be charged twice.
+ *
+ * Only the resolved rate-card row is shown here. Amounts are calculated by the backend.
+ */
 export function FeaturesTable({
   familyId,
-  packProductIds = [],
+  packFeatureIds = [],
   selectedFeatureIds = [],
   onToggleFeature,
+  features = [],
   products = [],
   countryId = null,
   pricingTierId = null,
   deploymentModelId = null,
   pricingModelId = null,
-  contractTerm = 36,
-  currencyCode = 'USD',
-  currencySymbol = '$',
-  headcount = 5000,
+  currencySymbol = '',
+  headcount = '',
   featureHeadcounts = {},
   onUpdateFeatureHeadcount,
 }) {
-  const productList = products.length > 0 ? products : INITIAL_PRODUCTS
-
-  // Find all catalogue features belonging to this product family
-  const familyProducts = productList.filter(
-    (p) =>
-      String(p.product_family_id) === String(familyId) ||
-      String(p.familyId) === String(familyId)
+  const familyProductIds = new Set(
+    products
+      .filter((p) => String(p.product_family_id) === String(familyId))
+      .map((p) => String(p.id)),
+  )
+  const productById = new Map(products.map((p) => [String(p.id), p]))
+  const familyFeatures = features.filter(
+    (f) => familyProductIds.has(String(f.product_id)) && (f.status || 'active') !== 'retired',
   )
 
-  // Track resolved rate cards per feature { [featureId]: { status, rate, error } }
+  // Resolved rate-card rows per feature { [featureId]: { status, rate, error } }
   const [featureRates, setFeatureRates] = useState({})
   const inFlightRef = useRef(new Set())
 
   const dimensionKey = `${countryId}-${pricingTierId}-${deploymentModelId}-${pricingModelId}`
   const prevDimensionKeyRef = useRef(dimensionKey)
 
-  // Reset cached feature rates if pricing dimensions change
+  // Reset cached rates when a pricing dimension changes
   useEffect(() => {
     if (prevDimensionKeyRef.current !== dimensionKey) {
       prevDimensionKeyRef.current = dimensionKey
@@ -47,29 +56,17 @@ export function FeaturesTable({
 
   const selectedFeatureIdsKey = (selectedFeatureIds || []).map(String).sort().join(',')
 
-  // Resolve rate card for any newly selected à la carte feature
+  // Resolve the rate card for each selected feature (unit of measure comes from the rate card)
   useEffect(() => {
-    if (!countryId || !pricingTierId || !deploymentModelId || !pricingModelId) {
-      return
-    }
+    if (!countryId || !pricingTierId || !deploymentModelId || !pricingModelId) return
 
     selectedFeatureIds.forEach((featId) => {
       const numFeatId = Number(featId)
-      if (isNaN(numFeatId)) return
-
-      // Don't re-fetch if already resolved or currently in-flight
-      if (
-        featureRates[numFeatId]?.status === 'resolved' ||
-        inFlightRef.current.has(numFeatId)
-      ) {
-        return
-      }
+      if (!Number.isInteger(numFeatId) || numFeatId <= 0) return
+      if (featureRates[numFeatId]?.status === 'resolved' || inFlightRef.current.has(numFeatId)) return
 
       inFlightRef.current.add(numFeatId)
-      setFeatureRates((prev) => ({
-        ...prev,
-        [numFeatId]: { status: 'loading', rate: null, error: null },
-      }))
+      setFeatureRates((prev) => ({ ...prev, [numFeatId]: { status: 'loading', rate: null, error: null } }))
 
       resolveRateCard({
         country_id: Number(countryId),
@@ -80,33 +77,23 @@ export function FeaturesTable({
       })
         .then((data) => {
           inFlightRef.current.delete(numFeatId)
-          setFeatureRates((prev) => ({
-            ...prev,
-            [numFeatId]: { status: 'resolved', rate: data, error: null },
-          }))
+          setFeatureRates((prev) => ({ ...prev, [numFeatId]: { status: 'resolved', rate: data, error: null } }))
         })
         .catch((err) => {
           inFlightRef.current.delete(numFeatId)
-          const detail =
-            err.response?.data?.detail ||
-            err.message ||
-            'No rate card configured for this feature'
           setFeatureRates((prev) => ({
             ...prev,
-            [numFeatId]: {
-              status: 'missing',
-              rate: null,
-              error: typeof detail === 'object' ? JSON.stringify(detail) : String(detail),
-            },
+            [numFeatId]: { status: 'missing', rate: null, error: describeApiError(err, 'No rate card configured for this feature') },
           }))
         })
     })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFeatureIdsKey, dimensionKey, countryId, pricingTierId, deploymentModelId, pricingModelId])
 
-  if (familyProducts.length === 0) {
+  if (familyFeatures.length === 0) {
     return (
       <div className="py-4 text-center text-xs text-slate-400">
-        No additional features configured for this family.
+        No catalogue features are saved for this product family.
       </div>
     )
   }
@@ -120,11 +107,11 @@ export function FeaturesTable({
             À la Carte Features & Add-ons
           </h4>
           <span className="text-[10px] text-slate-500">
-            ({familyProducts.length} catalogue items)
+            ({familyFeatures.length} catalogue features)
           </span>
         </div>
         <span className="text-[10px] text-slate-500 hidden sm:inline">
-          Features in pack are automatically locked to prevent duplicate charges.
+          Features in the selected pack are locked to prevent duplicate charges.
         </span>
       </div>
 
@@ -133,51 +120,26 @@ export function FeaturesTable({
           <table className="w-full text-left text-xs" aria-label="À la carte features">
             <thead className="bg-slate-50 text-[10px] font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
-                <th scope="col" className="py-2 px-3 w-10 text-center">
-                  Select
-                </th>
-                <th scope="col" className="py-2 px-3">
-                  Feature / Solution
-                </th>
-                <th scope="col" className="py-2 px-3">
-                  SKU / Code
-                </th>
-                <th scope="col" className="py-2 px-3">
-                  Product Type
-                </th>
-                <th scope="col" className="py-2 px-3">
-                  Pack Status
-                </th>
-                <th scope="col" className="py-2 px-3 text-right">
-                  Feature Pricing
-                </th>
+                <th scope="col" className="py-2 px-3 w-10 text-center">Select</th>
+                <th scope="col" className="py-2 px-3">Feature</th>
+                <th scope="col" className="py-2 px-3">Code</th>
+                <th scope="col" className="py-2 px-3">Product</th>
+                <th scope="col" className="py-2 px-3">Pack Status</th>
+                <th scope="col" className="py-2 px-3 text-right">Rate Card</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {familyProducts.map((prod) => {
-                const isIncludedInPack = packProductIds.some(
-                  (pId) => String(pId) === String(prod.id)
-                )
-                const isSelectedAlaCarte = selectedFeatureIds.some(
-                  (sId) => String(sId) === String(prod.id)
-                )
+              {familyFeatures.map((feat) => {
+                const isIncludedInPack = packFeatureIds.some((fid) => String(fid) === String(feat.id))
+                const isSelectedAlaCarte = selectedFeatureIds.some((sId) => String(sId) === String(feat.id))
                 const isChecked = isIncludedInPack || isSelectedAlaCarte
-
-                const resolvedData = featureRates[Number(prod.id)]
-                const hasResolvedRate = resolvedData?.status === 'resolved' && resolvedData?.rate
-                const unitRate = hasResolvedRate ? Number(resolvedData.rate.unit_rate || 0) : null
-                const fixedFee = hasResolvedRate ? Number(resolvedData.rate.fixed_fee || 0) : 0
-                const activeEmp = Number(featureHeadcounts[prod.id] ?? headcount) || 0
-                const monthsTerm = Number(contractTerm) || 36
-
-                // Feature FCV calculation: Unit Rate * Employees * Term + (Fixed Fee * Years)
-                const featureFcv = hasResolvedRate
-                  ? unitRate * activeEmp * monthsTerm + (fixedFee * (monthsTerm / 12))
-                  : null
+                const resolved = featureRates[Number(feat.id)]
+                const rate = resolved?.status === 'resolved' ? resolved.rate : null
+                const product = productById.get(String(feat.product_id))
 
                 return (
                   <tr
-                    key={prod.id}
+                    key={feat.id}
                     className={`transition-colors ${
                       isIncludedInPack
                         ? 'bg-emerald-50/40 text-slate-900'
@@ -186,7 +148,6 @@ export function FeaturesTable({
                         : 'hover:bg-slate-50/70'
                     }`}
                   >
-                    {/* Checkbox column */}
                     <td className="py-2.5 px-3 text-center align-top">
                       <label className="inline-flex items-center justify-center cursor-pointer mt-0.5">
                         <input
@@ -194,108 +155,65 @@ export function FeaturesTable({
                           checked={isChecked}
                           disabled={isIncludedInPack}
                           onChange={() => {
-                            if (!isIncludedInPack) {
-                              onToggleFeature(prod.id)
-                            }
+                            if (!isIncludedInPack) onToggleFeature(feat.id)
                           }}
                           className={`w-4 h-4 rounded border-slate-300 transition-colors ${
                             isIncludedInPack
                               ? 'text-emerald-600 cursor-not-allowed opacity-80'
                               : 'text-orange-600 focus:ring-orange-500 cursor-pointer'
                           }`}
-                          aria-label={`Select ${prod.name || prod.subItem || prod.solution}`}
+                          aria-label={`Select ${feat.name}`}
                         />
                       </label>
                     </td>
 
-                    {/* Name & Expanded Calculation when selected */}
                     <td className="py-2.5 px-3 font-medium text-slate-900 align-top">
-                      <div className="font-semibold text-slate-900">
-                        {prod.name || prod.subItem || prod.solution}
-                      </div>
-
-                      {/* Expanded Feature Commercials when selected as à la carte */}
+                      <div className="font-semibold text-slate-900">{feat.name}</div>
                       {isSelectedAlaCarte && (
                         <div className="mt-2.5 pt-2 border-t border-orange-200/60 space-y-2 text-xs">
-                          {/* Headcount Input */}
                           <div className="flex items-center gap-2">
                             <label
-                              htmlFor={`feat-emp-${prod.id}`}
+                              htmlFor={`feat-qty-${feat.id}`}
                               className="text-[11px] font-semibold text-slate-700 whitespace-nowrap"
                             >
-                              Active Employees:
+                              Quantity:
                             </label>
                             <input
-                              id={`feat-emp-${prod.id}`}
+                              id={`feat-qty-${feat.id}`}
                               type="number"
                               min="1"
-                              value={featureHeadcounts[prod.id] ?? headcount}
+                              value={featureHeadcounts[feat.id] ?? headcount ?? ''}
                               onChange={(e) => {
                                 if (onUpdateFeatureHeadcount) {
-                                  onUpdateFeatureHeadcount(prod.id, Number(e.target.value) || 0)
+                                  onUpdateFeatureHeadcount(feat.id, e.target.value === '' ? '' : Number(e.target.value))
                                 }
                               }}
                               className="w-24 px-2 py-0.5 text-xs font-mono rounded border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
                             />
-                            <span className="text-[11px] text-slate-500">employees</span>
+                            <span className="text-[11px] text-slate-500">
+                              {rate?.uom_id ? 'units / month (unit of measure from the rate card)' : 'units / month'}
+                            </span>
                           </div>
 
-                          {/* Calculation Formula Box */}
-                          {resolvedData?.status === 'loading' && (
+                          {resolved?.status === 'loading' && (
                             <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                               <Loader2 className="w-3.5 h-3.5 text-orange-600 animate-spin" />
-                              <span>Resolving rate card for {prod.name}...</span>
+                              <span>Resolving rate card for {feat.name}...</span>
                             </div>
                           )}
-
-                          {resolvedData?.status === 'missing' && (
+                          {resolved?.status === 'missing' && (
                             <div className="flex items-start gap-1.5 text-[11px] text-amber-800 bg-amber-50 p-2 rounded border border-amber-200">
                               <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
-                              <span>{resolvedData.error || 'Rate card not configured for this feature in selected country/tier.'}</span>
-                            </div>
-                          )}
-
-                          {hasResolvedRate && (
-                            <div className="p-2.5 rounded-md bg-white/90 border border-emerald-200 space-y-1">
-                              <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider flex items-center justify-between">
-                                <span>Feature Commercial Calculation</span>
-                                <span className="font-mono text-[10px] text-slate-500 font-normal">{monthsTerm} Mo Term</span>
-                              </div>
-                              <div className="font-mono text-[11px] text-slate-800 space-y-0.5">
-                                {monthsTerm !== 12 && (
-                                  <div>
-                                    <span className="text-slate-500">Annual (12 mo): </span>
-                                    {currencySymbol} {unitRate.toFixed(2)} × {activeEmp.toLocaleString()} × 12 ={' '}
-                                    <span className="font-semibold text-slate-900">
-                                      {currencySymbol} {(unitRate * activeEmp * 12 + fixedFee).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                  </div>
-                                )}
-                                <div>
-                                  <span className="text-slate-500">{monthsTerm === 12 ? 'Annual & Contract (12 mo): ' : `Contract (${monthsTerm} mo): `}</span>
-                                  {currencySymbol} {unitRate.toFixed(2)} × {activeEmp.toLocaleString()} × {monthsTerm} ={' '}
-                                  <span className="font-bold text-emerald-700">
-                                    {currencySymbol} {featureFcv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                              </div>
+                              <span>{resolved.error}</span>
                             </div>
                           )}
                         </div>
                       )}
                     </td>
 
-                    {/* Code */}
-                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 align-top">
-                      {prod.code}
-                    </td>
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 align-top">{feat.code}</td>
+                    <td className="py-2.5 px-3 text-[11px] text-slate-500 align-top">{product?.name || '—'}</td>
 
-                    {/* Classification */}
-                    <td className="py-2.5 px-3 text-[11px] text-slate-500 align-top">
-                      {prod.classification || prod.productType || 'Standard Module'}
-                    </td>
-
-                    {/* Pack Status */}
                     <td className="py-2.5 px-3 align-top">
                       {isIncludedInPack ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">
@@ -312,29 +230,30 @@ export function FeaturesTable({
                       )}
                     </td>
 
-                    {/* Pricing */}
                     <td className="py-2.5 px-3 text-right text-[11px] font-medium text-slate-500 align-top">
                       {isIncludedInPack ? (
                         <span className="text-emerald-700 font-semibold">Bundled</span>
                       ) : isSelectedAlaCarte ? (
-                        hasResolvedRate ? (
-                          <div className="space-y-0.5">
-                            <div className="font-mono font-bold text-slate-900">
-                              {currencySymbol} {unitRate.toFixed(2)}/emp/mo
-                            </div>
-                            <div className="text-[10px] font-mono font-bold text-emerald-700">
-                              FCV {currencySymbol} {featureFcv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </div>
+                        rate ? (
+                          <div className="space-y-0.5 font-mono">
+                            {rate.fixed_fee !== null && rate.fixed_fee !== undefined && (
+                              <div className="text-slate-700">
+                                Fee {rate.currency_code} {Number(rate.fixed_fee).toLocaleString()}
+                              </div>
+                            )}
+                            {rate.unit_rate !== null && rate.unit_rate !== undefined && (
+                              <div className="font-bold text-slate-900">
+                                {rate.currency_code} {Number(rate.unit_rate).toFixed(2)} / unit / mo
+                              </div>
+                            )}
                           </div>
-                        ) : resolvedData?.status === 'loading' ? (
+                        ) : resolved?.status === 'loading' ? (
                           <span className="text-orange-600 font-mono text-[10px]">Resolving...</span>
-                        ) : resolvedData?.status === 'missing' ? (
-                          <span className="text-amber-700 font-medium font-mono text-[10px]">
-                            No Rate Card
-                          </span>
+                        ) : resolved?.status === 'missing' ? (
+                          <span className="text-amber-700 font-medium font-mono text-[10px]">No Rate Card</span>
                         ) : (
-                          <span className="text-orange-700 font-semibold font-mono">
-                            Backend Rate Card
+                          <span className="text-slate-400 font-mono text-[10px]">
+                            {currencySymbol ? 'Select tier & models' : '—'}
                           </span>
                         )
                       ) : (

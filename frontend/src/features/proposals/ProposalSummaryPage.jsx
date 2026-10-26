@@ -26,29 +26,19 @@ import { ProposalFinancialTable } from './components/ProposalFinancialTable'
 import { ProposalSummaryFooter } from './components/ProposalSummaryFooter'
 import { ProposalSaveModal } from '../calculator/components/ProposalSaveModal'
 import { CalculationModal } from '../calculator/components/CalculationModal'
+import { CalculationNotices } from '../../components/common/CalculationNotices'
 import {
   saveFullProposal,
   calculateProposal,
   getLatestCalculation,
   getProposal,
+  discountsFromSnapshot,
+  describeApiError,
 } from '../../api/proposalsApi'
-import { deserializeBackendProposal } from '../calculator/calculatorData'
+import { deserializeBackendProposal, serializeProposalToBackendSchema } from '../calculator/calculatorData'
 import { useProposal } from '../../context/ProposalContext'
-
-function fmtCurrency(value, currencyCode = 'INR') {
-  if (value === null || value === undefined) return 'Pending backend calculation'
-  const num = Number(value)
-  if (isNaN(num)) return 'Pending backend calculation'
-  try {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: currencyCode,
-      maximumFractionDigits: 0,
-    }).format(num)
-  } catch {
-    return `${currencyCode} ${num.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
-  }
-}
+import { loadCatalogueMasters } from '../../utils/catalogueLookup'
+import { formatMoney, readCalculationTotals } from '../../utils/calculationView'
 
 export function ProposalSummaryPage() {
   const {
@@ -56,9 +46,6 @@ export function ProposalSummaryPage() {
     setClientInfo,
     countryConfigs,
     setCountryConfigs,
-    lineItemDiscounts,
-    overallDiscounts,
-    serviceDiscounts,
     calcApiResult,
     setCalcApiResult,
   } = useProposal()
@@ -75,84 +62,52 @@ export function ProposalSummaryPage() {
   const [isCalculating, setIsCalculating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [modalCalcResult, setModalCalcResult] = useState(null)
+  const [loadError, setLoadError] = useState('')
 
   const showToast = (msg, type = 'success') => {
     setToastMessage(msg)
     setToastType(type)
-    setTimeout(() => setToastMessage(''), 4500)
+    setTimeout(() => setToastMessage(''), 6000)
   }
 
+  // Always read the saved proposal and its latest snapshot from the backend.
   useEffect(() => {
     let isMounted = true
     async function loadProposalAndSnapshot() {
       if (!effectiveProposalId) return
-
-      // Load proposal details if navigating directly via URL proposalId
-      if (urlProposalId && String(clientInfo?.proposalId) !== String(urlProposalId)) {
-        try {
-          const backendProposal = await getProposal(effectiveProposalId)
-          if (isMounted && backendProposal) {
-            const deserialized = deserializeBackendProposal(backendProposal)
-            if (deserialized.clientInfo) {
-              setClientInfo((prev) => ({
-                ...prev,
-                ...deserialized.clientInfo,
-                proposalId: effectiveProposalId,
-              }))
-            }
-            if (deserialized.countryConfigs?.length > 0) {
-              setCountryConfigs(deserialized.countryConfigs)
-            }
-          }
-        } catch (err) {
-          if (err.response?.status !== 404) {
-            console.warn('Page 6: Could not load proposal details:', err)
-          }
-        }
-      }
-
-      if (calcApiResult?.status === 'success') return
-
       try {
-        const latest = await getLatestCalculation(effectiveProposalId)
-        if (isMounted && latest) {
-          setCalcApiResult({
-            status: 'success',
-            proposalId: effectiveProposalId,
-            data: latest,
-            isBackendCalculation: true,
-          })
+        const [masters, backendProposal] = await Promise.all([
+          loadCatalogueMasters(),
+          getProposal(effectiveProposalId),
+        ])
+        let latest = null
+        try {
+          latest = await getLatestCalculation(effectiveProposalId)
+        } catch (err) {
+          if (err.response?.status !== 404) throw err
         }
+        if (!isMounted) return
+        const restored = deserializeBackendProposal(backendProposal, { masters, latestCalc: latest })
+        if (String(clientInfo?.proposalId) !== String(effectiveProposalId) || countryConfigs.length === 0) {
+          setClientInfo(restored.clientInfo)
+          setCountryConfigs(restored.countryConfigs)
+        }
+        setCalcApiResult(
+          latest ? { status: 'success', proposalId: effectiveProposalId, data: latest, isBackendCalculation: true } : null,
+        )
+        setLoadError('')
       } catch (err) {
-        if (err.response?.status !== 404) {
-          console.warn('Page 6: Could not load latest calculation snapshot:', err)
-        }
+        if (isMounted) setLoadError(`Could not load proposal #${effectiveProposalId}: ${describeApiError(err)}`)
       }
     }
     loadProposalAndSnapshot()
     return () => { isMounted = false }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveProposalId, urlProposalId])
+  }, [effectiveProposalId])
 
-  const snapshotPayload = calcApiResult?.data?.snapshot_payload || null
-  const currencyCode = snapshotPayload?.reporting_currency_code || clientInfo?.reportingCurrency || 'INR'
-  const totalReporting = snapshotPayload?.total_proposal_reporting_currency ?? null
-
-  const subscriptionReportingTotal = useMemo(() => {
-    if (!snapshotPayload?.products) return null
-    return snapshotPayload.products.reduce(
-      (acc, p) => acc + (p.subscription_total_after_discount ?? 0) * (p.fx_rate_multiplier ?? 1),
-      0
-    )
-  }, [snapshotPayload])
-
-  const servicesReportingTotal = useMemo(() => {
-    if (!snapshotPayload?.products) return null
-    return snapshotPayload.products.reduce((acc, p) => {
-      const fx = p.fx_rate_multiplier ?? 1
-      return acc + (p.service_total_after_discount ?? 0) * fx
-    }, 0)
-  }, [snapshotPayload])
+  const totals = calcApiResult?.status === 'success' ? readCalculationTotals(calcApiResult.data) : null
+  const snapshotPayload = totals ? calcApiResult.data.snapshot_payload : null
+  const currencyCode = totals?.currency || clientInfo?.reportingCurrency || ''
 
   const summaryCounts = useMemo(() => {
     let totalFamilies = 0, totalPacks = 0, totalFeatures = 0, totalServices = 0
@@ -175,72 +130,46 @@ export function ProposalSummaryPage() {
   const handleConfirmSave = async () => {
     setIsSaving(true)
     try {
-      const res = await saveFullProposal({ clientInfo, countryConfigs })
-      if (res.isPersisted) {
-        showToast('Proposal successfully saved to PostgreSQL database.', 'success')
-      } else {
-        showToast('Draft saved locally (not persisted to database).', 'warning')
-      }
+      const res = await saveFullProposal({ clientInfo, countryConfigs, existingProposalId: effectiveProposalId })
+      setClientInfo((prev) => ({ ...prev, proposalId: res.proposalId, customerId: res.customerId, dealId: res.dealId }))
+      setIsSaveModalOpen(false)
+      showToast(`Proposal #${res.proposalId} saved.`, 'success')
     } catch (err) {
-      showToast(`Save failed: ${err.message || 'Unknown error'}`, 'error')
+      showToast(`Save failed: ${describeApiError(err)}`, 'error')
     } finally {
       setIsSaving(false)
     }
   }
 
+  // Recalculate the saved proposal with the same discounts and term as the latest snapshot.
   const handleTriggerCalculation = async () => {
-    setIsCalculating(true)
     setIsCalcModalOpen(true)
+    if (!effectiveProposalId) {
+      setModalCalcResult({ status: 'error', message: 'Save the proposal on the Proposal Configurator first.', data: null })
+      return
+    }
+    const term = Number(totals?.termMonths ?? countryConfigs?.[0]?.contractTerm)
+    if (!Number.isInteger(term) || term <= 0) {
+      setModalCalcResult({ status: 'error', message: 'Set the contract term on the Proposal Configurator first.', data: null })
+      return
+    }
+    setIsCalculating(true)
     try {
-      let activeProposalId = effectiveProposalId
-      if (!activeProposalId) {
-        const saveRes = await saveFullProposal({ clientInfo, countryConfigs })
-        if (saveRes.isPersisted) {
-          activeProposalId = saveRes.proposalId
-        } else {
-          throw new Error('Could not persist proposal before calculation.')
-        }
-      }
-      const primaryTerm = Number(countryConfigs?.[0]?.contractTerm) || 12
-      const productSubscriptionDiscounts = {}
-      const productServiceDiscounts = {}
-
-      const firstCountry = countryConfigs?.[0]
-      const overallVal =
-        overallDiscounts[firstCountry?.id]?.value ||
-        overallDiscounts[firstCountry?.countryId]?.value
-      if (overallVal !== undefined && overallVal !== null && overallVal !== '') {
-        const oVal = Number(overallVal)
-        if (!isNaN(oVal) && oVal >= 0 && oVal <= 100) {
-          ;(snapshotPayload?.products || []).forEach((p) => {
-            if (p.product_code) productSubscriptionDiscounts[p.product_code] = oVal
-          })
-        }
-      }
-
-      const rawResult = await calculateProposal(activeProposalId, {
-        product_subscription_discounts: productSubscriptionDiscounts,
-        product_service_discounts: productServiceDiscounts,
-        contract_term_months: primaryTerm,
+      const rawResult = await calculateProposal(effectiveProposalId, {
+        ...discountsFromSnapshot(calcApiResult?.data),
+        contract_term_months: term,
       })
-      const result = {
-        status: 'success',
-        proposalId: activeProposalId,
-        data: rawResult,
-        isBackendCalculation: true,
-      }
+      const result = { status: 'success', proposalId: effectiveProposalId, data: rawResult, isBackendCalculation: true }
       setModalCalcResult(result)
       setCalcApiResult(result)
     } catch (error) {
-      const detailMsg = error.response?.data?.detail || error.message || 'Pricing calculation failed'
-      const errResult = {
+      setModalCalcResult({
         status: 'error',
         statusCode: error.response?.status,
-        message: typeof detailMsg === 'object' ? JSON.stringify(detailMsg) : detailMsg,
+        message: describeApiError(error, 'Pricing calculation failed'),
         data: null,
         isBackendCalculation: false,
-      }
-      setModalCalcResult(errResult)
+      })
     } finally {
       setIsCalculating(false)
     }
@@ -257,9 +186,9 @@ export function ProposalSummaryPage() {
         clientName={clientInfo?.clientName || 'Untitled Proposal'}
         countriesValue={`${summaryCounts.countriesCount} Configured`}
         productLinesValue={`${summaryCounts.totalFamilies} Families (${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Features)`}
-        pricingFcv={totalReporting !== null ? fmtCurrency(totalReporting, currencyCode) : 'Pending backend calculation'}
-        servicesValue={servicesReportingTotal !== null ? fmtCurrency(servicesReportingTotal, currencyCode) : 'Pending backend calculation'}
-        grandTotal={totalReporting !== null ? fmtCurrency(totalReporting, currencyCode) : 'Pending backend calculation'}
+        pricingFcv={totals ? formatMoney(totals.subscriptionContract, totals.currency) : 'Pending backend calculation'}
+        servicesValue={totals ? formatMoney(totals.services, totals.currency) : 'Pending backend calculation'}
+        grandTotal={totals ? formatMoney(totals.contractTotal, totals.currency) : 'Pending backend calculation'}
       />
 
       {toastMessage && (
@@ -289,6 +218,11 @@ export function ProposalSummaryPage() {
 
       <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
         <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6" aria-label="Proposal Summary Workspace">
+          {loadError && (
+            <div role="alert" className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-xs text-rose-900">
+              {loadError}
+            </div>
+          )}
           {!hasProposalScope ? (
             <section aria-label="No Proposal Configured" className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-xs space-y-4 max-w-xl mx-auto mt-8">
               <div className="w-14 h-14 rounded-2xl bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600 mx-auto">
@@ -315,10 +249,10 @@ export function ProposalSummaryPage() {
                   <div className="flex items-center gap-2.5 flex-wrap">
                     <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposal Summary — {clientInfo.clientName}</h1>
                     <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-800 text-orange-400 border border-slate-700">{currencyCode}</span>
-                    {calcApiResult?.status === 'success' ? (
+                    {totals ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true"></span>
-                        <span>Calculated</span>
+                        <span>{totals.isStale ? 'Calculated (outdated)' : 'Calculated'} · Snapshot #{totals.snapshotId}</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
@@ -360,7 +294,7 @@ export function ProposalSummaryPage() {
 
                   <button type="button" onClick={handleTriggerCalculation} disabled={isCalculating} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0B1528] text-white hover:bg-slate-800 transition-colors shadow-2xs disabled:opacity-60" title="Validate with FastAPI pricing calculation engine">
                     <RefreshCw className={`w-3.5 h-3.5 text-orange-400 ${isCalculating ? 'animate-spin' : ''}`} aria-hidden="true" />
-                    <span>{isCalculating ? 'Calculating…' : 'Check Pricing Engine'}</span>
+                    <span>{isCalculating ? 'Calculating…' : 'Recalculate'}</span>
                   </button>
                 </div>
               </div>
@@ -368,10 +302,10 @@ export function ProposalSummaryPage() {
               <section aria-label="High-Level Proposal Financial Metrics" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
                 <SummaryMetricCard title="Countries" value={summaryCounts.countriesCount} subtitle={summaryCounts.countriesCount === 1 ? '1 Configured Country' : `${summaryCounts.countriesCount} Configured Countries`} icon={Globe} colorVariant="slate" />
                 <SummaryMetricCard title="Product Lines" value={summaryCounts.totalFamilies} subtitle={`${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Add-ons`} icon={Package} colorVariant="slate" />
-                <SummaryMetricCard title="License Fees" value={subscriptionReportingTotal !== null ? fmtCurrency(subscriptionReportingTotal, currencyCode) : 'Pending backend calculation'} subtitle="Subscription / Platform Fees" icon={Key} colorVariant="blue" currencyCode={currencyCode} />
-                <SummaryMetricCard title="Rental / PEPM" value={totalReporting !== null ? fmtCurrency(totalReporting, currencyCode) : 'Pending backend calculation'} subtitle="Annual recurring over term" icon={Calendar} colorVariant="slate" currencyCode={currencyCode} />
-                <SummaryMetricCard title="Service Fees" value={servicesReportingTotal !== null ? fmtCurrency(servicesReportingTotal, currencyCode) : 'Pending backend calculation'} subtitle="Professional Services" icon={Briefcase} colorVariant="teal" currencyCode={currencyCode} />
-                <SummaryMetricCard title="Grand Total" value={totalReporting !== null ? fmtCurrency(totalReporting, currencyCode) : 'Pending backend calculation'} subtitle={`Consolidated in ${currencyCode}`} icon={DollarSign} colorVariant="orange" isGrandTotal={true} currencyCode={currencyCode} />
+                <SummaryMetricCard title="Subscription (Annual)" value={totals ? formatMoney(totals.subscriptionAnnual, currencyCode) : 'Pending backend calculation'} subtitle="Platform + consumption, after discounts" icon={Key} colorVariant="blue" currencyCode={currencyCode} />
+                <SummaryMetricCard title={`Subscription (${totals?.termMonths ?? '—'} mo)`} value={totals ? formatMoney(totals.subscriptionContract, currencyCode) : 'Pending backend calculation'} subtitle="Over the contract term" icon={Calendar} colorVariant="slate" currencyCode={currencyCode} />
+                <SummaryMetricCard title="Service Fees" value={totals ? formatMoney(totals.services, currencyCode) : 'Pending backend calculation'} subtitle="One-time professional services" icon={Briefcase} colorVariant="teal" currencyCode={currencyCode} />
+                <SummaryMetricCard title="Grand Total (FCV)" value={totals ? formatMoney(totals.contractTotal, currencyCode) : 'Pending backend calculation'} subtitle={totals ? `Year 1: ${formatMoney(totals.annualTotal, currencyCode)} · ${currencyCode}` : `Consolidated in ${currencyCode}`} icon={DollarSign} colorVariant="orange" isGrandTotal={true} currencyCode={currencyCode} />
               </section>
 
               <section aria-label="Detailed Proposal Commercial Breakdown" className="space-y-3">
@@ -384,30 +318,23 @@ export function ProposalSummaryPage() {
                   <div className="flex items-center gap-3 text-[11px]">
                     <span className="text-slate-400">Discounts Detail: <strong className={showDiscounts ? 'text-orange-600' : 'text-slate-600'}>{showDiscounts ? 'Visible' : 'Hidden'}</strong></span>
                     <span className="text-slate-300">|</span>
-                    <span className="text-slate-400">Financial Calculation: <strong className="text-slate-600 font-mono">{calcApiResult?.status === 'success' ? 'Backend Engine ✓' : 'Backend-Owned'}</strong></span>
+                    <span className="text-slate-400">Financial Calculation: <strong className="text-slate-600 font-mono">{totals ? `Snapshot #${totals.snapshotId}` : 'Not calculated'}</strong></span>
                   </div>
                 </div>
 
-                <ProposalFinancialTable
-                  countryConfigs={countryConfigs}
-                  clientInfo={clientInfo}
-                  lineItemDiscounts={lineItemDiscounts}
-                  overallDiscounts={overallDiscounts}
-                  serviceDiscounts={serviceDiscounts}
-                  showDiscounts={showDiscounts}
-                  snapshotPayload={snapshotPayload}
-                />
+                <CalculationNotices totals={totals} />
+                <ProposalFinancialTable showDiscounts={showDiscounts} snapshotPayload={snapshotPayload} />
               </section>
 
               <ProposalSummaryFooter countryConfigs={countryConfigs} clientInfo={clientInfo} />
 
               <div className="flex items-center justify-between pt-2 pb-6 border-t border-slate-200">
-                <Link to="/pricing-discounts" className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs">
+                <Link to={`/pricing-discounts${effectiveProposalId ? `?proposalId=${effectiveProposalId}` : ''}`} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs">
                   <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>Return to Pricing &amp; Discounts</span>
                 </Link>
                 <div className="flex items-center gap-2">
-                  <Link to="/calculator" className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs">
+                  <Link to={`/calculator${effectiveProposalId ? `?proposalId=${effectiveProposalId}` : ''}`} className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs">
                     <span>Edit Configurator Scope</span>
                   </Link>
                   <button type="button" onClick={handleTriggerSave} disabled={isSaving} className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white transition-colors shadow-2xs disabled:opacity-60">
@@ -423,7 +350,7 @@ export function ProposalSummaryPage() {
 
       <ProposalSaveModal
         isOpen={isSaveModalOpen}
-        serializedData={{ clientInfo, countryConfigs }}
+        serializedData={serializeProposalToBackendSchema(clientInfo, countryConfigs)}
         onClose={() => setIsSaveModalOpen(false)}
         onConfirmSave={handleConfirmSave}
       />

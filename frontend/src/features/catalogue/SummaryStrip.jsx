@@ -1,7 +1,7 @@
 export function SummaryStrip({
-  clientName = 'Global Enterprise Master',
+  clientName = '—',
   countriesValue = '—',
-  productLinesCount = 5,
+  productLinesCount = 0,
   totalProductsCount = 0,
   productLinesValue = null,
   pricingFcv = '—',

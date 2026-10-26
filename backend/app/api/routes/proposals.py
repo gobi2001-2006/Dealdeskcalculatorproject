@@ -26,6 +26,7 @@ from app.schemas.proposals import (
     ProposalCalculationResponse,
     ProposalCountryCreate,
     ProposalCountryResponse,
+    ProposalCountryUpdate,
     ProposalCreate,
     ProposalDetailResponse,
     ProposalLineItemCreate,
@@ -34,8 +35,10 @@ from app.schemas.proposals import (
     ProposalResponse,
     ProposalServiceLineCreate,
     ProposalServiceLineResponse,
+    ProposalServiceLineUpdate,
     ProposalUpdate,
 )
+from app.api.errors import DOMAIN_ERRORS, http_error
 from app.services.proposal_service import (
     DealNotFoundError,
     LifecycleStateError,
@@ -47,11 +50,15 @@ from app.services.proposal_service import (
     add_proposal_line_item,
     add_proposal_service_line,
     create_proposal,
+    delete_proposal_country,
     delete_proposal_line_item,
+    delete_proposal_service_line,
     get_proposal,
     list_proposals,
     update_proposal,
+    update_proposal_country,
     update_proposal_line_item,
+    update_proposal_service_line,
 )
 from app.services.pricing_engine import (
     AmbiguousRateCardMatchError,
@@ -353,6 +360,85 @@ def add_proposal_service_line_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except ProposalConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# 9b. Update / remove country blocks and service lines (draft only).
+# Without these, edits made in the configurator after the first save could not
+# be persisted and the calculation silently priced the old values.
+# ---------------------------------------------------------------------------
+@router.patch(
+    "/{proposal_id}/countries/{proposal_country_id}",
+    response_model=ProposalCountryResponse,
+    summary="Update a proposal country block (draft only)",
+)
+def update_proposal_country_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0),
+    proposal_country_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+    payload: ProposalCountryUpdate,
+):
+    try:
+        return update_proposal_country(
+            db=db, proposal_id=proposal_id, proposal_country_id=proposal_country_id, data=payload
+        )
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.delete(
+    "/{proposal_id}/countries/{proposal_country_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a proposal country block (draft only)",
+)
+def delete_proposal_country_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0),
+    proposal_country_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+):
+    try:
+        delete_proposal_country(db=db, proposal_id=proposal_id, proposal_country_id=proposal_country_id)
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.patch(
+    "/{proposal_id}/service-lines/{service_line_id}",
+    response_model=ProposalServiceLineResponse,
+    summary="Update a professional service line (draft only)",
+)
+def update_proposal_service_line_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0),
+    service_line_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+    payload: ProposalServiceLineUpdate,
+):
+    try:
+        return update_proposal_service_line(
+            db=db, proposal_id=proposal_id, service_line_id=service_line_id, data=payload
+        )
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.delete(
+    "/{proposal_id}/service-lines/{service_line_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a professional service line (draft only)",
+)
+def delete_proposal_service_line_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0),
+    service_line_id: int = Path(..., gt=0),
+    db: Session = Depends(get_db),
+):
+    try:
+        delete_proposal_service_line(db=db, proposal_id=proposal_id, service_line_id=service_line_id)
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
 
 
 # ---------------------------------------------------------------------------

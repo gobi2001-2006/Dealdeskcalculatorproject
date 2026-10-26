@@ -1,25 +1,19 @@
 import {
   Layers,
-  RotateCcw,
-  ShieldAlert,
   Info,
 } from 'lucide-react'
 
 export function PlatformSubscriptionSection({
-  platformConfig,
-  onChangeConfig,
-  onResetToSpreadsheetDemo,
   activeCurrencySymbol = '$',
   activeCurrencyCode = 'USD',
   isVersionLocked = false,
   activeDeployment = 'Shared Cloud',
   activeCountry = null,
   selectedFamilyName = 'All Product Families',
-  pricingTiers = [],
 }) {
   return (
     <div className="space-y-4">
-      {/* Top Banner & Demo Reset */}
+      {/* Top Banner */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-start gap-3">
           <div className="w-9 h-9 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0 mt-0.5">
@@ -42,19 +36,6 @@ export function PlatformSubscriptionSection({
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onResetToSpreadsheetDemo}
-          disabled={isVersionLocked}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-700 shadow-2xs transition-colors shrink-0 ${
-            isVersionLocked
-              ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-400'
-              : 'hover:bg-slate-50 hover:text-slate-900 cursor-pointer'
-          }`}
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-          <span>Reset to Spreadsheet Demo Values</span>
-        </button>
       </div>
 
       {/* Scope Strip */}
@@ -82,7 +63,7 @@ export function PlatformSubscriptionSection({
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] uppercase font-bold text-slate-400">Unit of Measure:</span>
           <span className="px-2 py-0.5 rounded bg-orange-50 border border-orange-200 font-semibold text-orange-800 text-[11px]">
-            Active Employees (with ESS)
+            Set per rate row (shown in each row)
           </span>
         </div>
       </div>

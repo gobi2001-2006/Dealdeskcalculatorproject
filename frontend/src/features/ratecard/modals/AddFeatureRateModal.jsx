@@ -1,11 +1,7 @@
  import { useState, useMemo } from 'react'
 import { X, Layers, AlertCircle } from 'lucide-react'
 
-const DEFAULT_TIERS = [
-  { id: 'tier-1', code: 'Tier 1', name: 'Enterprise' },
-  { id: 'tier-2', code: 'Tier 2', name: 'Mid-Market' },
-  { id: 'tier-3', code: 'Tier 3', name: 'Growth' },
-]
+const DEFAULT_TIERS = []
 
 export function AddFeatureRateModal({
   isOpen,
@@ -17,6 +13,8 @@ export function AddFeatureRateModal({
   families = [],
   activeDeployment = 'Shared Cloud',
   activePricing = 'PEPM',
+  uoms = [],
+  lockedUomId = null,
   activeCurrencySymbol = '$',
   existingFeatureRates = [],
 }) {
@@ -49,7 +47,8 @@ export function AddFeatureRateModal({
 
   const [selectedFeatureId, setSelectedFeatureId] = useState('')
   const [tierRates, setTierRates] = useState({})
-  const [uom, setUom] = useState('Active Employees (with ESS)')
+  const [uomId, setUomId] = useState('')
+  const effectiveUomId = lockedUomId || uomId
   const [error, setError] = useState('')
 
   if (!isOpen) return null
@@ -95,6 +94,11 @@ export function AddFeatureRateModal({
         ? Number(effectiveFeatureId)
         : effectiveFeatureId
 
+    if (!effectiveUomId) {
+      setError('Select the unit of measure this rate is charged per.')
+      return
+    }
+
     onSave({
       featureId: resolvedFeatId,
       productId: activeFeature?.productId,
@@ -107,11 +111,12 @@ export function AddFeatureRateModal({
           : 'Adrenalin Native',
       deploymentModel: activeDeployment,
       pricingModel: activePricing,
-      unitOfMeasure: uom,
+      uomId: effectiveUomId ? Number(effectiveUomId) : null,
+      unitOfMeasure: uoms.find((u) => String(u.id) === String(effectiveUomId))?.name || '',
       tierRates,
-      tier1Rate: String(t1).trim() || '0',
-      tier2Rate: String(t2).trim() || '0',
-      tier3Rate: String(t3).trim() || '0',
+      tier1Rate: String(t1).trim(),
+      tier2Rate: String(t2).trim(),
+      tier3Rate: String(t3).trim(),
     })
 
     setTierRates({})
@@ -202,21 +207,24 @@ export function AddFeatureRateModal({
 
           <div>
             <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
-              Unit of Measure {String(activePricing).toLowerCase().includes('pepm') && <span className="text-slate-400 font-normal">(Locked to Active Employees (with ESS) for PEPM)</span>}
+              Unit of Measure {lockedUomId && <span className="text-slate-400 font-normal">(fixed by the pricing model)</span>}
             </label>
-            <input
+            <select
               id="uom-input"
-              type="text"
-              value={String(activePricing).toLowerCase().includes('pepm') ? 'Active Employees (with ESS)' : uom}
-              onChange={(e) => setUom(e.target.value)}
-              disabled={String(activePricing).toLowerCase().includes('pepm')}
-              readOnly={String(activePricing).toLowerCase().includes('pepm')}
+              value={effectiveUomId || ''}
+              onChange={(e) => setUomId(e.target.value)}
+              disabled={Boolean(lockedUomId)}
               className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
-                String(activePricing).toLowerCase().includes('pepm')
-                  ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed font-medium'
-                  : 'bg-white border-slate-300'
+                lockedUomId ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed font-medium' : 'bg-white border-slate-300'
               }`}
-            />
+            >
+              <option value="">{uoms.length ? '-- Select unit of measure --' : '-- No units of measure loaded --'}</option>
+              {uoms.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.code})
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Dynamic Tiers Grid */}

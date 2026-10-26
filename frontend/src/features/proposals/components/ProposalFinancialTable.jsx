@@ -1,409 +1,140 @@
 import { Fragment } from 'react'
-import {
-  Package,
-  Sparkles,
-  Briefcase,
-  Users,
-  Building,
-  DollarSign,
-  Award,
-  Clock,
-  HeartHandshake,
-  ShieldCheck,
-  Tag,
-  Percent,
-} from 'lucide-react'
-import { INITIAL_PRODUCT_FAMILIES, INITIAL_PRODUCTS } from '../../../data/catalogueData'
-import { INITIAL_PACKS } from '../../../data/packsData'
-import { CountrySummarySectionHeader } from './CountrySummarySectionHeader'
-import { CountrySubtotalRow } from './CountrySubtotalRow'
-import { GrandTotalRow } from './GrandTotalRow'
+import { Package, Sparkles, Briefcase } from 'lucide-react'
+import { formatMoney } from '../../../utils/calculationView'
 
-const ICON_MAP = {
-  Users,
-  Building,
-  DollarSign,
-  Award,
-  Clock,
-  Sparkles,
-  Briefcase,
-  HeartHandshake,
-  ShieldCheck,
-}
+/**
+ * Proposal Summary table, rendered entirely from the saved calculation snapshot.
+ *
+ * Line and product amounts are in the product's NATIVE currency (rate-card currency);
+ * product totals are also shown converted to the REPORTING currency by the backend.
+ */
+export function ProposalFinancialTable({ snapshotPayload = null, showDiscounts = false }) {
+  const products = Array.isArray(snapshotPayload?.products) ? snapshotPayload.products : []
+  const reporting = snapshotPayload?.reporting_currency_code || ''
+  const term = snapshotPayload?.contract_term_months
 
-// ---------------------------------------------------------------------------
-// Format a currency amount from the backend (already a float)
-// ---------------------------------------------------------------------------
-function fmtAmt(value, code = 'INR') {
-  if (value === null || value === undefined) return null
-  const num = Number(value)
-  if (isNaN(num)) return null
-  try {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: code,
-      maximumFractionDigits: 0,
-    }).format(num)
-  } catch {
-    return String(num)
+  if (!snapshotPayload) {
+    return (
+      <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs text-slate-500">
+        No calculation has been saved for this proposal yet. Use “Calculate” to price it with the backend engine.
+      </div>
+    )
   }
-}
-
-export function ProposalFinancialTable({
-  countryConfigs = [],
-  clientInfo,
-  lineItemDiscounts = {},
-  overallDiscounts = {},
-  serviceDiscounts = {},
-  showDiscounts = false,
-  snapshotPayload = null,
-}) {
-  const reportingCurrencyCode =
-    snapshotPayload?.reporting_currency_code ||
-    clientInfo?.reportingCurrency ||
-    'INR'
-
-  // Index subscription line items by pack_version_id, feature_id, and target_name for O(1) lookup
-  const lineItemByPackVersionId = {}
-  const lineItemByFeatureId = {}
-  const lineItemByTargetName = {}
-  ;(snapshotPayload?.all_subscription_line_items || []).forEach((li) => {
-    if (li.pack_version_id) lineItemByPackVersionId[li.pack_version_id] = li
-    if (li.feature_id) lineItemByFeatureId[li.feature_id] = li
-    if (li.target_name) lineItemByTargetName[li.target_name.trim().toLowerCase()] = li
-  })
-
-  // Index service lines by role_name (lowercased) for lookup
-  const serviceLineByRole = {}
-  ;(snapshotPayload?.all_service_lines || []).forEach((sl) => {
-    const key = (sl.role_name || '').trim().toLowerCase()
-    serviceLineByRole[key] = sl
-  })
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       <div className="overflow-x-auto">
-        <table
-          className="w-full text-left text-xs border-collapse"
-          aria-label="Detailed Proposal Commercial Summary"
-        >
-          {/* Table Column Headers */}
+        <table className="w-full text-left text-xs border-collapse" aria-label="Detailed Proposal Commercial Summary">
           <thead className="bg-slate-100/90 text-[11px] font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200">
             <tr>
-              <th scope="col" className="py-3 px-4 min-w-[280px]">Country / Product</th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">License Fee</th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">Rental / PEPM</th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">Service Fees</th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">Total</th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[120px]">Gross Margin</th>
+              <th scope="col" className="py-3 px-4 min-w-[280px]">Product / Line</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">Subscription (annual)</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">Subscription ({term ?? '—'} mo)</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">Services (one-time)</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[170px]">Total (FCV)</th>
             </tr>
           </thead>
-
           <tbody className="divide-y divide-slate-100">
-            {countryConfigs.map((country, cIdx) => {
-              const countryOverallDiscount =
-                overallDiscounts[country.id] ||
-                overallDiscounts[country.countryId] ||
-                null
-
+            {products.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-6 text-center text-slate-500">The calculation contains no priced lines.</td>
+              </tr>
+            )}
+            {products.map((p) => {
+              const native = p.native_currency_code
               return (
-                <Fragment key={country.id}>
-                  {/* 1. Country Header Row */}
-                  <CountrySummarySectionHeader
-                    countryIndex={cIdx + 1}
-                    countryConfig={country}
-                  />
+                <Fragment key={p.product_code}>
+                  <tr className="bg-[#0B1528] text-white">
+                    <td className="py-2.5 px-4 font-bold" colSpan={5}>
+                      {p.product_name} <span className="font-mono text-orange-300 text-[11px]">({p.product_code})</span>
+                      <span className="ml-2 text-[10px] font-mono text-slate-300">
+                        Native {native}
+                        {native !== reporting ? ` → ${reporting} @ ${p.fx_rate_multiplier} (${p.currency_pair}${p.fx_effective_date ? `, ${p.fx_effective_date}` : ''})` : ''}
+                      </span>
+                    </td>
+                  </tr>
 
-                  {/* 2. Product Family Lines */}
-                  {country.families.map((fam) => {
-                    const famMaster = INITIAL_PRODUCT_FAMILIES.find(
-                      (f) => f.id === fam.familyId
-                    )
-                    const FamIcon =
-                      (famMaster?.iconName && ICON_MAP[famMaster.iconName]) ||
-                      Package
-
-                    const selectedPack = fam.selectedPackId
-                      ? INITIAL_PACKS.find((p) => p.id === fam.selectedPackId)
-                      : null
-
-                    const packKey = `${country.id}:${fam.id}:pack:${selectedPack?.id}`
-                    const packKeyAlt = `${country.id}:${fam.familyId}:pack:${selectedPack?.id}`
-                    const packDiscount =
-                      lineItemDiscounts[packKey] ||
-                      lineItemDiscounts[packKeyAlt] ||
-                      null
-
-                    // Selected a la carte features
-                    const alaCarteProducts = (fam.selectedFeatureIds || [])
-                      .map((featId) => INITIAL_PRODUCTS.find((p) => p.id === featId))
-                      .filter(Boolean)
-
-                    // Pack line item from backend snapshot
-                    const packNumId = fam.selectedPackId
-                      ? (typeof fam.selectedPackId === 'number'
-                          ? fam.selectedPackId
-                          : parseInt(String(fam.selectedPackId), 10))
-                      : null
-                    const packLi = (packNumId && !isNaN(packNumId) && lineItemByPackVersionId[packNumId]) ||
-                      (selectedPack && lineItemByTargetName[selectedPack.name?.trim().toLowerCase()]) ||
-                      null
-                    const packTotal = packLi
-                      ? fmtAmt(packLi.item_subscription_after_discount, reportingCurrencyCode)
-                      : null
-
-                    return (
-                      <Fragment key={fam.id}>
-                        {/* A. Base Pack Row */}
-                        {selectedPack && (
-                          <tr className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-3 px-4">
-                              <div className="flex items-start gap-2.5">
-                                <div className="w-6 h-6 rounded bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 mt-0.5 border border-slate-200">
-                                  <FamIcon className="w-3.5 h-3.5" aria-hidden="true" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="font-bold text-slate-900 text-xs flex items-center gap-2 flex-wrap">
-                                    <span>{selectedPack.name}</span>
-                                    <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-slate-100 text-slate-700 border border-slate-200">
-                                      {selectedPack.code}
-                                    </span>
-                                    <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-orange-100 text-orange-800 border border-orange-200">
-                                      {country.currency}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 mt-0.5">
-                                    {famMaster?.name || 'Product Suite'} &bull;{' '}
-                                    <span className="font-mono">
-                                      {Number(fam.headcount || country.headcount || 0).toLocaleString()}
-                                    </span>{' '}
-                                    users &times; {country.contractTerm} mos
-                                  </p>
-                                  {/* Show Discounts detail for Pack */}
-                                  {showDiscounts && packDiscount && packDiscount.value && (
-                                    <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
-                                      <Tag className="w-3 h-3 text-amber-600" aria-hidden="true" />
-                                      <span>
-                                        Discount:{' '}
-                                        <strong>
-                                          {packDiscount.type === 'percentage'
-                                            ? `${packDiscount.value}%`
-                                            : `${country.currencySymbol}${packDiscount.value}`}
-                                        </strong>
-                                      </span>
-                                      {packDiscount.reason && (
-                                        <span className="text-amber-700 italic border-l border-amber-200 pl-1.5">
-                                          &quot;{packDiscount.reason}&quot;
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            {/* Financial Cells - from backend snapshot */}
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400">
-                              {country.pricingModelId === 'pm-platform' ? (packTotal || '—') : '—'}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-600">
-                              {packTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
-                            <td className="py-3 px-3 text-right font-mono text-xs font-semibold text-slate-700">
-                              {packTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400 italic">—</td>
-                          </tr>
-                        )}
-
-                        {/* B. A la carte Feature Rows */}
-                        {alaCarteProducts.map((prod) => {
-                          const featKey = `${country.id}:${fam.id}:feature:${prod.id}`
-                          const featKeyAlt = `${country.id}:${fam.familyId}:feature:${prod.id}`
-                          const featDiscount =
-                            lineItemDiscounts[featKey] ||
-                            lineItemDiscounts[featKeyAlt] ||
-                            null
-
-                          const featNumId = prod.id
-                            ? (typeof prod.id === 'number' ? prod.id : parseInt(String(prod.id), 10))
-                            : null
-                          const li = (featNumId && !isNaN(featNumId) && lineItemByFeatureId[featNumId]) ||
-                            (prod && lineItemByTargetName[prod.name?.trim().toLowerCase()]) ||
-                            null
-                          const featTotal = li
-                            ? fmtAmt(li.item_subscription_after_discount, reportingCurrencyCode)
-                            : null
-
-                          return (
-                            <tr
-                              key={prod.id}
-                              className="hover:bg-slate-50/70 transition-colors bg-orange-50/15"
-                            >
-                              <td className="py-2.5 px-4 pl-9">
-                                <div className="flex items-start gap-2">
-                                  <Sparkles
-                                    className="w-3.5 h-3.5 text-orange-600 shrink-0 mt-0.5"
-                                    aria-hidden="true"
-                                  />
-                                  <div className="min-w-0 flex-1">
-                                    <div className="font-semibold text-slate-900 text-xs flex items-center gap-1.5 flex-wrap">
-                                      <span>{prod.solution || prod.subItem}</span>
-                                      <span className="text-[10px] font-mono text-slate-500">({prod.code})</span>
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-orange-100 text-orange-800">
-                                        À la carte
-                                      </span>
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">
-                                      {prod.subItem} &bull; {country.currency}
-                                    </p>
-                                    {/* Show Discounts detail for Feature */}
-                                    {showDiscounts && featDiscount && featDiscount.value && (
-                                      <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
-                                        <Percent className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
-                                        <span>
-                                          Discount:{' '}
-                                          <strong>
-                                            {featDiscount.type === 'percentage'
-                                              ? `${featDiscount.value}%`
-                                              : `${country.currencySymbol}${featDiscount.value}`}
-                                          </strong>
-                                        </span>
-                                        {featDiscount.reason && (
-                                          <span className="text-amber-700 italic border-l border-amber-200 pl-1">
-                                            &quot;{featDiscount.reason}&quot;
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                              {/* Financial Cells - from backend snapshot */}
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">
-                                {featTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
-                              <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-700">
-                                {featTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400 italic">—</td>
-                            </tr>
-                          )
-                        })}
-                      </Fragment>
-                    )
-                  })}
-
-                  {/* 3. Professional Service Lines */}
-                  {(country.serviceLines || []).map((srv) => {
-                    const srvDiscount = serviceDiscounts[srv.id] || null
-                    const roleKey = (srv.roleName || '').trim().toLowerCase()
-                    const sl = serviceLineByRole[roleKey]
-                    const srvTotal = sl
-                      ? fmtAmt(sl.service_line_total, sl.currency_code || reportingCurrencyCode)
-                      : null
-
-                    return (
-                      <tr
-                        key={srv.id}
-                        className="hover:bg-slate-50/70 transition-colors bg-teal-50/15"
-                      >
-                        <td className="py-2.5 px-4 pl-9">
-                          <div className="flex items-start gap-2">
-                            <Briefcase
-                              className="w-3.5 h-3.5 text-teal-600 shrink-0 mt-0.5"
-                              aria-hidden="true"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="font-semibold text-slate-900 text-xs flex items-center gap-1.5 flex-wrap">
-                                <span>{srv.roleName}</span>
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-teal-100 text-teal-800">
-                                  Professional Services
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-slate-500 mt-0.5">
-                                {srv.hoursOrDays} hours @ {country.currencySymbol}
-                                {srv.rateApplied}/hr &bull; {srv.currency || country.currency}
-                              </p>
-                              {/* Show Discounts detail for Service */}
-                              {showDiscounts && (srvDiscount?.value || srv.discountPct > 0) && (
-                                <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
-                                  <Tag className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
-                                  <span>
-                                    Service Discount:{' '}
-                                    <strong>
-                                      {srvDiscount?.value
-                                        ? `${srvDiscount.value}%`
-                                        : `${srv.discountPct}%`}
-                                    </strong>
-                                  </span>
-                                  {srvDiscount?.reason && (
-                                    <span className="text-amber-700 italic border-l border-amber-200 pl-1">
-                                      &quot;{srvDiscount.reason}&quot;
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        {/* Financial Cells - from backend snapshot */}
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">
-                          {srvTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-700">
-                          {srvTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400 italic">—</td>
-                      </tr>
-                    )
-                  })}
-
-                  {/* 4. Country-Level Overall Discount Row (When Show Discounts is Enabled) */}
-                  {showDiscounts && countryOverallDiscount && countryOverallDiscount.value && (
-                    <tr className="bg-amber-50/40 text-amber-900 text-xs border-t border-amber-100">
-                      <td colSpan={6} className="py-2 px-4 pl-9">
+                  {(p.line_items || []).map((li) => (
+                    <tr key={`li-${li.line_item_id}`} className="hover:bg-slate-50/60">
+                      <td className="py-2.5 px-4">
                         <div className="flex items-center gap-2">
-                          <Tag className="w-3 h-3 text-amber-600 shrink-0" aria-hidden="true" />
-                          <span className="font-semibold text-[11px]">
-                            {country.countryName} Overall Discretionary Discount:
-                          </span>
-                          <span className="font-mono font-bold text-xs bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
-                            {countryOverallDiscount.value}%
-                          </span>
-                          {countryOverallDiscount.reason && (
-                            <span className="text-[11px] text-amber-800 italic">
-                              Justification: &quot;{countryOverallDiscount.reason}&quot;
-                            </span>
+                          {li.pack_version_id ? (
+                            <Package className="w-3.5 h-3.5 text-orange-600" aria-hidden="true" />
+                          ) : (
+                            <Sparkles className="w-3.5 h-3.5 text-orange-500" aria-hidden="true" />
                           )}
-                          <span className="text-[10px] text-amber-700 ml-auto italic">
-                            (Applied authoritatively by backend calculation engine)
+                          <span className="font-semibold text-slate-900">{li.target_name}</span>
+                          <span className="text-[10px] text-slate-500">
+                            {li.pack_version_id ? 'Pack' : 'À la carte'} · {li.average_monthly_volume} units/mo
                           </span>
                         </div>
+                        {showDiscounts && Number(li.item_discount_pct) > 0 && (
+                          <div className="mt-1 ml-5 text-[10px] text-orange-700">
+                            Line discount {li.item_discount_pct}% = −{formatMoney(li.item_discount_amount, li.currency_code)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono">{formatMoney(li.item_subscription_after_discount, li.currency_code)}</td>
+                      <td className="py-2.5 px-3 text-right font-mono">{formatMoney(li.contract_subscription_after_discount, li.currency_code)}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                    </tr>
+                  ))}
+
+                  {(p.service_lines || []).map((sl) => (
+                    <tr key={`sl-${sl.service_line_id}`} className="hover:bg-slate-50/60">
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <Briefcase className="w-3.5 h-3.5 text-teal-600" aria-hidden="true" />
+                          <span className="font-semibold text-slate-900">{sl.role_name}</span>
+                          <span className="text-[10px] text-slate-500">
+                            {sl.man_days} man-days × {formatMoney(sl.day_rate, sl.currency_code)}/day
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                      <td className="py-2.5 px-3 text-right font-mono">{formatMoney(sl.service_line_total, sl.currency_code)}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                    </tr>
+                  ))}
+
+                  {showDiscounts && (Number(p.subscription_discount_pct) > 0 || Number(p.service_discount_pct) > 0) && (
+                    <tr className="bg-orange-50/60 text-[11px] text-orange-900">
+                      <td className="py-2 px-4" colSpan={5}>
+                        Overall subscription discount {p.subscription_discount_pct}% (−{formatMoney(p.subscription_discount_amount, native)} annual)
+                        {' · '}Services discount {p.service_discount_pct}% (−{formatMoney(p.service_discount_amount, native)})
                       </td>
                     </tr>
                   )}
 
-                  {/* 5. Country Subtotal Row */}
-                  <CountrySubtotalRow
-                    countryConfig={country}
-                    reportingCurrencyCode={reportingCurrencyCode}
-                    snapshotPayload={snapshotPayload}
-                  />
+                  <tr className="bg-slate-50 font-semibold text-slate-800">
+                    <td className="py-2.5 px-4">Subtotal — {p.product_name} ({native})</td>
+                    <td className="py-2.5 px-3 text-right font-mono">{formatMoney(p.subscription_total_after_discount, native)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono">{formatMoney(p.contract_subscription_total_after_discount, native)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono">{formatMoney(p.service_total_after_discount, native)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono">{formatMoney(p.contract_product_native_total, native)}</td>
+                  </tr>
+                  <tr className="bg-slate-50 text-slate-700">
+                    <td className="py-2 px-4 text-[11px]">Converted to {reporting}</td>
+                    <td className="py-2 px-3 text-right font-mono text-[11px]">{formatMoney(p.subscription_reporting_total, reporting)}</td>
+                    <td className="py-2 px-3 text-right font-mono text-[11px]">{formatMoney(p.contract_subscription_reporting_total, reporting)}</td>
+                    <td className="py-2 px-3 text-right font-mono text-[11px]">{formatMoney(p.service_reporting_total, reporting)}</td>
+                    <td className="py-2 px-3 text-right font-mono font-bold">{formatMoney(p.contract_product_reporting_total, reporting)}</td>
+                  </tr>
                 </Fragment>
               )
             })}
-
-            {/* 6. Grand Total Consolidated Row */}
-            <GrandTotalRow
-              reportingCurrencyCode={reportingCurrencyCode}
-              snapshotPayload={snapshotPayload}
-            />
           </tbody>
+          <tfoot>
+            <tr className="bg-orange-600 text-white font-bold">
+              <td className="py-3 px-4">Grand Total ({reporting})</td>
+              <td className="py-3 px-3 text-right font-mono">{formatMoney(snapshotPayload.total_subscription_annual_reporting_currency, reporting)}</td>
+              <td className="py-3 px-3 text-right font-mono">{formatMoney(snapshotPayload.total_subscription_contract_reporting_currency, reporting)}</td>
+              <td className="py-3 px-3 text-right font-mono">{formatMoney(snapshotPayload.total_services_reporting_currency, reporting)}</td>
+              <td className="py-3 px-3 text-right font-mono">{formatMoney(snapshotPayload.total_proposal_contract_reporting_currency, reporting)}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>

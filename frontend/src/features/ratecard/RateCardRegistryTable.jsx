@@ -27,7 +27,7 @@ export function RateCardRegistryTable({
   const [filterDeployment, setFilterDeployment] = useState('all')
   const [filterPricingModel, setFilterPricingModel] = useState('all')
   const [filterTier, setFilterTier] = useState('all')
-  const [filterType, setFilterType] = useState('all') // 'all' | 'pack' | 'feature'
+  const [filterType] = useState('all') // 'all' | 'pack' | 'feature'
 
   // Inline editing state: { [rateCardId]: { fixed_fee, unit_rate } }
   const [editingId, setEditingId] = useState(null)
@@ -64,10 +64,7 @@ export function RateCardRegistryTable({
           code: `Tier ${rc.tier_id}`,
         }
 
-      const uomObj = rc.uom || {
-        name: 'Active Employees (with ESS)',
-        code: 'employee',
-      }
+      const uomObj = rc.uom || { name: `UoM #${rc.uom_id}`, code: '' }
 
       const packObj =
         rc.pack_version?.pack ||
@@ -114,7 +111,7 @@ export function RateCardRegistryTable({
         targetCode,
         packVersionId: rc.pack_version_id,
         featureId: rc.feature_id,
-        uomName: uomObj.name || 'Active Employees (with ESS)',
+        uomName: uomObj.name,
         // Rates & Pricing details:
         fixedFee: rc.fixed_fee != null ? Number(rc.fixed_fee) : null,
         unitRate: rc.unit_rate != null ? Number(rc.unit_rate) : null,

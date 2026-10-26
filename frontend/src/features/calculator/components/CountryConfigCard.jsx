@@ -1,35 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Globe,
   Trash2,
   Layers,
   AlertCircle,
 } from 'lucide-react'
-import {
-  INITIAL_COUNTRIES,
-  INITIAL_PRICING_TIERS,
-  DEPLOYMENT_MODELS,
-  PRICING_MODELS,
-} from '../../../data/rateCardData'
-import { INITIAL_PRODUCT_FAMILIES } from '../../../data/catalogueData'
 import { FamilyConfigCard } from './FamilyConfigCard'
 import { ServiceLinesSection } from './ServiceLinesSection'
-import { validateContractTerm } from '../calculatorData'
+import { validateContractTerm, countryCurrencyCode as getCountryCurrencyCode } from '../calculatorData'
 import { getCurrencySymbol } from '../../ratecard/rateCardFormatters'
-
-function getCountryCurrencyCode(country) {
-  if (!country) return 'USD'
-  if (country.currency_code) return country.currency_code
-  if (typeof country.currency === 'string') return country.currency
-  if (country.currency && typeof country.currency === 'object' && country.currency.code) {
-    return country.currency.code
-  }
-  return 'USD'
-}
 
 function getCountryCurrencySymbol(country, currencyCode = null) {
   const code = currencyCode || getCountryCurrencyCode(country)
-  return getCurrencySymbol(country, code) || getCurrencySymbol(code) || '$'
+  if (!code) return ''
+  return country?.currency?.symbol || getCurrencySymbol(country, code) || getCurrencySymbol(code) || ''
 }
 
 export function CountryConfigCard({
@@ -41,182 +25,97 @@ export function CountryConfigCard({
 }) {
   const [termError, setTermError] = useState('')
 
-  const countryList = masters?.countries?.length > 0 ? masters.countries : INITIAL_COUNTRIES
-  const tierList = masters?.tiers?.length > 0 ? masters.tiers : INITIAL_PRICING_TIERS
-  const deploymentList = masters?.deployments?.length > 0 ? masters.deployments : DEPLOYMENT_MODELS
-  const pricingModelList = masters?.pricingModels?.length > 0 ? masters.pricingModels : PRICING_MODELS
-  const familyList = masters?.families?.length > 0 ? masters.families : INITIAL_PRODUCT_FAMILIES
+  // Only saved master records are offered; an empty list means the backend returned none.
+  const countryList = masters?.countries || []
+  const tierList = masters?.tiers || []
+  const deploymentList = masters?.deployments || []
+  const pricingModelList = masters?.pricingModels || []
+  const familyList = masters?.families || []
   const packsList = masters?.packs || []
   const productsList = masters?.products || []
-  const serviceRatesList = masters?.serviceRates || []
+  const featuresList = masters?.features || []
+  // Service rates are per country: only this country's active rates can price its services.
+  const serviceRatesList = (masters?.serviceRates || []).filter(
+    (sr) => Number(sr.country_id) === Number(countryConfig.countryId) && (sr.status || 'active') === 'active',
+  )
 
-  // Resolve current master records
   const countryMaster =
     countryList.find((c) => String(c.id) === String(countryConfig.countryId)) || {
       id: countryConfig.countryId,
-      name: countryConfig.countryName || 'Regional Entity',
-      currency: countryConfig.currency || 'USD',
-      symbol: countryConfig.currencySymbol || '$',
+      name: countryConfig.countryName || 'Select a country',
+      currency: countryConfig.currency ? { code: countryConfig.currency, symbol: countryConfig.currencySymbol } : null,
     }
 
   const countryCurrencyCode = getCountryCurrencyCode(countryMaster)
   const countryCurrencySymbol = getCountryCurrencySymbol(countryMaster, countryCurrencyCode)
 
-  const tierMaster =
-    tierList.find((t) => String(t.id) === String(countryConfig.pricingTierId)) ||
-    tierList[0] || { id: 1, name: 'Tier 1' }
-
+  const tierMaster = tierList.find((t) => String(t.id) === String(countryConfig.pricingTierId)) || null
   const deploymentMaster =
-    deploymentList.find((d) => String(d.id) === String(countryConfig.deploymentModelId)) ||
-    deploymentList[0] || { id: 1, name: 'Shared Cloud' }
+    deploymentList.find((d) => String(d.id) === String(countryConfig.deploymentModelId)) || null
 
+  // Pricing models allowed for a deployment model come from the saved combination master.
   const getFilteredPricingModels = (depId) => {
-    if (!depId) return pricingModelList
-    if (masters?.deploymentPricingOptions?.length > 0) {
-      const allowedIds = masters.deploymentPricingOptions
-        .filter((opt) => String(opt.deployment_model_id) === String(depId))
-        .map((opt) => String(opt.pricing_model_id))
-      if (allowedIds.length > 0) {
-        return pricingModelList.filter((pm) => allowedIds.includes(String(pm.id)))
-      }
-    }
-    const depObj = deploymentList.find((d) => String(d.id) === String(depId))
-    const depCode = (depObj?.code || depObj?.name || '').toLowerCase()
-    if (depCode.includes('on_prem') || depCode.includes('on-prem')) {
-      const onPrem = pricingModelList.filter((pm) => {
-        const pmName = (pm.name || pm.code || '').toLowerCase()
-        return pmName.includes('license') || pmName.includes('amc')
-      })
-      if (onPrem.length > 0) return onPrem
-    }
-    return pricingModelList
+    if (!depId) return []
+    const allowedIds = (masters?.deploymentPricingOptions || [])
+      .filter((opt) => String(opt.deployment_model_id) === String(depId))
+      .map((opt) => String(opt.pricing_model_id))
+    return pricingModelList.filter((pm) => allowedIds.includes(String(pm.id)))
   }
 
+  const isMastersLoading = Boolean(masters?.isLoading)
   const filteredPricingModels = getFilteredPricingModels(countryConfig.deploymentModelId)
-
   const pricingModelMaster =
-    pricingModelList.find((p) => String(p.id) === String(countryConfig.pricingModelId)) ||
-    filteredPricingModels[0] ||
-    pricingModelList[0] || { id: 1, name: 'PEPM' }
+    pricingModelList.find((p) => String(p.id) === String(countryConfig.pricingModelId)) || null
 
-  // Synchronize countryConfig properties to actual database master records when loaded
-  useEffect(() => {
-    if (!masters) return
-
-    let updates = null
-
-    // 1. Sync country ID and currency if loaded from DB
-    if (masters.countries?.length > 0) {
-      const matchedCountry = masters.countries.find((c) => String(c.id) === String(countryConfig.countryId))
-      if (!matchedCountry) {
-        // Try matching by name or iso_code or fallback to first
-        const byCode = masters.countries.find(
-          (c) =>
-            c.iso_code?.toLowerCase() === String(countryConfig.countryId).toLowerCase() ||
-            c.name?.toLowerCase() === (countryConfig.countryName || '').toLowerCase()
-        ) || masters.countries[0]
-        if (byCode) {
-          const cCode = getCountryCurrencyCode(byCode)
-          updates = {
-            ...(updates || {}),
-            countryId: Number(byCode.id),
-            countryName: byCode.name,
-            currency: cCode,
-            currencySymbol: getCountryCurrencySymbol(byCode, cCode),
-          }
-        }
-      } else {
-        const cCode = getCountryCurrencyCode(matchedCountry)
-        if (countryConfig.currency !== cCode || countryConfig.countryName !== matchedCountry.name) {
-          updates = {
-            ...(updates || {}),
-            countryName: matchedCountry.name,
-            currency: cCode,
-            currencySymbol: getCountryCurrencySymbol(matchedCountry, cCode),
-          }
-        }
-      }
+  // Derive pricing model validation message (evaluated once masters finish loading)
+  let pricingModelError = ''
+  if (!isMastersLoading) {
+    if (!countryConfig.pricingModelId) {
+      pricingModelError = 'Pricing model is required to resolve rate cards.'
+    } else if (!pricingModelMaster) {
+      pricingModelError = `Selected pricing model #${countryConfig.pricingModelId} was not found in loaded master data.`
+    } else if (
+      countryConfig.deploymentModelId &&
+      filteredPricingModels.length > 0 &&
+      !filteredPricingModels.some((pm) => String(pm.id) === String(countryConfig.pricingModelId))
+    ) {
+      pricingModelError = 'Selected pricing model is not available for this deployment model.'
     }
-
-    // 2. Sync tier ID
-    if (masters.tiers?.length > 0) {
-      const matchedTier = masters.tiers.find((t) => String(t.id) === String(countryConfig.pricingTierId))
-      if (!matchedTier) {
-        updates = {
-          ...(updates || {}),
-          pricingTierId: Number(masters.tiers[0].id),
-        }
-      }
-    }
-
-    // 3. Sync deployment model ID
-    if (masters.deployments?.length > 0) {
-      const matchedDep = masters.deployments.find((d) => String(d.id) === String(countryConfig.deploymentModelId))
-      if (!matchedDep) {
-        updates = {
-          ...(updates || {}),
-          deploymentModelId: Number(masters.deployments[0].id),
-        }
-      }
-    }
-
-    // 4. Sync pricing model ID
-    if (masters.pricingModels?.length > 0) {
-      const matchedPm = masters.pricingModels.find((p) => String(p.id) === String(countryConfig.pricingModelId))
-      if (!matchedPm) {
-        updates = {
-          ...(updates || {}),
-          pricingModelId: Number(filteredPricingModels[0]?.id || masters.pricingModels[0].id),
-        }
-      }
-    }
-
-    if (updates) {
-      onUpdateCountry({
-        ...countryConfig,
-        ...updates,
-      })
-    }
-  }, [masters])
+  }
 
   // Handle country dropdown change
   const handleCountryChange = (countryId) => {
     const selected = countryList.find((c) => String(c.id) === String(countryId))
-    if (selected) {
-      const numericId = Number(selected.id) || selected.id
-      const currencyCode = getCountryCurrencyCode(selected)
-      const currencySymbol = getCountryCurrencySymbol(selected, currencyCode)
-
-      onUpdateCountry({
-        ...countryConfig,
-        countryId: numericId,
-        countryName: selected.name,
-        currency: currencyCode,
-        currencySymbol: currencySymbol,
-      })
-    }
+    const currencyCode = getCountryCurrencyCode(selected)
+    onUpdateCountry({
+      ...countryConfig,
+      countryId: selected ? Number(selected.id) : null,
+      countryName: selected?.name || '',
+      currency: currencyCode,
+      currencySymbol: selected ? getCountryCurrencySymbol(selected, currencyCode) : '',
+      // Service rates belong to a country, so lines priced for another country are dropped.
+      serviceLines: selected && Number(selected.id) === Number(countryConfig.countryId) ? countryConfig.serviceLines : [],
+    })
   }
 
   // Handle tier dropdown change
   const handleTierChange = (tierId) => {
     onUpdateCountry({
       ...countryConfig,
-      pricingTierId: Number(tierId) || tierId,
+      pricingTierId: tierId ? Number(tierId) : null,
     })
   }
 
   // Handle deployment dropdown change
   const handleDeploymentChange = (depId) => {
-    const numericDepId = Number(depId) || depId
+    const numericDepId = depId ? Number(depId) : null
     const nextModels = getFilteredPricingModels(numericDepId)
-    let newPricingModelId = countryConfig.pricingModelId
-    if (!nextModels.some((pm) => String(pm.id) === String(newPricingModelId))) {
-      newPricingModelId = nextModels[0]?.id || newPricingModelId
-    }
+    // Keep the pricing model only if it is still a valid combination; never substitute one.
+    const keep = nextModels.some((pm) => String(pm.id) === String(countryConfig.pricingModelId))
     onUpdateCountry({
       ...countryConfig,
       deploymentModelId: numericDepId,
-      pricingModelId: Number(newPricingModelId) || newPricingModelId,
+      pricingModelId: keep ? countryConfig.pricingModelId : null,
     })
   }
 
@@ -224,7 +123,7 @@ export function CountryConfigCard({
   const handlePricingModelChange = (modelId) => {
     onUpdateCountry({
       ...countryConfig,
-      pricingModelId: Number(modelId) || modelId,
+      pricingModelId: modelId ? Number(modelId) : null,
     })
   }
 
@@ -249,7 +148,7 @@ export function CountryConfigCard({
     const newFamilyEntry = {
       id: `fam-cfg-${Date.now()}-${(countryConfig.families || []).length + 1}`,
       familyId: Number(familyId) || familyId,
-      headcount: countryConfig.headcount || 5000,
+      headcount: countryConfig.headcount,
       selectedPackId: null,
       selectedFeatureIds: [],
     }
@@ -302,21 +201,25 @@ export function CountryConfigCard({
                 {countryMaster.name}
               </h3>
               <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-800 text-orange-400 border border-slate-700">
-                {countryCurrencyCode} ({countryCurrencySymbol})
+                {countryCurrencyCode || 'No currency'}{countryCurrencySymbol ? ` (${countryCurrencySymbol})` : ''}
               </span>
             </div>
             {/* Header parameter badges */}
             <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-300 flex-wrap">
               <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
-                {tierMaster.name || tierMaster.code}
+                {tierMaster ? tierMaster.name || tierMaster.code : 'Tier not set'}
               </span>
               <span className="text-slate-600">•</span>
               <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
-                {deploymentMaster.name}
+                {deploymentMaster ? deploymentMaster.name : 'Deployment not set'}
               </span>
               <span className="text-slate-600">•</span>
               <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-orange-300">
-                {pricingModelMaster.name}
+                {isMastersLoading
+                  ? 'Loading pricing model...'
+                  : pricingModelMaster
+                  ? pricingModelMaster.name
+                  : 'Pricing model not set'}
               </span>
               <span className="text-slate-600">•</span>
               <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
@@ -358,10 +261,11 @@ export function CountryConfigCard({
             </div>
             <select
               id={`country-select-${countryConfig.id}`}
-              value={countryConfig.countryId}
+              value={countryConfig.countryId ?? ''}
               onChange={(e) => handleCountryChange(e.target.value)}
               className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
+              <option value="">{countryList.length ? '-- Select country --' : '-- No countries loaded --'}</option>
               {countryList.map((c) => {
                 const currencyCode = getCountryCurrencyCode(c)
                 return (
@@ -385,10 +289,11 @@ export function CountryConfigCard({
             </div>
             <select
               id={`tier-select-${countryConfig.id}`}
-              value={countryConfig.pricingTierId}
+              value={countryConfig.pricingTierId ?? ''}
               onChange={(e) => handleTierChange(e.target.value)}
               className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
+              <option value="">{tierList.length ? '-- Select tier --' : '-- No tiers loaded --'}</option>
               {tierList.map((tier) => (
                 <option key={tier.id} value={tier.id}>
                   {tier.name}
@@ -409,10 +314,11 @@ export function CountryConfigCard({
             </div>
             <select
               id={`deployment-select-${countryConfig.id}`}
-              value={countryConfig.deploymentModelId}
+              value={countryConfig.deploymentModelId ?? ''}
               onChange={(e) => handleDeploymentChange(e.target.value)}
               className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
+              <option value="">{deploymentList.length ? '-- Select deployment --' : '-- None loaded --'}</option>
               {deploymentList.map((dep) => (
                 <option key={dep.id} value={dep.id}>
                   {dep.name}
@@ -433,16 +339,41 @@ export function CountryConfigCard({
             </div>
             <select
               id={`pricing-model-select-${countryConfig.id}`}
-              value={countryConfig.pricingModelId}
+              value={countryConfig.pricingModelId ?? ''}
               onChange={(e) => handlePricingModelChange(e.target.value)}
-              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
+              className={`w-full h-10 px-3 text-xs rounded-lg border bg-white text-slate-900 focus:outline-none focus:ring-2 font-medium transition-colors ${
+                pricingModelError
+                  ? 'border-rose-400 focus:ring-rose-200'
+                  : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
+              }`}
+              aria-invalid={Boolean(pricingModelError)}
             >
+              <option value="">
+                {isMastersLoading
+                  ? '-- Loading pricing models... --'
+                  : countryConfig.deploymentModelId
+                  ? filteredPricingModels.length
+                    ? '-- Select pricing model --'
+                    : '-- No pricing model configured for this deployment --'
+                  : '-- Choose deployment first --'}
+              </option>
               {filteredPricingModels.map((pm) => (
                 <option key={pm.id} value={pm.id}>
                   {pm.name}
                 </option>
               ))}
+              {pricingModelMaster && !filteredPricingModels.some((pm) => String(pm.id) === String(pricingModelMaster.id)) && (
+                <option key={pricingModelMaster.id} value={pricingModelMaster.id}>
+                  {pricingModelMaster.name} (unsupported for deployment)
+                </option>
+              )}
             </select>
+            {pricingModelError && (
+              <p className="mt-1 text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span>{pricingModelError}</span>
+              </p>
+            )}
           </div>
 
           {/* Contract Term (Months) Input */}
@@ -497,9 +428,9 @@ export function CountryConfigCard({
               id={`country-headcount-input-${countryConfig.id}`}
               type="number"
               min="1"
-              value={countryConfig.headcount || 5000}
+              value={countryConfig.headcount ?? ''}
               onChange={(e) => {
-                const val = Number(e.target.value) || 0
+                const val = e.target.value === '' ? '' : Number(e.target.value)
                 onUpdateCountry({
                   ...countryConfig,
                   headcount: val,
@@ -573,13 +504,12 @@ export function CountryConfigCard({
               <FamilyConfigCard
                 key={familyConfig.id}
                 familyConfig={familyConfig}
-                countryPricingModel={pricingModelMaster.name}
                 countryHeadcount={countryConfig.headcount}
                 countryId={countryConfig.countryId}
                 pricingTierId={countryConfig.pricingTierId}
                 deploymentModelId={countryConfig.deploymentModelId}
                 pricingModelId={countryConfig.pricingModelId}
-                contractTerm={countryConfig.contractTerm || 36}
+                contractTerm={countryConfig.contractTerm}
                 currencyCode={countryCurrencyCode}
                 currencySymbol={countryCurrencySymbol}
                 onUpdateFamily={handleUpdateFamily}
@@ -587,6 +517,7 @@ export function CountryConfigCard({
                 families={familyList}
                 packs={packsList}
                 products={productsList}
+                features={featuresList}
               />
             ))}
           </div>

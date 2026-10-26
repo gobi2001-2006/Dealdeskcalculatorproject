@@ -1,9 +1,62 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import apiClient from '../api/client'
 import { PacksPage } from '../features/packs/PacksPage'
+import { installFakeApi, httpError } from './fixtures/fakeApi'
+import * as fx from './fixtures/backendRecords'
 
-function renderPacksPage() {
+vi.mock('../api/client')
+
+/** In-memory pack backend; returns the fake api (calls) and the data it mutates. */
+function packBackend(overrides = {}) {
+  const db = {
+    packs: JSON.parse(JSON.stringify(fx.packs)),
+    products: [...fx.products, { id: 23, product_family_id: 10, code: 'TA_EMPTY', name: 'No Features Yet', status: 'active' }],
+    features: [...fx.features],
+  }
+  let next = 300
+  const api = installFakeApi(apiClient, {
+    'GET /packs/': () => db.packs,
+    'GET /packs/detail/:id': (_b, { id }) => db.packs.find((p) => String(p.id) === id),
+    'GET /catalogue/families': () => fx.families,
+    'GET /catalogue/products': () => db.products,
+    'GET /catalogue/features': () => db.features,
+    'POST /packs/': (body) => {
+      const pack = {
+        id: next++, ...body, product_family_id: body.product_family_id,
+        pack_versions: [{ id: next++, version_no: 1, status: 'active', pack_items: body.items.map((i) => ({ ...i })) }],
+      }
+      db.packs.push(pack)
+      return pack
+    },
+    'PATCH /packs/:id': (body, { id }) => Object.assign(db.packs.find((p) => String(p.id) === id), body),
+    'PUT /packs/versions/:id/items': (items, { id }) => {
+      db.packs.forEach((p) => p.pack_versions.forEach((v) => { if (String(v.id) === id) v.pack_items = items }))
+      return items
+    },
+    'POST /packs/versions': (body) => {
+      const ver = { id: next++, ...body, pack_items: [] }
+      db.packs.find((p) => p.id === body.pack_id).pack_versions.push(ver)
+      return ver
+    },
+    'PATCH /packs/versions/:id': (body, { id }) => {
+      db.packs.forEach((p) => p.pack_versions.forEach((v) => {
+        if (String(v.id) === id) Object.assign(v, body)
+        else if (body.status === 'active' && v.status === 'active' && p.pack_versions.some((x) => String(x.id) === id)) v.status = 'superseded'
+      }))
+      return body
+    },
+    'DELETE /packs/:id': (_b, { id }) => {
+      db.packs = db.packs.filter((p) => String(p.id) !== id)
+      return null
+    },
+    ...overrides,
+  })
+  return { api, db }
+}
+
+function renderPage() {
   return render(
     <MemoryRouter>
       <PacksPage />
@@ -11,407 +64,124 @@ function renderPacksPage() {
   )
 }
 
-describe('Pack Builder Feature Tests', () => {
-  it('opens initially in empty workspace state and cards do not contain delete buttons', () => {
-    renderPacksPage()
+describe('Page 2 — Pack Builder', () => {
+  beforeEach(() => vi.clearAllMocks())
 
-    // 1. Top navigation & Summary strip
-    expect(screen.getByText('DEAL DESK')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Pack Builder/i })).toBeInTheDocument()
-    expect(screen.getByText(/Client/i)).toBeInTheDocument()
-    expect(screen.getByText(/Global Enterprise Master/i)).toBeInTheDocument()
-
-    // 2. Saved Packs Sidebar
+  it('lists saved packs and opens in the empty workspace', async () => {
+    packBackend()
+    renderPage()
     const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    expect(within(sidebar).getByText('Packs')).toBeInTheDocument()
-    expect(within(sidebar).getByText('Talent Acquisition Growth Suite')).toBeInTheDocument()
-    expect(within(sidebar).getByText('Enterprise Core HR & Onboarding')).toBeInTheDocument()
-    expect(within(sidebar).getByRole('button', { name: /Create New Pack/i })).toBeInTheDocument()
-
-    // 3. Saved pack cards do NOT contain delete buttons
+    expect(await within(sidebar).findByText('TA Premium')).toBeInTheDocument()
+    expect(screen.getByText('Select a pack to edit, or create your first pack.')).toBeInTheDocument()
     expect(within(sidebar).queryByRole('button', { name: /delete/i })).not.toBeInTheDocument()
-
-    // 4. Main workspace shows centered empty state (NOT the editor)
-    expect(
-      screen.getByText('Select a pack to edit, or create your first pack.'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: /Create First Pack/i }),
-    ).toBeInTheDocument()
-
-    // Editor is NOT automatically opened
-    expect(screen.queryByRole('heading', { name: /New Pack/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /Edit Pack/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /Select Products & Features/i })).not.toBeInTheDocument()
   })
 
-  it('opens blank new pack editor when clicking Create First Pack or Create New Pack', () => {
-    renderPacksPage()
-
-    // Click + Create First Pack in the empty workspace
-    const createFirstBtn = screen.getByRole('button', { name: /Create First Pack/i })
-    fireEvent.click(createFirstBtn)
-
-    // Editor opens with New Pack heading
-    expect(screen.getByRole('heading', { name: /New Pack/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/Pack Name/i)).toHaveValue('')
-    expect(screen.getByRole('heading', { name: /Select Products & Features/i })).toBeInTheDocument()
-
-    // Starts with 0 selected products
-    const saveBar = screen.getByRole('contentinfo', { name: /Pack Builder Action Bar/i })
-    expect(within(saveBar).getAllByText('0').length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText(/0 Selected/i)).toBeInTheDocument()
-    expect(screen.getByText('No products selected yet')).toBeInTheDocument()
+  it('shows the backend error and no demo packs when the backend is unavailable', async () => {
+    installFakeApi(apiClient, {
+      'GET /packs/': () => { throw httpError(503, 'Database connection failed') },
+      'GET /catalogue/families': () => [],
+      'GET /catalogue/products': () => [],
+      'GET /catalogue/features': () => [],
+    })
+    renderPage()
+    expect(await screen.findByText(/Backend unavailable/)).toBeInTheDocument()
+    expect(screen.queryByText('Talent Acquisition Growth Suite')).not.toBeInTheDocument()
   })
 
-  it('selects a saved pack from sidebar and restores its metadata, products, and notes', () => {
-    renderPacksPage()
-
+  it('opens the active version of a saved pack with its products', async () => {
+    packBackend()
+    renderPage()
     const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    const coreHrCard = within(sidebar).getByText('Enterprise Core HR & Onboarding')
-
-    fireEvent.click(coreHrCard)
-
-    // Editor updates to selected pack
-    expect(
-      screen.getByRole('heading', { name: /Edit Pack: Enterprise Core HR & Onboarding/i }),
-    ).toBeInTheDocument()
-    expect(screen.getByDisplayValue('CHR-ENT-02')).toBeInTheDocument()
-    expect(
-      screen.getByDisplayValue(/Mandatory prerequisite for global payroll integration/i),
-    ).toBeInTheDocument()
-
-    // Counters update to 4 products
-    const saveBar = screen.getByRole('contentinfo', { name: /Pack Builder Action Bar/i })
-    expect(within(saveBar).getByText('4')).toBeInTheDocument()
+    fireEvent.click(await within(sidebar).findByText('TA Premium'))
+    expect(await screen.findByRole('heading', { name: /Edit Pack: TA Premium/i })).toBeInTheDocument()
+    expect(screen.getByText(/v2 \(active\)/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('TA_PREMIUM')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Remove TA Max/i })).toBeInTheDocument()
   })
 
-  it('returns to empty workspace when canceling new pack creation without saving', () => {
-    renderPacksPage()
-
-    // Open new pack editor
+  it('creates a pack containing every feature of each selected product', async () => {
+    const { api } = packBackend()
+    renderPage()
+    await screen.findByText('TA Premium')
     fireEvent.click(screen.getByRole('button', { name: /Create First Pack/i }))
-    expect(screen.getByRole('heading', { name: /New Pack/i })).toBeInTheDocument()
-
-    // Enter temporary name
-    fireEvent.change(screen.getByLabelText(/Pack Name/i), {
-      target: { value: 'Temporary Unsaved Pack' },
-    })
-
-    // Click Cancel in the header
-    const cancelBtn = screen.getAllByRole('button', { name: /Cancel/i })[0]
-    fireEvent.click(cancelBtn)
-
-    // Returns to empty workspace
-    expect(
-      screen.getByText('Select a pack to edit, or create your first pack.'),
-    ).toBeInTheDocument()
-
-    // Sidebar does NOT contain the unsaved pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    expect(within(sidebar).queryByText('Temporary Unsaved Pack')).not.toBeInTheDocument()
-  })
-
-  it('returns to empty workspace when canceling an edit without saving changes', () => {
-    renderPacksPage()
-
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Enterprise Core HR & Onboarding'))
-
-    // Modify pack name
-    const nameInput = screen.getByLabelText(/Pack Name/i)
-    fireEvent.change(nameInput, {
-      target: { value: 'Modified Pack Name That Should Not Save' },
-    })
-
-    // Click Cancel
-    const cancelBtn = screen.getAllByRole('button', { name: /Cancel/i })[0]
-    fireEvent.click(cancelBtn)
-
-    // Returns to empty workspace
-    expect(
-      screen.getByText('Select a pack to edit, or create your first pack.'),
-    ).toBeInTheDocument()
-
-    // Original pack in sidebar is unmodified
-    expect(
-      within(sidebar).getByText('Enterprise Core HR & Onboarding'),
-    ).toBeInTheDocument()
-    expect(
-      within(sidebar).queryByText('Modified Pack Name That Should Not Save'),
-    ).not.toBeInTheDocument()
-  })
-
-  it('allows selecting and removing multiple products, updating counts immediately', () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Enterprise Core HR & Onboarding'))
-
-    const saveBar = screen.getByRole('contentinfo', { name: /Pack Builder Action Bar/i })
-    expect(within(saveBar).getByText('4')).toBeInTheDocument()
-
-    // Select an unpicked product: "Applicant Tracking System (ATS)"
-    const checkbox = screen.getByRole('checkbox', {
-      name: /Select Applicant Tracking System \(ATS\)/i,
-    })
-    expect(checkbox).not.toBeChecked()
-
-    fireEvent.click(checkbox)
-    expect(checkbox).toBeChecked()
-
-    // Total products counter increments to 5
-    expect(within(saveBar).getByText('5')).toBeInTheDocument()
-
-    // Summary at bottom of selection panel shows the newly selected item
-    expect(
-      screen.getByRole('button', {
-        name: /Remove Applicant Tracking System \(ATS\)/i,
-      }),
-    ).toBeInTheDocument()
-
-    // Remove it using the summary remove button
-    const removeBtn = screen.getByRole('button', {
-      name: /Remove Applicant Tracking System \(ATS\)/i,
-    })
-    fireEvent.click(removeBtn)
-
-    // Counter returns to 4
-    expect(within(saveBar).getByText('4')).toBeInTheDocument()
-    expect(checkbox).not.toBeChecked()
-  })
-
-  it('expands and collapses product families', () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
-
-    // Initially Talent Acquisition products table is present
-    const taTable = screen.getByRole('table', { name: /Talent Acquisition Products/i })
-    expect(within(taTable).getByText('Applicant Tracking System (ATS)')).toBeInTheDocument()
-
-    // Click Collapse All
-    const collapseBtn = screen.getByRole('button', { name: /Collapse/i })
-    fireEvent.click(collapseBtn)
-
-    // Products table should be hidden
-    expect(screen.queryByRole('table', { name: /Talent Acquisition Products/i })).not.toBeInTheDocument()
-
-    // Click Expand all
-    const expandBtn = screen.getByRole('button', { name: /Expand all/i })
-    fireEvent.click(expandBtn)
-
-    // Products table is visible again
-    const taTableExpanded = screen.getByRole('table', { name: /Talent Acquisition Products/i })
-    expect(within(taTableExpanded).getByText('Applicant Tracking System (ATS)')).toBeInTheDocument()
-  })
-
-  it('filters available products via search input without losing selected items', () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
-
-    const searchInput = screen.getByRole('searchbox', {
-      name: /Search products or codes/i,
-    })
-
-    // Search by partner name "DocuSign"
-    fireEvent.change(searchInput, { target: { value: 'DocuSign' } })
-
-    // Matching product is present in Core HR table
-    const coreHrTable = screen.getByRole('table', { name: /Core HR & Workforce Products/i })
-    expect(
-      within(coreHrTable).getByText('Document Vault & Digital Signatures'),
-    ).toBeInTheDocument()
-
-    // Talent acquisition shows no matches in its section
-    expect(
-      screen.getByText(/No products in Talent Acquisition match "DocuSign"/i),
-    ).toBeInTheDocument()
-
-    // Selected products at bottom STILL retains selected count and items
-    expect(screen.getByText(/Selected Products \(5\)/i)).toBeInTheDocument()
-
-    // Clear search
-    fireEvent.change(searchInput, { target: { value: '' } })
-
-    // Full table restored
-    const taTable = screen.getByRole('table', { name: /Talent Acquisition Products/i })
-    expect(within(taTable).getByText('Applicant Tracking System (ATS)')).toBeInTheDocument()
-    const saveBar = screen.getByRole('contentinfo', { name: /Pack Builder Action Bar/i })
-    expect(within(saveBar).getByText('5')).toBeInTheDocument()
-  })
-
-  it('validates blank pack name and duplicate pack names case-insensitively', () => {
-    renderPacksPage()
-
-    // Click Create New Pack
-    const createNewBtn = screen.getByRole('button', { name: /Create New Pack/i })
-    fireEvent.click(createNewBtn)
-
-    expect(screen.getByRole('heading', { name: /New Pack/i })).toBeInTheDocument()
-
-    const saveBtn = screen.getByRole('button', { name: /Save Pack/i })
-
-    // 1. Try to save with blank name
-    fireEvent.click(saveBtn)
-    expect(screen.getByText(/Pack Name is required/i)).toBeInTheDocument()
-
-    // 2. Try to save with existing duplicate name with irregular case and spaces
-    const nameInput = screen.getByLabelText(/Pack Name/i)
-    fireEvent.change(nameInput, {
-      target: { value: '   talent acquisition growth suite   ' },
-    })
-
-    fireEvent.click(saveBtn)
-    expect(
-      screen.getByText(/A pack with this name already exists/i),
-    ).toBeInTheDocument()
-  })
-
-  it('creates a new pack, saves it, updates the sidebar, and allows reopening', async () => {
-    renderPacksPage()
-
-    // Click + Create New Pack
-    fireEvent.click(screen.getByRole('button', { name: /Create New Pack/i }))
-
-    // Fill form
-    fireEvent.change(screen.getByLabelText(/Pack Name/i), {
-      target: { value: 'Global Time & Scheduling Pack' },
-    })
-    fireEvent.change(screen.getByLabelText(/Short Description/i), {
-      target: { value: 'Time tracking, shift roasters, and touchless biometric kiosks.' },
-    })
-    fireEvent.change(screen.getByLabelText(/Pack Code \/ SKU/i), {
-      target: { value: 'TIME-ROST-99' },
-    })
-
-    // Select products
-    const timeProduct1 = screen.getByRole('checkbox', {
-      name: /Select Biometric & Shift Scheduling/i,
-    })
-    const timeProduct2 = screen.getByRole('checkbox', {
-      name: /Select AI Touchless Facial Kiosk/i,
-    })
-
-    fireEvent.click(timeProduct1)
-    fireEvent.click(timeProduct2)
-
-    // Save pack
+    fireEvent.change(screen.getByLabelText(/Pack Name/i), { target: { value: 'TA Starter' } })
+    fireEvent.change(screen.getByLabelText(/Pack Code/i), { target: { value: 'TA_STARTER' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Select TA Max/i }))
     fireEvent.click(screen.getByRole('button', { name: /Save Pack/i }))
 
-    // Toast appears
-    await waitFor(() => {
-      expect(
-        screen.getByText(/Pack "Global Time & Scheduling Pack" saved successfully/i),
-      ).toBeInTheDocument()
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'POST' && c.path === '/packs/')).toBe(true))
+    const body = api.calls.find((c) => c.method === 'POST' && c.path === '/packs/').body
+    expect(body).toMatchObject({ name: 'TA Starter', code: 'TA_STARTER' })
+    expect(body.items.map((i) => i.feature_id).sort()).toEqual([30, 31]) // both features of TA Max
+    expect(api.calls.some((c) => c.method === 'POST' && c.path === '/catalogue/features')).toBe(false)
+  })
+
+  it('refuses to pack a product without features instead of inventing one', async () => {
+    const { api } = packBackend()
+    renderPage()
+    await screen.findByText('TA Premium')
+    fireEvent.click(screen.getByRole('button', { name: /Create First Pack/i }))
+    fireEvent.change(screen.getByLabelText(/Pack Name/i), { target: { value: 'Empty Pack' } })
+    fireEvent.change(screen.getByLabelText(/Pack Code/i), { target: { value: 'EMPTY' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Select No Features Yet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Save Pack/i }))
+
+    expect(await screen.findByText(/have no saved features yet: No Features Yet/)).toBeInTheDocument()
+    expect(api.writes()).toEqual([])
+  })
+
+  it('updates pack metadata without changing its status and syncs the working version', async () => {
+    const { api } = packBackend()
+    renderPage()
+    fireEvent.click(await screen.findByText('TA Premium'))
+    await screen.findByRole('heading', { name: /Edit Pack: TA Premium/i })
+    fireEvent.change(screen.getByLabelText(/Pack Name/i), { target: { value: 'TA Premium Plus' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save Pack/i }))
+
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'PUT')).toBe(true))
+    const patch = api.calls.find((c) => c.method === 'PATCH' && c.path === '/packs/40')
+    expect(patch.body).toMatchObject({ name: 'TA Premium Plus' })
+    expect(patch.body).not.toHaveProperty('status')
+    expect(api.calls.find((c) => c.method === 'PUT').path).toBe('/packs/versions/42/items')
+  })
+
+  it('keeps the exact saved features of a partially included product when saving', async () => {
+    const { api, db } = packBackend()
+    // Version 2 contains only Recruit (30) of TA Max, not AI Agent (31).
+    db.packs[0].pack_versions[1].pack_items = [{ pack_version_id: 42, feature_id: 30, is_required: true }]
+    renderPage()
+    fireEvent.click(await screen.findByText('TA Premium'))
+    await screen.findByRole('heading', { name: /Edit Pack: TA Premium/i })
+    fireEvent.change(screen.getByLabelText(/Pack Name/i), { target: { value: 'TA Premium (renamed)' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save Pack/i }))
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'PUT')).toBe(true))
+    expect(api.calls.find((c) => c.method === 'PUT').body).toEqual([{ feature_id: 30, is_required: true }])
+  })
+
+  it('creates a draft version that becomes the editable version and can be activated', async () => {
+    const { api } = packBackend()
+    renderPage()
+    fireEvent.click(await screen.findByText('TA Premium'))
+    await screen.findByRole('heading', { name: /Edit Pack: TA Premium/i })
+    fireEvent.click(screen.getByRole('button', { name: /New Version/i }))
+    expect(await screen.findByText(/Created Version 3 \(draft\)/)).toBeInTheDocument()
+    expect(api.calls.find((c) => c.path === '/packs/versions' && c.method === 'POST').body).toEqual({
+      pack_id: 40, version_no: 3, status: 'draft',
     })
 
-    // Appears in sidebar with count 2
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    expect(
-      within(sidebar).getByText('Global Time & Scheduling Pack'),
-    ).toBeInTheDocument()
-    expect(within(sidebar).getByText('TIME-ROST-99')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: /Activate Version/i }))
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'PATCH' && c.path.startsWith('/packs/versions/'))).toBe(true))
+    expect(api.calls.find((c) => c.method === 'PATCH' && c.path.startsWith('/packs/versions/')).body).toEqual({ status: 'active' })
   })
 
-  it('toggles a selected pack item between Required and Optional', () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
-
-    // Find the requirement toggle button for ATS
-    const reqToggleBtn = screen.getByRole('button', {
-      name: /Toggle requirement for Applicant Tracking System \(ATS\)/i,
-    })
-    expect(reqToggleBtn).toHaveTextContent('Required')
-
-    // Click to make it Optional
-    fireEvent.click(reqToggleBtn)
-    expect(reqToggleBtn).toHaveTextContent('Optional')
-
-    // Click again to make it Required
-    fireEvent.click(reqToggleBtn)
-    expect(reqToggleBtn).toHaveTextContent('Required')
-  })
-
-  it('duplicates an existing pack into a new template', () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
-
-    // Click Duplicate
-    const dupBtn = screen.getByRole('button', { name: /Duplicate Pack/i })
-    fireEvent.click(dupBtn)
-
-    // Heading becomes New Pack
-    expect(screen.getByRole('heading', { name: /New Pack/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/Pack Name/i)).toHaveValue('Talent Acquisition Growth Suite (Copy)')
-    expect(screen.getByLabelText(/Pack Code \/ SKU/i)).toHaveValue('TA-GROWTH-01-COPY')
-
-    // Counters retain the 5 products
-    const saveBar = screen.getByRole('contentinfo', { name: /Pack Builder Action Bar/i })
-    expect(within(saveBar).getByText('5')).toBeInTheDocument()
-  })
-
-  it('creates and activates a new pack version', () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
-
-    // Initially shows v1 (active)
-    expect(screen.getByText(/v1 \(active\)/i)).toBeInTheDocument()
-
-    // Click New Version
-    const newVerBtn = screen.getByRole('button', { name: /New Version/i })
-    fireEvent.click(newVerBtn)
-
-    // Updates to v2 (draft)
-    expect(screen.getByText(/v2 \(draft\)/i)).toBeInTheDocument()
-
-    // Activate button appears
-    const activateBtn = screen.getByRole('button', { name: /Activate Version/i })
-    fireEvent.click(activateBtn)
-
-    // Updates to v2 (active)
-    expect(screen.getByText(/v2 \(active\)/i)).toBeInTheDocument()
-  })
-
-  it('deletes an existing pack via delete confirmation modal', async () => {
-    renderPacksPage()
-
-    // Open a pack
-    const sidebar = screen.getByRole('complementary', { name: /Saved Packs/i })
-    fireEvent.click(within(sidebar).getByText('Talent Acquisition Growth Suite'))
-
-    // Click Delete Pack in the header
-    const deleteBtn = screen.getByRole('button', { name: /Delete Pack/i })
-    fireEvent.click(deleteBtn)
-
-    // Dialog opens
-    const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByText('Delete Pack Preset')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Talent Acquisition Growth Suite/i)).toBeInTheDocument()
-
-    // Confirm deletion
-    const confirmBtn = within(dialog).getByRole('button', { name: /Confirm Delete/i })
-    fireEvent.click(confirmBtn)
-
-    // Modal closes and pack is removed from sidebar
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    })
-    expect(within(sidebar).queryByText('Talent Acquisition Growth Suite')).not.toBeInTheDocument()
+  it('deletes a pack after confirmation', async () => {
+    const { api } = packBackend()
+    renderPage()
+    fireEvent.click(await screen.findByText('TA Premium'))
+    await screen.findByRole('heading', { name: /Edit Pack: TA Premium/i })
+    fireEvent.click(screen.getByRole('button', { name: /Delete Pack/i }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Confirm Delete/i }))
+    expect(await screen.findByText('Pack deleted successfully.')).toBeInTheDocument()
+    expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/packs/40')).toBe(true)
   })
 })

@@ -1,11 +1,8 @@
 import { useMemo } from 'react'
 import { Package, Plus, Trash2, Info } from 'lucide-react'
 
-const DEFAULT_TIERS = [
-  { id: 'tier-1', code: 'Tier 1', name: 'Enterprise' },
-  { id: 'tier-2', code: 'Tier 2', name: 'Mid-Market' },
-  { id: 'tier-3', code: 'Tier 3', name: 'Growth' },
-]
+// Tier columns come only from saved customer tiers.
+const DEFAULT_TIERS = []
 
 export function PackRatesSection({
   family,
@@ -192,7 +189,7 @@ export function PackRatesSection({
 
                       {/* Pack UOM beneath name */}
                       <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        UOM: <span>{rate.unitOfMeasure || 'Active Employees (with ESS)'}</span>
+                        UOM: <span>{rate.unitOfMeasure || '—'}</span>
                       </div>
 
                       {/* Code and bundled summary */}
@@ -280,14 +277,7 @@ export function PackRatesSection({
 
                     {/* Dynamic Tier Inputs (Unit Rate / PEPM / AMC) */}
                     {tiersToRender.map((tier, idx) => {
-                      const fieldKey =
-                        tier.id === 'tier-1' || tier.id === 1
-                          ? 'tier1Rate'
-                          : tier.id === 'tier-2' || tier.id === 2
-                          ? 'tier2Rate'
-                          : tier.id === 'tier-3' || tier.id === 3
-                          ? 'tier3Rate'
-                          : `tier_${tier.id}`
+                      const fieldKey = `tier_${tier.id}`
                       const val =
                         rate[fieldKey] ??
                         rate[`tier_${tier.id}`] ??

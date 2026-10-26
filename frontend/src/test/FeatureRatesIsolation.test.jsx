@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { RateCardPage } from '../features/ratecard/RateCardPage'
 import * as ratesApi from '../api/ratesApi'
@@ -74,6 +74,7 @@ describe('Page 3 Feature Rate Isolation Regression Tests', () => {
     ratesApi.getRateCardVersions.mockResolvedValue([{ id: 1, version_no: 'RC-DEV-1', status: 'active' }])
     ratesApi.getActiveRateCardVersion.mockResolvedValue({ id: 1, version_no: 'RC-DEV-1', status: 'active' })
     ratesApi.getRateCards.mockResolvedValue(mockRateCards)
+    ratesApi.getUnitsOfMeasure.mockResolvedValue([{ id: 7, code: 'employee', name: 'Active Employees (with ESS)' }])
     ratesApi.upsertRateCard.mockImplementation(async (payload) => ({
       id: 999,
       ...payload,
@@ -240,6 +241,8 @@ describe('Page 3 Feature Rate Isolation Regression Tests', () => {
     // Fill in tier rates in modal
     const t1Input = document.getElementById('feature-tier-input-1')
     fireEvent.change(t1Input, { target: { value: '25' } })
+    // The unit of measure is a pricing dimension and must be chosen explicitly
+    fireEvent.change(screen.getByLabelText(/Unit of Measure/i), { target: { value: '7' } })
 
     // Click submit button "Add Feature Rate"
     const submitBtn = screen.getByRole('button', { name: /^Add Feature Rate$/i })
@@ -260,6 +263,7 @@ describe('Page 3 Feature Rate Isolation Regression Tests', () => {
     expect(payload.pricing_model_id).toBe(1) // Confirms pmId is resolved to integer > 0
     expect(payload.deployment_model_id).toBe(1)
     expect(payload.unit_rate).toBe(25)
+    expect(payload.uom_id).toBe(7)
 
     // Verify no error toast with "pmid is not defined" appears
     expect(screen.queryByText(/pmid is not defined/i)).not.toBeInTheDocument()
@@ -287,6 +291,7 @@ describe('Page 3 Feature Rate Isolation Regression Tests', () => {
 
     const t1Input = document.getElementById('feature-tier-input-1')
     fireEvent.change(t1Input, { target: { value: '150' } })
+    fireEvent.change(screen.getByLabelText(/Unit of Measure/i), { target: { value: '7' } })
 
     const submitBtn = screen.getByRole('button', { name: /^Add Feature Rate$/i })
     fireEvent.click(submitBtn)

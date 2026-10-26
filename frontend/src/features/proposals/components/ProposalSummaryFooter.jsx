@@ -7,29 +7,29 @@ export function ProposalSummaryFooter({ countryConfigs = [], clientInfo }) {
 
   const definitions = [
     {
-      term: 'License Fee',
+      term: 'Subscription (annual)',
       description:
-        'One-time upfront perpetual or fixed platform license fee component, billed at contract execution.',
+        'Platform fee + (rate per unit × average monthly volume × 12), after line discounts and the overall subscription discount.',
     },
     {
-      term: 'Rental / PEPM',
+      term: 'Subscription (contract term)',
       description:
-        'Recurring subscription fee charged per-employee-per-month (or periodic cloud tier) across the contracted multi-year term.',
+        'Platform fee pro-rated by term/12 plus consumption for every month of the term. This full-term rule is the current implementation and still needs business sign-off.',
     },
     {
       term: 'Service Fees',
       description:
-        'One-time or milestone-based professional services for enterprise implementation, system integration, data migration, and consulting.',
+        'One-time professional services: man-days × day rate (hourly rate × standard hours per day), with one overall services discount per product.',
     },
     {
       term: 'Full Contract Value (FCV)',
       description:
-        'The consolidated multi-year commercial commitment across all products, countries, and service lines in the reporting currency, net of approved discounts.',
+        'Subscription over the contract term plus one-time services, converted to the reporting currency by the backend.',
     },
     {
-      term: 'Native Currency Context',
+      term: 'Native vs reporting currency',
       description:
-        'Regional pricing lines are quoted in local operating currencies and converted into the single reporting currency at backend corporate treasury FX rates.',
+        'Lines are priced in the rate-card currency and converted with the latest FX rate saved on the Rate Card page that is effective on the calculation date.',
     },
   ]
 

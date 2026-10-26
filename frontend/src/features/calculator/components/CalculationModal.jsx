@@ -7,6 +7,8 @@ import {
   AlertCircle,
   Layers,
 } from 'lucide-react'
+import { CalculationNotices } from '../../../components/common/CalculationNotices'
+import { formatMoney, readCalculationTotals } from '../../../utils/calculationView'
 
 export function CalculationModal({
   isOpen,
@@ -21,26 +23,8 @@ export function CalculationModal({
   const isError = apiResult && (apiResult.status === 'error' || apiResult.status === 'unavailable')
 
   const calcData = apiResult?.data || {}
-  const snapshot = calcData.snapshot_payload || {}
-  const rawProducts = snapshot.products || []
-  const products = Array.isArray(rawProducts)
-    ? rawProducts
-    : typeof rawProducts === 'object'
-    ? Object.entries(rawProducts).map(([key, val]) => ({
-        product_name: val.product_name || key,
-        product_code: val.product_code || key,
-        reporting_currency_code: val.reporting_currency_code || calcData.reporting_currency_code || 'USD',
-        product_reporting_total: val.product_reporting_total || val.subscription_total_net || val.subscription_total_after_discount || 0,
-        native_currency_code: val.native_currency_code || calcData.reporting_currency_code || 'USD',
-        product_native_total: val.product_native_total || val.subscription_total_net || 0,
-        subscription_subtotal_before_discount: val.subscription_subtotal_before_discount || val.subscription_total_base || 0,
-        subscription_total_after_discount: val.subscription_total_after_discount || val.subscription_total_net || 0,
-        service_subtotal_before_discount: val.service_subtotal_before_discount || val.services_total_base || 0,
-        service_total_after_discount: val.service_total_after_discount || val.services_total_net || 0,
-        fx_rate_multiplier: val.fx_rate_multiplier || 1,
-        line_items: val.line_items || [],
-      }))
-    : []
+  const totals = readCalculationTotals(apiResult?.data)
+  const products = totals?.products || []
 
   return (
     <div
@@ -116,24 +100,14 @@ export function CalculationModal({
               <div className="p-4 rounded-xl bg-gradient-to-r from-[#0B1528] to-[#1E293B] text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
                 <div>
                   <div className="text-[11px] font-semibold tracking-wider text-orange-400 uppercase">
-                    Total Proposal Value ({calcData.reporting_currency_code})
+                    Full Contract Value ({totals.currency}, {totals.termMonths} months)
                   </div>
                   <div className="text-2xl font-black font-mono tracking-tight mt-0.5">
-                    {calcData.reporting_currency_code}{' '}
-                    {Number(calcData.total_proposal_contract_reporting_currency ?? calcData.total_proposal_reporting_currency).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    {formatMoney(totals.contractTotal, totals.currency)}
                   </div>
-                  {calcData.contract_term_months && calcData.contract_term_months !== 12 && (
-                    <div className="text-[11px] text-orange-200 font-mono mt-0.5">
-                      Full Contract ({calcData.contract_term_months} Mo) | Annual ARR: {calcData.reporting_currency_code}{' '}
-                      {Number(calcData.total_proposal_annual_reporting_currency ?? calcData.total_proposal_reporting_currency).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </div>
-                  )}
+                  <div className="text-[11px] text-orange-200 font-mono mt-0.5">
+                    Year 1 (annual subscription + one-time services): {formatMoney(totals.annualTotal, totals.currency)}
+                  </div>
                   <div className="text-[11px] text-slate-300 mt-1 flex items-center gap-2">
                     <span>Audit Snapshot #{calcData.snapshot_id}</span>
                     <span>•</span>
@@ -150,6 +124,8 @@ export function CalculationModal({
                   </span>
                 </div>
               </div>
+
+              <CalculationNotices totals={totals} />
 
               {/* Product Breakdowns */}
               {products.length > 0 ? (

@@ -2,11 +2,8 @@ import { useMemo } from 'react'
 import { Layers, Plus, Trash2, Info, AlertCircle } from 'lucide-react'
 import { ProductTypeBadge } from '../catalogue/ProductTypeBadge'
 
-const DEFAULT_TIERS = [
-  { id: 'tier-1', code: 'Tier 1', name: 'Enterprise' },
-  { id: 'tier-2', code: 'Tier 2', name: 'Mid-Market' },
-  { id: 'tier-3', code: 'Tier 3', name: 'Growth' },
-]
+// Tier columns come only from saved customer tiers.
+const DEFAULT_TIERS = []
 
 export function FeatureRatesSection({
   family,
@@ -28,7 +25,6 @@ export function FeatureRatesSection({
   // Only include features that have available/entered rate data
   const combinedFeatures = useMemo(() => {
     const list = []
-    const handledFeatureIds = new Set()
 
     const hasEnteredRate = (r) => {
       if (!r) return false
@@ -107,7 +103,7 @@ export function FeatureRatesSection({
             ...(savedRate || {}),
             featureName: feat.name || savedRate?.featureName,
             productCode: feat.code || savedRate?.productCode || `FEAT-${feat.id}`,
-            unitOfMeasure: feat.unitOfMeasure || savedRate?.unitOfMeasure || 'Active Employees (with ESS)',
+            unitOfMeasure: feat.unitOfMeasure || savedRate?.unitOfMeasure || '',
             classification: feat.classification || savedRate?.classification,
             productType:
               feat.productType ||
@@ -271,7 +267,7 @@ export function FeatureRatesSection({
 
                       {/* Feature UOM beneath name */}
                       <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                        UOM: <span>{rate.unitOfMeasure || 'Active Employees (with ESS)'}</span>
+                        UOM: <span>{rate.unitOfMeasure || '—'}</span>
                       </div>
 
                       {/* Code */}
@@ -306,8 +302,6 @@ export function FeatureRatesSection({
                           rate[fixedKey] ??
                           rate[`fixed_tier${idx + 1}Rate`] ??
                           rate[`fixed_${tier.id}Rate`] ??
-                          rate[`fixed_tier_${idx + 1}`] ??
-                          rate[`fixed_${idx + 1}Rate`] ??
                           ''
 
                         return (
@@ -339,19 +333,11 @@ export function FeatureRatesSection({
 
                     {/* Dynamic Tier Inputs (PEPM) */}
                     {tiersToRender.map((tier, idx) => {
-                      const fieldKey =
-                        tier.id === 'tier-1' || tier.id === 1
-                          ? 'tier1Rate'
-                          : tier.id === 'tier-2' || tier.id === 2
-                          ? 'tier2Rate'
-                          : tier.id === 'tier-3' || tier.id === 3
-                          ? 'tier3Rate'
-                          : `tier_${tier.id}`
+                      const fieldKey = `tier_${tier.id}`
                       const val =
                         rate[fieldKey] ??
                         rate[`tier_${tier.id}`] ??
                         rate[`tier${idx + 1}Rate`] ??
-                        rate[`tier_${idx + 1}`] ??
                         rate[tier.id] ??
                         rate[`${tier.id}Rate`] ??
                         ''

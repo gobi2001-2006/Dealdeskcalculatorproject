@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import { useEffect } from 'react'
 import { AlertTriangle, X, Loader2 } from 'lucide-react'
 
 export function DeleteRateCardConfirmDialog({

@@ -1,7 +1,15 @@
 import { Link } from 'react-router-dom'
 import { ShieldCheck, User } from 'lucide-react'
+import { useProposal } from '../../context/ProposalContext'
 
-export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = true, isDemo = false }) {
+/**
+ * Top navigation. The connection pill is shown only when a page passes a real status
+ * (isConnected true/false); it is never claimed by default.
+ */
+export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = null, isDemo = false }) {
+  // Keep the open proposal when moving between the proposal pages (survives a browser refresh).
+  const { clientInfo } = useProposal()
+  const proposalQuery = clientInfo?.proposalId ? `?proposalId=${clientInfo.proposalId}` : ''
   const NAV_ITEMS = [
     {
       label: 'Product Catalog',
@@ -24,13 +32,13 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = tru
     },
     {
       label: 'Proposal Configurator',
-      to: '/calculator',
+      to: `/calculator${proposalQuery}`,
       isActive: activeSection === 'calculator' || activeSection === 'configurator',
       enabled: true,
     },
     {
       label: 'Pricing & Discounts',
-      to: '/pricing-discounts',
+      to: `/pricing-discounts${proposalQuery}`,
       isActive:
         activeSection === 'pricing' ||
         activeSection === 'discounts' ||
@@ -39,7 +47,7 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = tru
     },
     {
       label: 'Proposal Summary',
-      to: '/proposals',
+      to: `/proposals${proposalQuery}`,
       isActive: activeSection === 'proposals',
       enabled: true,
     },
@@ -118,7 +126,7 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = tru
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
               <span>DEMO DATA</span>
             </div>
-          ) : isConnected ? (
+          ) : isConnected === true ? (
             <div
               className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
               title="Connected to PostgreSQL database"
@@ -126,7 +134,7 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = tru
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
               <span>POSTGRESQL LIVE</span>
             </div>
-          ) : (
+          ) : isConnected === false ? (
             <div
               className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/80"
               title="Disconnected from backend database"
@@ -134,7 +142,7 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = tru
               <span className="w-1.5 h-1.5 rounded-full bg-rose-400" aria-hidden="true"></span>
               <span>OFFLINE / DISCONNECTED</span>
             </div>
-          )}
+          ) : null}
 
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800 text-xs text-slate-300">
             <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">

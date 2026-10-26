@@ -1,97 +1,70 @@
 /**
- * PROPOSAL CONFIGURATOR DATA & HELPER UTILITIES
- * 
- * Reuses existing master data:
- * - Product Catalogue: INITIAL_PRODUCT_FAMILIES, INITIAL_PRODUCTS
- * - Pack Builder: INITIAL_PACKS
- * - Rate Card & Masters: INITIAL_COUNTRIES, INITIAL_PRICING_TIERS, DEPLOYMENT_MODELS, PRICING_MODELS, INITIAL_HOURLY_RATES
- * 
- * CRITICAL PRICING RULE:
- * Pricing is strictly backend-owned. The frontend does not calculate commercial totals (PEPM, discounts, FCV).
- * Calculations are executed via POST /api/proposals/{id}/calculate and snapshots retrieved from the database.
+ * PROPOSAL CONFIGURATOR STATE HELPERS
+ *
+ * Pricing is backend-owned: the frontend never calculates commercial totals.
+ * Calculations run through POST /api/proposals/{id}/calculate and are read back from the
+ * saved calculation snapshot.
+ *
+ * Nothing in this module invents business data: new proposals start empty and every id
+ * must come from a saved master record.
  */
 
-import { INITIAL_COUNTRIES } from '../../data/rateCardData'
-import { INITIAL_PRODUCTS } from '../../data/catalogueData'
-import { INITIAL_PACKS } from '../../data/packsData'
-
-/**
- * Master currency catalogue extracted and normalized from rate cards and country records.
- */
-export const MASTER_CURRENCIES = [
-  { id: 1, code: 'USD', symbol: '$', name: 'US Dollar', country: 'North America / Global' },
-  { id: 2, code: 'INR', symbol: '₹', name: 'Indian Rupee', country: 'India' },
-  { id: 3, code: 'EUR', symbol: '€', name: 'Euro', country: 'Europe' },
-  { id: 4, code: 'GBP', symbol: '£', name: 'British Pound', country: 'United Kingdom' },
-  { id: 5, code: 'AED', symbol: 'AED', name: 'UAE Dirham', country: 'United Arab Emirates' },
-  { id: 6, code: 'SAR', symbol: 'SAR', name: 'Saudi Riyal', country: 'Saudi Arabia' },
-  { id: 7, code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit', country: 'Malaysia' },
-  { id: 8, code: 'PHP', symbol: '₱', name: 'Philippine Peso', country: 'Philippines' },
-  { id: 9, code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling', country: 'Kenya' },
-  { id: 10, code: 'ZAR', symbol: 'R', name: 'South African Rand', country: 'South Africa' },
-]
-
+/** A new, empty proposal header. */
 export const INITIAL_CLIENT_INFO = {
   proposalId: null,
   proposalCode: '',
   customerId: null,
-  clientName: 'Acme Global Enterprise',
+  clientName: '',
   dealId: null,
-  dealCode: 'DEAL-2026-0042',
-  reportingCurrency: 'USD',
+  dealCode: '',
+  reportingCurrency: '',
   reportingCurrencyId: null,
-  notes: 'Multi-region enterprise transformation. Initial scope covering India and North America operations.',
+  notes: '',
+}
+
+/** The pack version a proposal should reference: the active one, else none (never a guess). */
+export function activePackVersion(pack) {
+  return (pack?.pack_versions || []).find((v) => v.status === 'active') || null
+}
+
+/** Describe a saved service rate exactly as stored (no derived prices). */
+export function describeServiceRate(sr) {
+  if (!sr) return ''
+  const code = sr.currency?.code || ''
+  const parts = []
+  if (sr.daily_rate !== null && sr.daily_rate !== undefined) parts.push(`${code} ${Number(sr.daily_rate).toLocaleString()}/day`)
+  if (sr.hourly_rate !== null && sr.hourly_rate !== undefined) {
+    parts.push(`${code} ${Number(sr.hourly_rate).toLocaleString()}/hr × ${Number(sr.hours_per_day)} h/day`)
+  }
+  return parts.join(' · ')
+}
+
+/** Currency code of a country record from GET /api/masters/countries (nested currency). */
+export function countryCurrencyCode(country) {
+  if (!country) return ''
+  if (country.currency && typeof country.currency === 'object') return country.currency.code || ''
+  if (typeof country.currency === 'string') return country.currency
+  return country.currency_code || ''
 }
 
 /**
- * Creates a default country configuration for the proposal.
- * Fully compatible with existing Pages 5 and 6 and real backend IDs.
+ * A new country block. `country` is a saved country record (or null for an empty block).
+ * Tier, deployment model, pricing model, headcount and term are left for the user to choose.
  */
-export function createDefaultCountryConfig(countryId = 'c-in', index = 1, includeDefaultFamily = true) {
-  const countryMaster =
-    INITIAL_COUNTRIES.find((c) => c.id === countryId || String(c.id) === String(countryId)) ||
-    INITIAL_COUNTRIES[0]
-
+export function createDefaultCountryConfig(country = null, index = 1) {
   return {
     id: `cfg-country-${Date.now()}-${index}`,
-    countryId: countryMaster.id,
-    countryName: countryMaster.name,
-    currency: countryMaster.currency,
-    currencySymbol: countryMaster.symbol,
-    pricingTierId: 'tier-1', // Default Tier 1 (Enterprise)
-    deploymentModelId: 'dep-shared', // Default Shared Cloud
-    pricingModelId: 'pm-pepm', // Default PEPM
-    contractTerm: 36, // Default 36 months
-    headcount: 5000, // Default 5,000 headcount
-    // Dedicated state for Platform Subscription to ensure NO data loss when toggling
-    platformSubscriptionConfig: {
-      annualPlatformFee: '100000',
-      monthlySubscriptionFee: '300',
-      employeeCount: '10000',
-    },
-    families: includeDefaultFamily
-      ? [
-          {
-            id: `fam-cfg-${Date.now()}-1`,
-            familyId: 'fam-ta',
-            headcount: 5000,
-            selectedPackId: 'pack-ta-growth',
-            selectedFeatureIds: [], // À la carte features not in pack
-          },
-        ]
-      : [],
-    serviceLines: [
-      {
-        id: `srv-cfg-${Date.now()}-1`,
-        roleName: 'Enterprise Solution Architecture',
-        hourlyRateId: 'hr-1',
-        rateApplied: 220,
-        hoursOrDays: 40,
-        unit: 'Hours',
-        discountPct: 0,
-        currency: countryMaster.currency,
-      },
-    ],
+    countryId: country ? Number(country.id) : null,
+    countryName: country?.name || '',
+    currency: countryCurrencyCode(country),
+    currencySymbol: country?.currency?.symbol || '',
+    pricingTierId: null,
+    deploymentModelId: null,
+    pricingModelId: null,
+    contractTerm: '',
+    headcount: '',
+    families: [],
+    serviceLines: [],
   }
 }
 
@@ -130,284 +103,208 @@ export function validateHeadcount(headcount) {
   return ''
 }
 
+/** A service line needs a saved service rate and a positive effort in man-days. */
 export function validateServiceLine(service) {
   const errors = {}
   if (!service.roleName || !service.roleName.trim()) {
     errors.roleName = 'Service description or role is required.'
   }
-  const hours = Number(service.hoursOrDays)
-  if (service.hoursOrDays === '' || isNaN(hours) || hours < 0) {
-    errors.hoursOrDays = 'Quantity / hours must be a non-negative number.'
+  if (!service.serviceRateId) {
+    errors.serviceRateId = 'Select a saved service rate for this country.'
   }
-  const rate = Number(service.rateApplied)
-  if (service.rateApplied === '' || isNaN(rate) || rate < 0) {
-    errors.rateApplied = 'Rate must be a non-negative number.'
+  const days = Number(service.hoursOrDays)
+  if (service.hoursOrDays === '' || isNaN(days) || days <= 0) {
+    errors.hoursOrDays = 'Effort must be greater than 0 man-days.'
   }
   return errors
 }
 
 /**
- * Formats a Proposal into the FastAPI Pydantic schema structure
- * for audit snapshots, database persistence, and JSON preview.
+ * Preview of what will be sent to the backend (shown in the save dialog).
+ * Prices and the unit of measure are resolved by the backend from the rate card.
  */
-export function serializeProposalToBackendSchema(clientInfo, countryConfigs, mastersOrPacks = null, productsList = null) {
-  let masterPacks = []
-  let masterProducts = []
-
-  if (Array.isArray(mastersOrPacks)) {
-    masterPacks = mastersOrPacks
-    if (Array.isArray(productsList)) {
-      masterProducts = productsList
-    }
-  } else if (mastersOrPacks && typeof mastersOrPacks === 'object') {
-    masterPacks = mastersOrPacks.packs || []
-    masterProducts = mastersOrPacks.features || mastersOrPacks.products || []
-  }
-
-  const proposalCode =
-    clientInfo.proposalCode ||
-    clientInfo.dealCode ||
-    `PROP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`
-
-  let lineNumber = 1
+export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
   const lineItems = []
   const serviceLines = []
 
-  const serializedCountries = countryConfigs.map((country, cIdx) => {
-    // Collect line items for packs and à la carte features
+  const serializedCountries = (countryConfigs || []).map((country, cIdx) => {
     ;(country.families || []).forEach((fam) => {
       if (fam.selectedPackId) {
-        const pack =
-          masterPacks.find(
-            (p) =>
-              p.id === fam.selectedPackId ||
-              p.latestVersionId === fam.selectedPackId ||
-              p.versions?.some((v) => v.id === fam.selectedPackId) ||
-              p.pack_versions?.some((v) => v.id === fam.selectedPackId)
-          ) ||
-          INITIAL_PACKS.find(
-            (p) => p.id === fam.selectedPackId || p.versions?.some((v) => v.id === fam.selectedPackId)
-          )
         lineItems.push({
-          line_number: lineNumber++,
-          country_id: country.countryId,
           pack_version_id: fam.selectedPackId,
           feature_id: null,
-          item_name: pack?.name || 'Selected Commercial Pack',
-          item_code: pack?.code || 'PACK-CUSTOM',
-          family_id: fam.familyId,
-          uom_id: 1, // UOM: Employee
-          quantity: country.headcount || 1,
-          list_unit_price: null,
-          discount_pct: 0,
-          net_unit_price: null,
-          extended_amount: null,
-          currency: country.currency,
-          status: 'pending_backend_calculation',
+          quantity: country.headcount,
+          uom_id: 'resolved from the rate card on save',
         })
       }
-
-      // Collect à la carte features
-      if (fam.selectedFeatureIds && fam.selectedFeatureIds.length > 0) {
-        fam.selectedFeatureIds.forEach((featId) => {
-          const product =
-            masterProducts.find(
-              (p) =>
-                p.id === featId ||
-                p.featureId === featId ||
-                p.feature_id === featId ||
-                String(p.id) === String(featId)
-            ) || INITIAL_PRODUCTS.find((p) => p.id === featId)
-          lineItems.push({
-            line_number: lineNumber++,
-            country_id: country.countryId,
-            pack_version_id: null,
-            feature_id: featId,
-            item_name: product?.subItem || product?.solution || product?.name || 'À la carte Feature',
-            item_code: product?.code || 'FEAT-CUSTOM',
-            family_id: fam.familyId,
-            uom_id: 1,
-            quantity: country.headcount || 1,
-            list_unit_price: null,
-            discount_pct: 0,
-            net_unit_price: null,
-            extended_amount: null,
-            currency: country.currency,
-            status: 'pending_backend_calculation',
-          })
+      ;(fam.selectedFeatureIds || []).forEach((featId) => {
+        lineItems.push({
+          pack_version_id: null,
+          feature_id: featId,
+          quantity: fam.featureHeadcounts?.[featId] ?? fam.headcount ?? country.headcount,
+          uom_id: 'resolved from the rate card on save',
         })
-      }
-    })
-
-    // Collect service lines
-    ;(country.serviceLines || []).forEach((srv) => {
-      serviceLines.push({
-        country_id: country.countryId,
-        role_name: srv.roleName,
-        service_rate_id: srv.serviceRateId || srv.hourlyRateId || null,
-        days_or_hours: Number(srv.hoursOrDays) || 0,
-        rate_applied: Number(srv.rateApplied) || 0,
-        discount_pct: Number(srv.discountPct) || 0,
-        extended_amount: null,
-        currency: srv.currency || country.currency,
-        status: 'pending_backend_calculation',
       })
     })
-
+    ;(country.serviceLines || []).forEach((srv) => {
+      serviceLines.push({
+        role_name: srv.roleName,
+        service_rate_id: srv.serviceRateId || null,
+        days_or_hours: Number(srv.hoursOrDays) || 0,
+        effort_unit: 'man-days',
+      })
+    })
     return {
       country_id: country.countryId,
       country_name: country.countryName,
       currency: country.currency,
       user_headcount: country.headcount,
-      pricing_tier_id: country.pricingTierId,
+      customer_tier_id: country.pricingTierId,
       deployment_model_id: country.deploymentModelId,
       pricing_model_id: country.pricingModelId,
-      term_months: country.contractTerm,
+      contract_term_months: country.contractTerm,
       is_primary_deployment: cIdx === 0,
-      pricing_status: 'pending_backend_calculation',
     }
   })
 
   return {
     proposal: {
       id: clientInfo.proposalId || null,
-      code: proposalCode,
-      deal_code: clientInfo.dealCode,
+      code: clientInfo.proposalCode || '(generated on save)',
+      deal_code: clientInfo.dealCode || '(generated on save)',
       customer_name: clientInfo.clientName,
       reporting_currency: clientInfo.reportingCurrency,
       reporting_currency_id: Number(clientInfo.reportingCurrencyId) || null,
       status: clientInfo.status || 'draft',
-      notes: clientInfo.notes,
-      created_at: new Date().toISOString(),
     },
     proposal_countries: serializedCountries,
     proposal_line_items: lineItems,
     proposal_service_lines: serviceLines,
-    calculation_summary: {
-      pricing_fcv: 'Authoritative backend calculation',
-      services_total: 'Authoritative backend calculation',
-      grand_total: 'Authoritative backend calculation',
-      authoritative_pricing_engine: 'FastAPI Backend Engine (Phase D)',
-    },
+    calculation: 'Prices, discounts and totals are calculated by the backend engine.',
   }
 }
 
+function familyIdForPackVersion(packs, packVersionId) {
+  const pack = (packs || []).find((p) =>
+    (p.pack_versions || []).some((v) => Number(v.id) === Number(packVersionId)),
+  )
+  return pack?.product_family_id ?? null
+}
+
+function familyIdForFeature(products, feature) {
+  if (!feature) return null
+  const product = (products || []).find((p) => Number(p.id) === Number(feature.product_id))
+  return product?.product_family_id ?? null
+}
+
 /**
- * Transforms a backend ProposalDetailResponse into frontend state for proposal reload.
+ * Turn a saved proposal (GET /api/proposals/{id}) back into configurator state.
+ *
+ * - `masters.packs` / `masters.products` map lines to their product family.
+ * - `masters.countries` supplies each country's currency.
+ * - `latestCalc` (GET .../calculations/latest) supplies the contract term, which the
+ *   backend records only on the calculation snapshot.
+ *
+ * Line items and service lines belong to the proposal version, not to a country, so they
+ * are attached to the primary country block only.
  */
-export function deserializeBackendProposal(backendProposal) {
+export function deserializeBackendProposal(backendProposal, { masters = {}, latestCalc = null } = {}) {
   const clientInfo = {
     proposalId: backendProposal.id,
     proposalCode: backendProposal.code,
     customerId: backendProposal.customer_id,
-    clientName: backendProposal.customer?.name || backendProposal.deal?.name || 'Saved Customer',
+    clientName: backendProposal.customer?.name || '',
     dealId: backendProposal.deal_id,
     dealCode: backendProposal.deal?.code || '',
-    reportingCurrency: backendProposal.currency?.code || 'USD',
+    reportingCurrency: backendProposal.currency?.code || '',
     reportingCurrencyId: backendProposal.currency_id,
     status: backendProposal.status,
     notes: '',
   }
 
   const draftVersion =
-    (backendProposal.versions || []).find((v) => v.status === 'draft') ||
-    backendProposal.versions?.[0]
+    (backendProposal.versions || [])
+      .filter((v) => v.status === 'draft')
+      .sort((a, b) => b.version_no - a.version_no)[0] ||
+    [...(backendProposal.versions || [])].sort((a, b) => b.version_no - a.version_no)[0]
   const lineItems = draftVersion?.line_items || []
   const serviceLines = draftVersion?.service_lines || []
+  const term = latestCalc?.contract_term_months ?? latestCalc?.snapshot_payload?.contract_term_months ?? ''
 
-  const countryConfigs = (backendProposal.countries || []).map((c, idx) => {
-    const countryMaster = c.country || {}
-    const currencyCode = countryMaster.currency?.code || 'USD'
-    const currencySymbol = countryMaster.currency?.symbol || '$'
+  const blocks = [...(backendProposal.countries || [])].sort((a, b) => {
+    if (a.is_primary_deployment !== b.is_primary_deployment) return a.is_primary_deployment ? -1 : 1
+    return a.id - b.id
+  })
 
-    const packItems = lineItems.filter((li) => li.pack_version_id != null)
-    const featureItems = lineItems.filter((li) => li.feature_id != null)
+  const countryConfigs = blocks.map((c, idx) => {
+    const isPrimary = idx === 0
+    const countryMaster =
+      (masters.countries || []).find((m) => Number(m.id) === Number(c.country_id)) || c.country || {}
+    const currencyCode = countryCurrencyCode(countryMaster)
 
-    // Discover families associated with these lines
     const familyMap = new Map()
-    packItems.forEach((pi) => {
-      const famId = pi.pack_version?.pack?.product_family_id || 1
-      if (!familyMap.has(famId)) {
-        familyMap.set(famId, {
-          familyId: famId,
-          selectedPackId: pi.pack_version_id,
-          selectedFeatureIds: [],
-        })
-      } else {
-        familyMap.get(famId).selectedPackId = pi.pack_version_id
+    const familyEntry = (famId) => {
+      const key = famId ?? 'unassigned'
+      if (!familyMap.has(key)) {
+        familyMap.set(key, { familyId: famId, selectedPackId: null, selectedFeatureIds: [], featureHeadcounts: {} })
       }
-    })
-
-    featureItems.forEach((fi) => {
-      const famId = fi.feature?.product?.product_family_id || 1
-      if (!familyMap.has(famId)) {
-        familyMap.set(famId, {
-          familyId: famId,
-          selectedPackId: null,
-          selectedFeatureIds: [fi.feature_id],
-        })
-      } else {
-        const entry = familyMap.get(famId)
-        if (!entry.selectedFeatureIds.includes(fi.feature_id)) {
-          entry.selectedFeatureIds.push(fi.feature_id)
+      return familyMap.get(key)
+    }
+    if (isPrimary) {
+      lineItems.forEach((li) => {
+        if (li.pack_version_id) {
+          familyEntry(familyIdForPackVersion(masters.packs, li.pack_version_id)).selectedPackId = li.pack_version_id
+        } else if (li.feature_id) {
+          const entry = familyEntry(familyIdForFeature(masters.products, li.feature))
+          if (!entry.selectedFeatureIds.includes(li.feature_id)) entry.selectedFeatureIds.push(li.feature_id)
+          // The saved quantity of each standalone feature line.
+          entry.featureHeadcounts[li.feature_id] = Number(li.quantity)
         }
-      }
-    })
-
-    const families = familyMap.size > 0
-      ? Array.from(familyMap.values()).map((f, fIdx) => ({
-          id: `fam-cfg-${Date.now()}-${idx + 1}-${fIdx + 1}`,
-          familyId: f.familyId,
-          headcount: c.user_headcount || 1000,
-          selectedPackId: f.selectedPackId,
-          selectedFeatureIds: f.selectedFeatureIds,
-        }))
-      : [
-          {
-            id: `fam-cfg-${Date.now()}-${idx + 1}`,
-            familyId: 1,
-            headcount: c.user_headcount || 1000,
-            selectedPackId: null,
-            selectedFeatureIds: [],
-          },
-        ]
-
-    const srvLines = serviceLines.map((sl, sIdx) => ({
-      id: `srv-${sl.id || Date.now()}-${sIdx}`,
-      roleName: sl.role_name,
-      serviceRateId: sl.service_rate_id,
-      hourlyRateId: sl.service_rate_id ? `hr-${sl.service_rate_id}` : 'hr-1',
-      rateApplied: Number(sl.rate_applied) || 0,
-      hoursOrDays: Number(sl.days_or_hours) || 1,
-      unit: 'Hours',
-      discountPct: Number(sl.discount_pct) || 0,
-      currency: sl.currency?.code || currencyCode,
-    }))
+      })
+    }
 
     return {
-      id: `cfg-country-${c.id || Date.now()}-${idx + 1}`,
+      id: `cfg-country-${c.id}`,
+      backendId: c.id,
       countryId: c.country_id,
-      countryName: countryMaster.name || `Country ${c.country_id}`,
+      countryName: countryMaster.name || '',
       currency: currencyCode,
-      currencySymbol: currencySymbol,
-      pricingTierId: backendProposal.customer?.customer_tier_id || 'tier-1',
-      deploymentModelId: c.deployment_model_id || 'dep-shared',
-      pricingModelId: c.pricing_model_id || 'pm-pepm',
-      contractTerm: Number(c.term_months || c.contract_term || backendProposal.contract_term_months) || 36,
-      headcount: c.user_headcount || 1000,
-      platformSubscriptionConfig: {
-        annualPlatformFee: '100000',
-        monthlySubscriptionFee: '300',
-        employeeCount: String(c.user_headcount || 1000),
-      },
-      families,
-      serviceLines: srvLines,
+      currencySymbol: countryMaster.currency?.symbol || '',
+      pricingTierId: backendProposal.customer?.customer_tier_id ?? null,
+      deploymentModelId: c.deployment_model_id ?? null,
+      pricingModelId: c.pricing_model_id ?? null,
+      contractTerm: term,
+      headcount: c.user_headcount ?? '',
+      families: Array.from(familyMap.values()).map((f, fIdx) => ({
+        id: `fam-cfg-${c.id}-${fIdx + 1}`,
+        familyId: f.familyId,
+        headcount: c.user_headcount ?? '',
+        selectedPackId: f.selectedPackId,
+        selectedFeatureIds: f.selectedFeatureIds,
+        featureHeadcounts: f.featureHeadcounts,
+      })),
+      serviceLines: isPrimary
+        ? serviceLines.map((sl) => ({
+            id: `srv-${sl.id}`,
+            backendId: sl.id,
+            roleName: sl.role_name,
+            serviceRateId: sl.service_rate_id,
+            hoursOrDays: Number(sl.days_or_hours),
+            unit: 'Man-days',
+            currency: sl.currency?.code || currencyCode,
+          }))
+        : [],
     }
   })
 
-  return {
-    clientInfo,
-    countryConfigs:
-      countryConfigs.length > 0 ? countryConfigs : [createDefaultCountryConfig('c-in', 1, false)],
-  }
+  // Line discounts are stored on the line items; key them by target for Pricing & Discounts.
+  const lineDiscountsByTarget = {}
+  lineItems.forEach((li) => {
+    if (li.discount_pct !== null && li.discount_pct !== undefined && Number(li.discount_pct) > 0) {
+      const key = li.pack_version_id ? `pack:${li.pack_version_id}` : `feature:${li.feature_id}`
+      lineDiscountsByTarget[key] = Number(li.discount_pct)
+    }
+  })
+
+  return { clientInfo, countryConfigs, lineItems, lineDiscountsByTarget }
 }

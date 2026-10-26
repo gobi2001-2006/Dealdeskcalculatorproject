@@ -160,8 +160,9 @@ describe('Deal Desk Application Shell Smoke Tests', () => {
     expect(
       screen.getByRole('complementary', { name: /Master Data Management/i }),
     ).toBeInTheDocument()
+    // The pricing model comes from the backend; nothing is pre-selected from demo data.
     expect(
-      screen.getByRole('heading', { name: /Pack Rates \(PEPM\)/i }),
+      screen.getByRole('combobox', { name: /Commercial Pricing Model/i }),
     ).toBeInTheDocument()
   })
 

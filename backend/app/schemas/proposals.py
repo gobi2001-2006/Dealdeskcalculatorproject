@@ -1372,6 +1372,13 @@ class ProposalCalculationResponse(BaseModel):
     contract_term_months: Optional[int] = Field(default=12, description="Contract duration in months")
     total_proposal_annual_reporting_currency: Optional[float] = Field(default=None, description="Annual consumption & ARR total in reporting currency")
     total_proposal_contract_reporting_currency: Optional[float] = Field(default=None, description="Full-contract total in reporting currency across configured term")
+    is_stale: Optional[bool] = Field(
+        default=None,
+        description=(
+            "True when the saved proposal inputs changed after this snapshot was calculated; "
+            "None when the snapshot predates input fingerprints."
+        ),
+    )
     snapshot_payload: dict[str, Any]
 
 

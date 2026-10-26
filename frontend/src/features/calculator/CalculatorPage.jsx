@@ -28,7 +28,8 @@ import {
   getProposal,
   getLatestCalculation,
   getCustomers,
-  getDeals,
+  describeApiError,
+  discountsFromSnapshot,
 } from '../../api/proposalsApi'
 import {
   getCountries,
@@ -42,9 +43,27 @@ import {
 import {
   getCatalogueFamilies,
   getCatalogueProducts,
+  getCatalogueFeatures,
 } from '../../api/catalogueApi'
 import { getPacks } from '../../api/packsApi'
 import { useProposal } from '../../context/ProposalContext'
+import { CalculationNotices } from '../../components/common/CalculationNotices'
+import { formatMoney, readCalculationTotals } from '../../utils/calculationView'
+
+const MASTER_SOURCES = [
+  ['countries', getCountries, 'countries'],
+  ['currencies', getCurrencies, 'currencies'],
+  ['tiers', getCustomerTiers, 'customer tiers'],
+  ['deployments', getDeploymentModels, 'deployment models'],
+  ['deploymentPricingOptions', getDeploymentPricingOptions, 'deployment/pricing combinations'],
+  ['pricingModels', getPricingModels, 'pricing models'],
+  ['families', getCatalogueFamilies, 'product families'],
+  ['packs', getPacks, 'packs'],
+  ['products', getCatalogueProducts, 'products'],
+  ['features', getCatalogueFeatures, 'features'],
+  ['serviceRates', getServiceRates, 'service rates'],
+  ['customers', getCustomers, 'customers'],
+]
 
 export function CalculatorPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -70,10 +89,11 @@ export function CalculatorPage() {
     families: [],
     packs: [],
     products: [],
+    features: [],
     serviceRates: [],
     customers: [],
-    deals: [],
     isLoading: true,
+    loadErrors: [],
   })
 
   // Modals & Dialogs State
@@ -84,7 +104,7 @@ export function CalculatorPage() {
   // API Integration States
   const [isSaving, setIsSaving] = useState(false)
   const [isCalculating, setIsCalculating] = useState(false)
-  const [calcApiResult, setCalcApiResult] = useState(null)
+  const { calcApiResult, setCalcApiResult } = useProposal()
   const [calculatedInputsSignature, setCalculatedInputsSignature] = useState(null)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState('success') // 'success' | 'warning' | 'error'
@@ -108,13 +128,38 @@ export function CalculatorPage() {
         })),
         services: (c.serviceLines || []).map((s) => ({
           role: s.roleName,
-          hours: s.hoursOrDays,
-          rate: s.rateApplied,
-          disc: s.discountPct,
+          rateId: s.serviceRateId,
+          days: s.hoursOrDays,
         })),
       })),
     })
   }, [clientInfo.reportingCurrencyId, countryConfigs])
+
+  // After a load or a calculation, remember what the screen looked like so later edits show as outdated.
+  const [captureSignature, setCaptureSignature] = useState(false)
+  useEffect(() => {
+    if (captureSignature) {
+      setCalculatedInputsSignature(currentInputsSignature) // eslint-disable-line react-hooks/set-state-in-effect
+      setCaptureSignature(false)
+    }
+  }, [captureSignature, currentInputsSignature])
+
+  // Replace screen state with what the database now holds (new ids for countries/service lines).
+  // The contract term is kept from the screen: the backend stores it only on calculation snapshots.
+  const applySavedProposal = (savedDetail, ids) => {
+    if (!savedDetail) return
+    const reloaded = deserializeBackendProposal(savedDetail, { masters })
+    setClientInfo((prev) => ({
+      ...prev,
+      proposalId: ids.proposalId,
+      customerId: ids.customerId,
+      dealId: ids.dealId,
+      proposalCode: savedDetail.code || prev.proposalCode,
+    }))
+    setCountryConfigs((prev) =>
+      reloaded.countryConfigs.map((c, i) => ({ ...c, contractTerm: prev[i]?.contractTerm ?? c.contractTerm })),
+    )
+  }
 
   const isCalculationStale = Boolean(
     calcApiResult?.status === 'success' &&
@@ -130,85 +175,24 @@ export function CalculatorPage() {
     }, 5000)
   }
 
-  // Load live reference masters on mount
+  // Load live reference masters on mount. A failed list is reported, never replaced by demo data.
   useEffect(() => {
     let isMounted = true
 
     async function loadMasterData() {
-      try {
-        const [
-          countriesRes,
-          currenciesRes,
-          tiersRes,
-          deploymentsRes,
-          deploymentPricingOptionsRes,
-          pricingModelsRes,
-          familiesRes,
-          packsRes,
-          productsRes,
-          serviceRatesRes,
-          customersRes,
-          dealsRes,
-        ] = await Promise.allSettled([
-          getCountries(),
-          getCurrencies(),
-          getCustomerTiers(),
-          getDeploymentModels(),
-          getDeploymentPricingOptions(),
-          getPricingModels(),
-          getCatalogueFamilies(),
-          getPacks(),
-          getCatalogueProducts(),
-          getServiceRates(),
-          getCustomers(),
-          getDeals(),
-        ])
-
-        if (!isMounted) return
-
-        const liveCurrencies = currenciesRes.status === 'fulfilled' ? currenciesRes.value : []
-        setMasters({
-          countries: countriesRes.status === 'fulfilled' ? countriesRes.value : [],
-          currencies: liveCurrencies,
-          tiers: tiersRes.status === 'fulfilled' ? tiersRes.value : [],
-          deployments: deploymentsRes.status === 'fulfilled' ? deploymentsRes.value : [],
-          deploymentPricingOptions: deploymentPricingOptionsRes.status === 'fulfilled' ? deploymentPricingOptionsRes.value : [],
-          pricingModels: pricingModelsRes.status === 'fulfilled' ? pricingModelsRes.value : [],
-          families: familiesRes.status === 'fulfilled' ? familiesRes.value : [],
-          packs: packsRes.status === 'fulfilled' ? packsRes.value : [],
-          products: productsRes.status === 'fulfilled' ? productsRes.value : [],
-          serviceRates: serviceRatesRes.status === 'fulfilled' ? serviceRatesRes.value : [],
-          customers: customersRes.status === 'fulfilled' ? customersRes.value : [],
-          deals: dealsRes.status === 'fulfilled' ? dealsRes.value : [],
-          isLoading: false,
-        })
-
-        if (liveCurrencies.length > 0) {
-          setClientInfo((prev) => {
-            const hasValidId = liveCurrencies.some(
-              (c) => Number(c.id) === Number(prev.reportingCurrencyId)
-            )
-            if (!hasValidId) {
-              const match =
-                liveCurrencies.find(
-                  (c) => c.code?.toUpperCase() === prev.reportingCurrency?.toUpperCase()
-                ) || liveCurrencies[0]
-              if (match) {
-                return {
-                  ...prev,
-                  reportingCurrencyId: Number(match.id),
-                  reportingCurrency: match.code,
-                }
-              }
-            }
-            return prev
-          })
+      const results = await Promise.allSettled(MASTER_SOURCES.map(([, fetcher]) => fetcher()))
+      if (!isMounted) return
+      const next = { isLoading: false, loadErrors: [] }
+      results.forEach((res, idx) => {
+        const [key, , label] = MASTER_SOURCES[idx]
+        if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+          next[key] = res.value
+        } else {
+          next[key] = []
+          next.loadErrors.push(`${label}: ${describeApiError(res.reason, 'could not be loaded')}`)
         }
-      } catch {
-        if (isMounted) {
-          setMasters((prev) => ({ ...prev, isLoading: false }))
-        }
-      }
+      })
+      setMasters(next)
     }
 
     loadMasterData()
@@ -218,7 +202,7 @@ export function CalculatorPage() {
     }
   }, [])
 
-  // Reload saved proposal if proposalId is in query params or clientInfo
+  // Reload a saved proposal (and its latest snapshot) from the backend.
   const handleReloadProposal = useCallback(
     async (targetId) => {
       const idToLoad = targetId || urlProposalId || clientInfo.proposalId
@@ -226,46 +210,39 @@ export function CalculatorPage() {
 
       try {
         const backendProposal = await getProposal(idToLoad)
-        if (backendProposal) {
-          const { clientInfo: loadedClient, countryConfigs: loadedConfigs } =
-            deserializeBackendProposal(backendProposal)
-          setClientInfo((prev) => ({ ...prev, ...loadedClient }))
-          if (loadedConfigs.length > 0) {
-            setCountryConfigs(loadedConfigs)
-          }
-
-          // Also check for latest calculation snapshot
-          try {
-            const latestCalc = await getLatestCalculation(idToLoad)
-            if (latestCalc) {
-              setCalcApiResult({
-                status: 'success',
-                data: latestCalc,
-                isBackendCalculation: true,
-              })
-            }
-          } catch {
-            // No calculation run yet, safe to ignore
-          }
-
-          showToast(`Loaded saved proposal #${idToLoad} from PostgreSQL.`, 'success')
+        let latestCalc = null
+        try {
+          latestCalc = await getLatestCalculation(idToLoad)
+        } catch (err) {
+          if (err.response?.status !== 404) throw err // 404 = never calculated
         }
-      } catch (err) {
-        showToast(
-          `Failed to load proposal #${idToLoad}: ${err.response?.data?.detail || err.message}`,
-          'error'
+        const { clientInfo: loadedClient, countryConfigs: loadedConfigs } = deserializeBackendProposal(
+          backendProposal,
+          { masters, latestCalc },
         )
+        setClientInfo((prev) => ({ ...prev, ...loadedClient }))
+        setCountryConfigs(loadedConfigs)
+        setCalcApiResult(
+          latestCalc ? { status: 'success', proposalId: idToLoad, data: latestCalc, isBackendCalculation: true } : null,
+        )
+        setCalculatedInputsSignature(null)
+        if (latestCalc) setCaptureSignature(true)
+        showToast(`Loaded saved proposal #${idToLoad}.`, 'success')
+      } catch (err) {
+        showToast(`Failed to load proposal #${idToLoad}: ${describeApiError(err)}`, 'error')
       }
     },
-    [urlProposalId, clientInfo.proposalId, setClientInfo, setCountryConfigs]
+    [urlProposalId, clientInfo.proposalId, masters, setClientInfo, setCountryConfigs, setCalcApiResult]
   )
 
+  // Load the proposal named in the URL once the masters (needed to map families/currencies) are in.
   useEffect(() => {
-    if (urlProposalId && (!clientInfo.proposalId || String(clientInfo.proposalId) !== String(urlProposalId))) {
+    if (masters.isLoading) return
+    if (urlProposalId && String(clientInfo.proposalId) !== String(urlProposalId)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       handleReloadProposal(urlProposalId)
     }
-  }, [urlProposalId, handleReloadProposal, clientInfo.proposalId])
+  }, [urlProposalId, handleReloadProposal, clientInfo.proposalId, masters.isLoading])
 
   // Handle Client Info Changes
   const handleChangeClientInfo = (field, value) => {
@@ -325,8 +302,8 @@ export function CalculatorPage() {
 
   // Serialized schema payload for modals and backend API preview
   const serializedPayload = useMemo(() => {
-    return serializeProposalToBackendSchema(clientInfo, countryConfigs, masters)
-  }, [clientInfo, countryConfigs, masters])
+    return serializeProposalToBackendSchema(clientInfo, countryConfigs)
+  }, [clientInfo, countryConfigs])
 
   // Handle Save Proposal Draft to PostgreSQL (Phase 4)
   const handleTriggerSave = () => {
@@ -346,32 +323,21 @@ export function CalculatorPage() {
         clientInfo,
         countryConfigs,
         existingProposalId: clientInfo.proposalId,
-        masters,
       })
-
-      if (res.isPersisted) {
-        setClientInfo((prev) => ({
-          ...prev,
-          proposalId: res.proposalId,
-          customerId: res.customerId,
-          dealId: res.dealId,
-          proposalCode: res.data?.code || prev.proposalCode,
-        }))
-        setSearchParams({ proposalId: String(res.proposalId) })
-        showToast(`Proposal #${res.proposalId} successfully saved to PostgreSQL database.`, 'success')
-        setIsSaveModalOpen(false)
-      } else {
-        showToast(res.message || 'Failed to save proposal to PostgreSQL.', 'error')
-      }
+      applySavedProposal(res.data, res)
+      setSearchParams({ proposalId: String(res.proposalId) })
+      showToast(`Proposal #${res.proposalId} saved.`, 'success')
+      setIsSaveModalOpen(false)
     } catch (err) {
-      const errMsg = err.response?.data?.detail || err.message || 'Failed to save proposal'
-      showToast(`Database save failed: ${typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg}`, 'error')
+      showToast(`Save failed: ${describeApiError(err, 'Failed to save proposal')}`, 'error')
     } finally {
       setIsSaving(false)
     }
   }
 
-  // Handle Calculate Commercials using Existing Backend Calculation Engine (Phase 5)
+  // Calculate: the proposal is saved (synchronised) first, so the backend prices what is on screen.
+  // Product-level overall/services discounts are applied on Pricing & Discounts; saved line
+  // discounts are always included.
   const handleTriggerCalculation = async () => {
     const clientErr = validateClientName(clientInfo.clientName)
     if (clientErr) {
@@ -389,96 +355,52 @@ export function CalculatorPage() {
     setIsCalcModalOpen(true)
 
     try {
+      // Keep the product-level discounts applied on Pricing & Discounts (recorded on the last snapshot).
       const res = await requestProposalCalculation({
         proposalId: clientInfo.proposalId,
         clientInfo,
         countryConfigs,
-        masters,
+        discounts: calcApiResult?.status === 'success' ? discountsFromSnapshot(calcApiResult.data) : {},
       })
 
       setCalcApiResult(res)
 
       if (res.status === 'success') {
-        setCalculatedInputsSignature(currentInputsSignature)
-        if (res.proposalId && !clientInfo.proposalId) {
-          setClientInfo((prev) => ({
-            ...prev,
-            proposalId: res.proposalId,
-          }))
+        applySavedProposal(res.savedProposal, res)
+        setCaptureSignature(true)
+        if (String(res.proposalId) !== String(urlProposalId)) {
           setSearchParams({ proposalId: String(res.proposalId) })
         }
-        showToast('Pricing calculation successfully executed by backend engine.', 'success')
+        if (res.discountsDropped) {
+          showToast('Proposal priced, but the products changed, so overall/services discounts were not applied. Re-apply them on Pricing & Discounts.', 'warning')
+        } else {
+          showToast('Proposal saved and priced by the backend engine.', 'success')
+        }
       } else {
         showToast(`Calculation failed: ${res.message}`, 'error')
       }
-    } catch (err) {
-      const errMsg = err.response?.data?.detail || err.message || 'Pricing calculation failed'
-      setCalcApiResult({
-        status: 'error',
-        statusCode: err.response?.status,
-        message: typeof errMsg === 'object' ? JSON.stringify(errMsg) : errMsg,
-        data: null,
-      })
-      showToast(`Calculation failed: ${errMsg}`, 'error')
     } finally {
       setIsCalculating(false)
     }
   }
 
-  // Derive display values for summary strip strictly from backend calculation
+  // Summary strip values come straight from the backend result (no browser-side conversion).
+  const calcTotals = calcApiResult?.status === 'success' ? readCalculationTotals(calcApiResult.data) : null
   const summaryStripValues = useMemo(() => {
-    if (!calcApiResult || calcApiResult.status !== 'success' || !calcApiResult.data) {
+    if (!calcTotals) {
       return {
         fcv: 'Pending backend calculation',
         services: 'Pending backend calculation',
         grandTotal: 'Pending backend calculation',
       }
     }
-
-    const data = calcApiResult.data
-    const curr = data.reporting_currency_code || 'USD'
-    const grandTotalNum = Number(data.total_proposal_reporting_currency || 0)
-
-    let subscriptionReportingTotal = 0
-    let serviceReportingTotal = 0
-    const rawProducts = data.snapshot_payload?.products || []
-    const productsList = Array.isArray(rawProducts)
-      ? rawProducts
-      : typeof rawProducts === 'object'
-      ? Object.values(rawProducts)
-      : []
-
-    productsList.forEach((p) => {
-      const fx = Number(p.fx_rate_multiplier || 1)
-      const sub = Number(p.subscription_total_after_discount ?? p.subscription_total_net ?? 0)
-      const srv = Number(p.service_total_after_discount ?? p.services_total_net ?? 0)
-      subscriptionReportingTotal += sub * fx
-      serviceReportingTotal += srv * fx
-    })
-
-    const staleSuffix = isCalculationStale ? ' (Outdated)' : ''
-
-    const fcvStr = `${curr} ${subscriptionReportingTotal.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}${staleSuffix}`
-
-    const servicesStr = `${curr} ${serviceReportingTotal.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}${staleSuffix}`
-
-    const grandTotalStr = `${curr} ${grandTotalNum.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}${staleSuffix}`
-
+    const staleSuffix = isCalculationStale || calcTotals.isStale ? ' (Outdated)' : ''
     return {
-      fcv: fcvStr,
-      services: servicesStr,
-      grandTotal: grandTotalStr,
-      isStale: isCalculationStale,
+      fcv: `${formatMoney(calcTotals.subscriptionContract, calcTotals.currency)}${staleSuffix}`,
+      services: `${formatMoney(calcTotals.services, calcTotals.currency)}${staleSuffix}`,
+      grandTotal: `${formatMoney(calcTotals.contractTotal, calcTotals.currency)}${staleSuffix}`,
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calcApiResult, isCalculationStale])
 
   return (
@@ -487,7 +409,7 @@ export function CalculatorPage() {
       <div className="shrink-0">
         <CatalogueTopNav
           activeSection="calculator"
-          isConnected={!masters.isLoading}
+          isConnected={masters.isLoading ? null : masters.loadErrors.length === 0}
           isDemo={false}
         />
       </div>
@@ -624,6 +546,19 @@ export function CalculatorPage() {
               </button>
             </div>
           </div>
+
+          {masters.loadErrors?.length > 0 && (
+            <div role="alert" className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-xs text-rose-900 space-y-1">
+              <div className="font-semibold">Some master data could not be loaded from the backend:</div>
+              <ul className="list-disc list-inside text-[11px]">
+                {masters.loadErrors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <CalculationNotices totals={calcTotals} isLocallyModified={isCalculationStale} />
 
           {/* Phase A: Client Details & Reporting Currency Card */}
           <ClientConfigCard

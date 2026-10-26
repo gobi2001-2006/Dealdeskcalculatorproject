@@ -13,266 +13,173 @@ import { SummaryStrip } from '../catalogue/SummaryStrip'
 import { PacksSidebar } from './PacksSidebar'
 import { PackEditor } from './PackEditor'
 import { DeletePackModal } from './DeletePackModal'
-import { INITIAL_PACKS, PRESET_COLORS } from '../../data/packsData'
-import {
-  INITIAL_PRODUCT_FAMILIES,
-  INITIAL_PRODUCTS,
-} from '../../data/catalogueData'
+import { PRESET_COLORS } from '../../data/packsData'
 import {
   getPacks,
   createPack,
   getPackDetail,
   updatePack,
   deletePack,
-  getPackVersion,
   createPackVersion,
   updatePackVersion,
   syncPackItems,
-  updatePackItem,
 } from '../../api/packsApi'
 import {
   getCatalogueFamilies,
   getCatalogueProducts,
   getCatalogueFeatures,
-  createCatalogueFeature,
 } from '../../api/catalogueApi'
+
+/**
+ * The version the Pack Builder edits: the newest draft if there is one (so a new version can be
+ * prepared and then activated), otherwise the active version, otherwise the newest version.
+ */
+function workingPackVersion(versions = []) {
+  const byNewest = [...versions].sort((a, b) => b.version_no - a.version_no)
+  return byNewest.find((v) => v.status === 'draft') || byNewest.find((v) => v.status === 'active') || byNewest[0] || null
+}
+
+function packProductIds(version, backendFeatures) {
+  const productIds = []
+  const requiredProductIds = []
+  ;(version?.pack_items || []).forEach((item) => {
+    const prodId =
+      item.feature?.product_id ||
+      (backendFeatures || []).find((f) => f.id === item.feature_id)?.product_id
+    if (prodId && !productIds.includes(prodId)) {
+      productIds.push(prodId)
+      if (item.is_required !== false) requiredProductIds.push(prodId)
+    }
+  })
+  return { productIds, requiredProductIds }
+}
 
 function mapBackendPacks(backendPacks, backendFeatures) {
   if (!Array.isArray(backendPacks)) return []
 
   return backendPacks.map((bp, index) => {
-    const activeVer =
-      bp.pack_versions?.find((v) => v.status === 'active') ||
-      bp.pack_versions?.[bp.pack_versions.length - 1] ||
-      null
-
-    const color =
-      PRESET_COLORS[index % PRESET_COLORS.length]?.hex || '#F26522'
-
-    const productIds = []
-    const requiredProductIds = []
-
-    if (activeVer && Array.isArray(activeVer.pack_items)) {
-      activeVer.pack_items.forEach((item) => {
-        const prodId =
-          item.feature?.product_id ||
-          (backendFeatures && backendFeatures.find((f) => f.id === item.feature_id)?.product_id)
-        if (prodId) {
-          productIds.push(prodId)
-          if (item.is_required !== false) {
-            requiredProductIds.push(prodId)
-          }
-        }
-      })
-    }
-
+    const ver = workingPackVersion(bp.pack_versions || [])
+    const { productIds, requiredProductIds } = packProductIds(ver, backendFeatures)
     return {
       id: bp.id,
       name: bp.name,
       description: `Commercial pack bundle (${bp.variant} tier).`,
       code: bp.code,
       familyId: bp.product_family_id || '',
-      color,
+      color: PRESET_COLORS[index % PRESET_COLORS.length]?.hex || '#F26522',
       variant: bp.variant || 'standard',
       status: bp.status || 'active',
-      versionId: activeVer?.id || null,
-      versionNo: activeVer?.version_no || 1,
-      versionStatus: activeVer?.status || 'active',
+      versionId: ver?.id || null,
+      versionNo: ver?.version_no || null,
+      versionStatus: ver?.status || null,
       productIds,
       requiredProductIds,
-      notes: `Live PostgreSQL Pack record [ID: ${bp.id}, Code: ${bp.code}].`,
+      packFeatureIds: (ver?.pack_items || []).map((i) => i.feature_id),
+      notes: `Saved pack [ID: ${bp.id}, Code: ${bp.code}].`,
       createdAt: bp.created_at,
       updatedAt: bp.updated_at,
     }
   })
 }
 
+function mapBackendProducts(backendProducts, backendFeatures, families) {
+  const firstFeature = new Map()
+  ;(backendFeatures || []).forEach((f) => {
+    if (!firstFeature.has(f.product_id)) firstFeature.set(f.product_id, f)
+  })
+  return (backendProducts || []).map((bp) => {
+    const owningFam = families.find((f) => f.id === bp.product_family_id)
+    const primaryFeat = firstFeature.get(bp.id)
+    let displayType = 'Adrenalin Native'
+    if (primaryFeat?.classification === 'ai_enabled') displayType = 'AI Agent Module'
+    else if (primaryFeat?.classification === 'partner') displayType = 'Partner Integrated'
+    return {
+      id: bp.id,
+      familyId: bp.product_family_id,
+      familyName: owningFam?.name || 'Unassigned',
+      solution: bp.name,
+      subItem: primaryFeat ? primaryFeat.name : '—',
+      code: bp.code,
+      type: displayType,
+      status: bp.status,
+    }
+  })
+}
+
 export function PacksPage() {
-  const [packs, setPacks] = useState(INITIAL_PACKS)
-  const [families, setFamilies] = useState(INITIAL_PRODUCT_FAMILIES)
-  const [products, setProducts] = useState(INITIAL_PRODUCTS)
+  // Only saved records are shown; nothing is replaced with demo data when the backend fails.
+  const [packs, setPacks] = useState([])
+  const [families, setFamilies] = useState([])
+  const [products, setProducts] = useState([])
   const [featuresList, setFeaturesList] = useState([])
   const [selectedPackId, setSelectedPackId] = useState(null)
   const [packToDelete, setPackToDelete] = useState(null)
   const [duplicatedTemplate, setDuplicatedTemplate] = useState(null)
   const [toastMessage, setToastMessage] = useState('')
 
-  // Backend sync states
   const [isLoading, setIsLoading] = useState(true)
   const [apiError, setApiError] = useState(null)
   const [isLiveBackendData, setIsLiveBackendData] = useState(false)
   const [mutationNotice, setMutationNotice] = useState(null)
 
-  // Fetch packs & catalogue records from backend on mount
+  const loadAll = async () => {
+    const [backendPacks, backendFamilies, backendProducts, backendFeatures] = await Promise.all([
+      getPacks(),
+      getCatalogueFamilies(),
+      getCatalogueProducts(),
+      getCatalogueFeatures(),
+    ])
+    const mappedFamilies = (backendFamilies || []).map((bf) => ({
+      id: bf.id,
+      code: bf.code,
+      name: bf.name,
+      iconName: 'Layers',
+      description: `Backend Family [ID: ${bf.id}, Code: ${bf.code}]`,
+      status: bf.status,
+    }))
+    return {
+      features: backendFeatures || [],
+      families: mappedFamilies,
+      products: mapBackendProducts(backendProducts, backendFeatures, mappedFamilies),
+      packs: mapBackendPacks(backendPacks, backendFeatures),
+    }
+  }
+
+  const applyLoaded = (data) => {
+    setFeaturesList(data.features)
+    setFamilies(data.families)
+    setProducts(data.products)
+    setPacks(data.packs)
+    setIsLiveBackendData(true)
+  }
+
   useEffect(() => {
     let isMounted = true
-
-    async function fetchData() {
-      try {
-        const [backendPacks, backendFamilies, backendProducts, backendFeatures] =
-          await Promise.all([
-            getPacks(),
-            getCatalogueFamilies(),
-            getCatalogueProducts(),
-            getCatalogueFeatures(),
-          ])
-
-        if (!isMounted) return
-
-        if (Array.isArray(backendFeatures)) {
-          setFeaturesList(backendFeatures)
-        }
-
-        let mappedFamilies = INITIAL_PRODUCT_FAMILIES
-        if (Array.isArray(backendFamilies) && backendFamilies.length > 0) {
-          mappedFamilies = backendFamilies.map((bf) => ({
-            id: bf.id,
-            code: bf.code,
-            name: bf.name,
-            iconName: 'Layers',
-            description: `Backend Family [ID: ${bf.id}, Code: ${bf.code}]`,
-            status: bf.status,
-          }))
-          setFamilies(mappedFamilies)
-        }
-
-        let mappedProducts = INITIAL_PRODUCTS
-        if (Array.isArray(backendProducts) && backendProducts.length > 0) {
-          const featLookup = new Map()
-          if (Array.isArray(backendFeatures)) {
-            backendFeatures.forEach((f) => featLookup.set(f.product_id, f))
-          }
-
-          mappedProducts = backendProducts.map((bp) => {
-            const owningFam = mappedFamilies.find(
-              (f) => f.id === bp.product_family_id,
-            )
-            const primaryFeat = featLookup.get(bp.id)
-
-            let displayType = 'Adrenalin Native'
-            if (primaryFeat?.classification === 'ai_enabled') {
-              displayType = 'AI Agent Module'
-            } else if (primaryFeat?.classification === 'partner') {
-              displayType = 'Partner Integrated'
-            }
-
-            return {
-              id: bp.id,
-              familyId: bp.product_family_id,
-              familyName: owningFam?.name || 'Unassigned',
-              solution: bp.name,
-              subItem: primaryFeat ? primaryFeat.name : '—',
-              code: bp.code,
-              type: displayType,
-              status: bp.status,
-            }
-          })
-          setProducts(mappedProducts)
-        }
-
-        if (Array.isArray(backendPacks) && backendPacks.length > 0) {
-          const mappedPacks = mapBackendPacks(backendPacks, backendFeatures)
-          setPacks(mappedPacks)
-          setIsLiveBackendData(true)
-        } else {
-          setIsLiveBackendData(true)
-        }
-      } catch (err) {
+    loadAll()
+      .then((data) => {
+        if (isMounted) applyLoaded(data)
+      })
+      .catch((err) => {
         if (!isMounted) return
         setIsLiveBackendData(false)
-        setApiError(
-          err?.message ? `Backend offline (${err.message})` : 'Backend connection offline',
-        )
-      } finally {
-        if (isMounted) {
-          setIsLoading(false)
-        }
-      }
-    }
-
-    fetchData()
-
+        setApiError(err?.message ? `Backend unavailable (${err.message})` : 'Backend unavailable')
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false)
+      })
     return () => {
       isMounted = false
     }
   }, [])
 
-  // Manual refresh callback
   const handleRefresh = async () => {
     setIsLoading(true)
     setApiError(null)
-
     try {
-      const [backendPacks, backendFamilies, backendProducts, backendFeatures] =
-        await Promise.all([
-          getPacks(),
-          getCatalogueFamilies(),
-          getCatalogueProducts(),
-          getCatalogueFeatures(),
-        ])
-
-      if (Array.isArray(backendFeatures)) {
-        setFeaturesList(backendFeatures)
-      }
-
-      let mappedFamilies = INITIAL_PRODUCT_FAMILIES
-      if (Array.isArray(backendFamilies) && backendFamilies.length > 0) {
-        mappedFamilies = backendFamilies.map((bf) => ({
-          id: bf.id,
-          code: bf.code,
-          name: bf.name,
-          iconName: 'Layers',
-          description: `Backend Family [ID: ${bf.id}, Code: ${bf.code}]`,
-          status: bf.status,
-        }))
-        setFamilies(mappedFamilies)
-      }
-
-      let mappedProducts = INITIAL_PRODUCTS
-      if (Array.isArray(backendProducts) && backendProducts.length > 0) {
-        const featLookup = new Map()
-        if (Array.isArray(backendFeatures)) {
-          backendFeatures.forEach((f) => featLookup.set(f.product_id, f))
-        }
-
-        mappedProducts = backendProducts.map((bp) => {
-          const owningFam = mappedFamilies.find(
-            (f) => f.id === bp.product_family_id,
-          )
-          const primaryFeat = featLookup.get(bp.id)
-
-          let displayType = 'Adrenalin Native'
-          if (primaryFeat?.classification === 'ai_enabled') {
-            displayType = 'AI Agent Module'
-          } else if (primaryFeat?.classification === 'partner') {
-            displayType = 'Partner Integrated'
-          }
-
-          return {
-            id: bp.id,
-            familyId: bp.product_family_id,
-            familyName: owningFam?.name || 'Unassigned',
-            solution: bp.name,
-            subItem: primaryFeat ? primaryFeat.name : '—',
-            code: bp.code,
-            type: displayType,
-            status: bp.status,
-          }
-        })
-        setProducts(mappedProducts)
-      }
-
-      if (Array.isArray(backendPacks) && backendPacks.length > 0) {
-        const mappedPacks = mapBackendPacks(backendPacks, backendFeatures)
-        setPacks(mappedPacks)
-        setIsLiveBackendData(true)
-      }
-      setMutationNotice('Refreshed data from PostgreSQL.')
+      applyLoaded(await loadAll())
     } catch (err) {
       setIsLiveBackendData(false)
-      setApiError(
-        err?.message ? `Backend offline (${err.message})` : 'Backend connection offline',
-      )
+      setApiError(err?.message ? `Backend unavailable (${err.message})` : 'Backend unavailable')
     } finally {
       setIsLoading(false)
     }
@@ -284,44 +191,24 @@ export function PacksPage() {
       : packs.find((p) => p.id === selectedPackId) || null
   const isNewPack = selectedPackId === 'new'
 
-  // Helper to map product IDs and required state to feature pack items
-  const resolveItemsForProducts = async (prodIds, reqProdIds) => {
-    let currentFeatures = featuresList
-    if (!currentFeatures || currentFeatures.length === 0) {
-      try {
-        currentFeatures = await getCatalogueFeatures()
-        setFeaturesList(currentFeatures)
-      } catch (e) {
-        currentFeatures = []
-      }
-    }
-
+  // The editor selects products. A product already in the pack keeps exactly the features the
+  // saved version contains; a newly added product brings all of its saved features. Products
+  // without features cannot be packed (features are created on the Product Catalogue page).
+  const resolveItemsForProducts = (prodIds, reqProdIds, existingFeatureIds = []) => {
     const items = []
+    const missing = []
     for (const pId of prodIds) {
-      let matchedFeat = currentFeatures.find((f) => f.product_id === pId)
-      if (!matchedFeat && typeof pId === 'number') {
-        const prod = products.find((p) => p.id === pId)
-        try {
-          matchedFeat = await createCatalogueFeature({
-            product_id: pId,
-            code: `${prod?.code || 'PRD'}-001`,
-            name: prod?.solution || 'Default Feature',
-            classification: 'native',
-            status: 'active',
-          })
-          currentFeatures.push(matchedFeat)
-          setFeaturesList([...currentFeatures])
-        } catch (e) {
-          console.warn('Could not auto-create feature for product:', pId, e)
-        }
+      const productFeatures = featuresList.filter((f) => f.product_id === pId && f.status !== 'retired')
+      const kept = productFeatures.filter((f) => existingFeatureIds.includes(f.id))
+      const chosen = kept.length > 0 ? kept : productFeatures
+      if (chosen.length === 0) {
+        missing.push(products.find((p) => p.id === pId)?.solution || `product ${pId}`)
+        continue
       }
-
-      if (matchedFeat) {
-        items.push({
-          feature_id: matchedFeat.id,
-          is_required: reqProdIds.includes(pId),
-        })
-      }
+      chosen.forEach((f) => items.push({ feature_id: f.id, is_required: reqProdIds.includes(pId) }))
+    }
+    if (missing.length > 0) {
+      throw new Error(`These products have no saved features yet: ${missing.join(', ')}. Add features on the Product Catalogue first.`)
     }
     return items
   }
@@ -335,27 +222,8 @@ export function PacksPage() {
       try {
         const packDetail = await getPackDetail(packId)
         if (packDetail) {
-          const activeVer =
-            packDetail.pack_versions?.find((v) => v.status === 'active') ||
-            packDetail.pack_versions?.[packDetail.pack_versions.length - 1] ||
-            null
-
-          const productIds = []
-          const requiredProductIds = []
-
-          if (activeVer && Array.isArray(activeVer.pack_items)) {
-            activeVer.pack_items.forEach((item) => {
-              const prodId =
-                item.feature?.product_id ||
-                featuresList.find((f) => f.id === item.feature_id)?.product_id
-              if (prodId) {
-                productIds.push(prodId)
-                if (item.is_required !== false) {
-                  requiredProductIds.push(prodId)
-                }
-              }
-            })
-          }
+          const activeVer = workingPackVersion(packDetail.pack_versions || [])
+          const { productIds, requiredProductIds } = packProductIds(activeVer, featuresList)
 
           setPacks((prev) =>
             prev.map((p) =>
@@ -367,10 +235,11 @@ export function PacksPage() {
                     variant: packDetail.variant,
                     familyId: packDetail.product_family_id || '',
                     versionId: activeVer?.id || null,
-                    versionNo: activeVer?.version_no || 1,
-                    versionStatus: activeVer?.status || 'active',
+                    versionNo: activeVer?.version_no || null,
+                    versionStatus: activeVer?.status || null,
                     productIds,
                     requiredProductIds,
+                    packFeatureIds: (activeVer?.pack_items || []).map((i) => i.feature_id),
                   }
                 : p,
             ),
@@ -382,80 +251,56 @@ export function PacksPage() {
     }
   }
 
-  // Handle Save Pack (create or update with full persistence)
+  // Handle Save Pack (create or update)
   const handleSavePack = async (savedData) => {
-    let targetId = savedData.id
     const trimmedName = savedData.name.trim()
+    if (!isLiveBackendData) {
+      setMutationNotice('Cannot save pack: the backend is not available.')
+      return
+    }
+    if (!isNewPack && ['locked', 'superseded'].includes(savedData.versionStatus)) {
+      setMutationNotice(`Version ${savedData.versionNo} is ${savedData.versionStatus} and cannot be edited. Create a new version instead.`)
+      return
+    }
 
-    // 1. Live backend persistence
-    if (isLiveBackendData) {
-      try {
-        const itemsList = await resolveItemsForProducts(
-          savedData.productIds || [],
-          savedData.requiredProductIds || [],
-        )
+    try {
+      const existing =
+        (isNewPack ? duplicatedTemplate?.packFeatureIds : packs.find((p) => p.id === savedData.id)?.packFeatureIds) || []
+      const itemsList = resolveItemsForProducts(savedData.productIds || [], savedData.requiredProductIds || [], existing)
 
-        if (isNewPack) {
-          const payload = {
-            name: trimmedName,
-            code: savedData.code || `PACK-${Date.now().toString().slice(-4)}`,
-            variant: savedData.variant || 'standard',
-            product_family_id: savedData.familyId ? Number(savedData.familyId) : null,
-            status: 'active',
-            initial_version: 1,
-            feature_ids: itemsList.map((i) => i.feature_id),
-            required_feature_ids: itemsList.filter((i) => i.is_required).map((i) => i.feature_id),
-            items: itemsList,
-          }
-
-          const created = await createPack(payload)
-          targetId = created.id
-
-          await handleRefresh()
-          setSelectedPackId(created.id)
-          setMutationNotice(`Pack "${created.name}" created and saved to PostgreSQL.`)
-        } else {
-          // Update existing pack
-          const payload = {
-            name: trimmedName,
-            code: savedData.code,
-            variant: savedData.variant || 'standard',
-            product_family_id: savedData.familyId ? Number(savedData.familyId) : null,
-            status: 'active',
-          }
-
-          if (typeof savedData.id === 'number') {
-            await updatePack(savedData.id, payload)
-
-            const targetPack = packs.find((p) => p.id === savedData.id)
-            const versionId = savedData.versionId || targetPack?.versionId
-            if (versionId && typeof versionId === 'number') {
-              await syncPackItems(versionId, itemsList)
-            }
-          }
-
-          await handleRefresh()
-          setSelectedPackId(savedData.id)
-          setMutationNotice(`Pack "${trimmedName}" updated in PostgreSQL.`)
+      if (isNewPack) {
+        const created = await createPack({
+          name: trimmedName,
+          code: savedData.code || `PACK-${Date.now().toString().slice(-4)}`,
+          variant: savedData.variant || 'standard',
+          product_family_id: savedData.familyId ? Number(savedData.familyId) : null,
+          status: 'active',
+          initial_version: 1,
+          items: itemsList,
+        })
+        await handleRefresh()
+        setSelectedPackId(created.id)
+        setMutationNotice(`Pack "${created.name}" created.`)
+      } else {
+        // Metadata only; the pack's status is not changed by an edit.
+        await updatePack(savedData.id, {
+          name: trimmedName,
+          code: savedData.code,
+          variant: savedData.variant || 'standard',
+          product_family_id: savedData.familyId ? Number(savedData.familyId) : null,
+        })
+        const versionId = savedData.versionId || packs.find((p) => p.id === savedData.id)?.versionId
+        if (versionId) {
+          await syncPackItems(versionId, itemsList)
         }
-      } catch (err) {
-        console.error('Failed to save pack in backend:', err)
-        const detail = err.response?.data?.detail || err.message || 'Error saving pack'
-        setMutationNotice(`Failed to save pack: ${detail}`)
-        return
+        await handleRefresh()
+        setSelectedPackId(savedData.id)
+        setMutationNotice(`Pack "${trimmedName}" updated.`)
       }
-    } else {
-      // Local state update (offline / test runner)
-      setPacks((prev) => {
-        const exists = prev.some((p) => p.id === savedData.id)
-        if (exists) {
-          return prev.map((p) =>
-            p.id === savedData.id ? { ...p, ...savedData, updatedAt: new Date().toISOString() } : p,
-          )
-        }
-        return [{ ...savedData, createdAt: new Date().toISOString() }, ...prev]
-      })
-      setSelectedPackId(targetId)
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || 'Error saving pack'
+      setMutationNotice(`Failed to save pack: ${detail}`)
+      return
     }
 
     setDuplicatedTemplate(null)
@@ -473,8 +318,8 @@ export function PacksPage() {
       id: `pack-${Date.now()}`,
       name: `${pack.name} (Copy)`,
       code: pack.code ? `${pack.code}-COPY` : 'COPY',
-      versionNo: 1,
-      versionStatus: 'draft',
+      versionNo: null,
+      versionStatus: null,
       versionId: null,
     }
     setDuplicatedTemplate(duplicated)
@@ -483,105 +328,67 @@ export function PacksPage() {
     setTimeout(() => setToastMessage(''), 3000)
   }
 
-  // Handle Create Version
+  // Handle Create Version: a new draft version with the current contents becomes the working version.
   const handleCreateVersion = async (pack) => {
     if (!pack) return
-    const nextVersionNo = (pack.versionNo || 1) + 1
-
-    if (isLiveBackendData && typeof pack.id === 'number') {
-      try {
-        const createdVer = await createPackVersion({
-          pack_id: pack.id,
-          version_no: nextVersionNo,
-          status: 'draft',
-        })
-
-        const itemsList = await resolveItemsForProducts(
-          pack.productIds || [],
-          pack.requiredProductIds || [],
-        )
-        if (itemsList.length > 0) {
-          await syncPackItems(createdVer.id, itemsList)
-        }
-
-        await handleRefresh()
-        setSelectedPackId(pack.id)
-        setToastMessage(`Created Version ${nextVersionNo} (draft) for "${pack.name}".`)
-        setTimeout(() => setToastMessage(''), 3500)
-        return
-      } catch (err) {
-        console.error('Backend version creation failed:', err)
-        const detail = err.response?.data?.detail || err.message || 'Error creating version'
-        setMutationNotice(`Failed to create version: ${detail}`)
-        return
-      }
+    if (!isLiveBackendData || typeof pack.id !== 'number') {
+      setMutationNotice('Cannot create a version: the pack is not saved or the backend is unavailable.')
+      return
     }
-
-    setPacks((prev) =>
-      prev.map((p) =>
-        p.id === pack.id ? { ...p, versionNo: nextVersionNo, versionStatus: 'draft' } : p,
-      ),
-    )
-    setToastMessage(`Created Version ${nextVersionNo} (draft) for "${pack.name}".`)
-    setTimeout(() => setToastMessage(''), 3500)
+    const nextVersionNo = (pack.versionNo || 0) + 1
+    try {
+      const itemsList = resolveItemsForProducts(pack.productIds || [], pack.requiredProductIds || [], pack.packFeatureIds || [])
+      const createdVer = await createPackVersion({ pack_id: pack.id, version_no: nextVersionNo, status: 'draft' })
+      if (itemsList.length > 0) {
+        await syncPackItems(createdVer.id, itemsList)
+      }
+      await handleRefresh()
+      setSelectedPackId(pack.id)
+      setToastMessage(`Created Version ${nextVersionNo} (draft) for "${pack.name}".`)
+      setTimeout(() => setToastMessage(''), 3500)
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || 'Error creating version'
+      setMutationNotice(`Failed to create version: ${detail}`)
+    }
   }
 
-  // Handle Activate Version
+  // Handle Activate Version (the backend supersedes the previously active version)
   const handleActivateVersion = async (pack) => {
     if (!pack) return
-
-    if (isLiveBackendData && pack.versionId && typeof pack.versionId === 'number') {
-      try {
-        await updatePackVersion(pack.versionId, { status: 'active' })
-        await handleRefresh()
-        setSelectedPackId(pack.id)
-        setToastMessage(`Version ${pack.versionNo || 1} activated for "${pack.name}".`)
-        setTimeout(() => setToastMessage(''), 3500)
-        return
-      } catch (err) {
-        console.error('Backend version activation failed:', err)
-        const detail = err.response?.data?.detail || err.message || 'Error activating version'
-        setMutationNotice(`Failed to activate version: ${detail}`)
-        return
-      }
+    if (!isLiveBackendData || typeof pack.versionId !== 'number') {
+      setMutationNotice('Cannot activate: the version is not saved or the backend is unavailable.')
+      return
     }
-
-    setPacks((prev) =>
-      prev.map((p) => (p.id === pack.id ? { ...p, versionStatus: 'active' } : p)),
-    )
-    setToastMessage(`Version ${pack.versionNo || 1} activated for "${pack.name}".`)
-    setTimeout(() => setToastMessage(''), 3500)
+    try {
+      await updatePackVersion(pack.versionId, { status: 'active' })
+      await handleRefresh()
+      setSelectedPackId(pack.id)
+      setToastMessage(`Version ${pack.versionNo} activated for "${pack.name}".`)
+      setTimeout(() => setToastMessage(''), 3500)
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || 'Error activating version'
+      setMutationNotice(`Failed to activate version: ${detail}`)
+    }
   }
 
   // Handle Delete Pack
   const handleConfirmDelete = async (packId) => {
-    if (isLiveBackendData && typeof packId === 'number') {
-      try {
-        await deletePack(packId)
-        await handleRefresh()
-        setSelectedPackId(null)
-        setPackToDelete(null)
-        setToastMessage('Pack deleted successfully.')
-        setTimeout(() => setToastMessage(''), 3000)
-        return
-      } catch (err) {
-        console.error('Backend pack deletion failed:', err)
-        const detail = err.response?.data?.detail || err.message || 'Error deleting pack'
-        setMutationNotice(`Cannot delete pack: ${detail}`)
-        return
-      }
+    if (!isLiveBackendData || typeof packId !== 'number') {
+      setMutationNotice('Cannot delete: the pack is not saved or the backend is unavailable.')
+      setPackToDelete(null)
+      return
     }
-
-    setPacks((prev) => {
-      const filtered = prev.filter((p) => p.id !== packId)
-      if (selectedPackId === packId) {
-        setSelectedPackId(null)
-      }
-      return filtered
-    })
-    setPackToDelete(null)
-    setToastMessage('Pack deleted successfully.')
-    setTimeout(() => setToastMessage(''), 3000)
+    try {
+      await deletePack(packId)
+      await handleRefresh()
+      setSelectedPackId(null)
+      setPackToDelete(null)
+      setToastMessage('Pack deleted successfully.')
+      setTimeout(() => setToastMessage(''), 3000)
+    } catch (err) {
+      const detail = err.response?.data?.detail || err.message || 'Error deleting pack'
+      setMutationNotice(`Cannot delete pack: ${detail}`)
+    }
   }
 
   return (
@@ -613,7 +420,7 @@ export function PacksPage() {
           ) : (
             <span className="flex items-center gap-1.5 text-amber-400">
               <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Offline Fallback &bull; {apiError || 'Mock preset data loaded'}</span>
+              <span>Backend unavailable &bull; {apiError || 'no data loaded'}</span>
             </span>
           )}
 

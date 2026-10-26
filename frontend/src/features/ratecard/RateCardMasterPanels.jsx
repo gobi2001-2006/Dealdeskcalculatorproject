@@ -15,7 +15,6 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
-import { getCurrencySymbol } from './rateCardFormatters'
 
 export function RateCardMasterPanels({
   countries = [],
