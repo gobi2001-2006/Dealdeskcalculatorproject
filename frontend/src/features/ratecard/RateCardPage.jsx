@@ -13,6 +13,7 @@ import { AddHourlyRateModal } from './modals/AddHourlyRateModal'
 import { AddFxRateModal } from './modals/AddFxRateModal'
 import { AddPackRateModal } from './modals/AddPackRateModal'
 import { AddFeatureRateModal } from './modals/AddFeatureRateModal'
+import { DeleteRateCardConfirmDialog } from './modals/DeleteRateCardConfirmDialog'
 
 // Backend API Clients
 import {
@@ -71,6 +72,7 @@ import {
   INITIAL_FEATURE_RATES,
   SPREADSHEET_DEMO_PLATFORM_CONFIG,
 } from '../../data/rateCardData'
+import { getCurrencySymbol } from './rateCardFormatters'
 
 // Helper to extract human-readable error from backend responses (including Pydantic 422 lists)
 function formatApiError(err, fallback = 'Network connection failed') {
@@ -114,11 +116,21 @@ export function RateCardPage() {
   const [selectedDeployment, setSelectedDeployment] = useState('Shared Cloud')
   const [selectedPricingModel, setSelectedPricingModel] = useState('PEPM')
   const [selectedCountryId, setSelectedCountryId] = useState('c-in')
+  const [mobileView, setMobileView] = useState('center') // 'products' | 'center' | 'masters'
+
+  const activeCountry =
+    countries.find(
+      (c) =>
+        String(c.id) === String(selectedCountryId) ||
+        (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+    ) || countries[0]
+  const activeCurrencySymbol = getCurrencySymbol(activeCountry, '$')
 
   // 5. Rate Cards State (Independent state for PEPM & Platform Subscription)
   const [packRates, setPackRates] = useState(INITIAL_PACK_RATES)
   const [featureRates, setFeatureRates] = useState(INITIAL_FEATURE_RATES)
   const [platformConfig, setPlatformConfig] = useState(SPREADSHEET_DEMO_PLATFORM_CONFIG)
+  const [rawRateCards, setRawRateCards] = useState([])
 
   // 6. Backend Integration State
   const [isLoading, setIsLoading] = useState(true)
@@ -132,6 +144,14 @@ export function RateCardPage() {
   const [isAddFxOpen, setIsAddFxOpen] = useState(false)
   const [isAddPackRateOpen, setIsAddPackRateOpen] = useState(false)
   const [isAddFeatureRateOpen, setIsAddFeatureRateOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState({
+    isOpen: false,
+    title: 'Delete Record',
+    recordName: '',
+    recordType: 'record',
+    isDeleting: false,
+    onConfirm: null,
+  })
 
   // 8. Toast notifications
   const [toast, setToast] = useState({ message: '', type: 'info' })
@@ -188,7 +208,11 @@ export function RateCardPage() {
             packObj?.familyId ||
             packObj?.product_family_id ||
             rc.pack_version?.pack?.product_family_id ||
+            packObj?.familyIds?.[0] ||
             'all'
+          const familyIds =
+            packObj?.familyIds ||
+            (familyId !== 'all' ? [familyId] : [])
           const groupKey = `${rc.pack_version_id}-${rc.country_id}-${rc.deployment_model_id}-${rc.pricing_model_id}`
           if (!livePackRatesMap.has(groupKey)) {
             livePackRatesMap.set(groupKey, {
@@ -198,6 +222,7 @@ export function RateCardPage() {
               packCode: packObj?.code || rc.pack_version?.pack?.code || `PACK-V${rc.pack_version_id}`,
               packName: packObj?.name || rc.pack_version?.pack?.name || `Pack Version ${rc.pack_version_id}`,
               familyId: familyId,
+              familyIds: familyIds,
               items: packObj?.items || [],
               deploymentModel: depObj.name,
               deploymentModelId: rc.deployment_model_id,
@@ -239,9 +264,13 @@ export function RateCardPage() {
           row[`fixed_tier_${rc.tier_id}`] = fixedVal
           row[`fixed_${rc.tier_id}Rate`] = fixedVal
         } else if (rc.feature_id) {
-          const featObj = (featuresList || []).find((f) => f.id === rc.feature_id)
+          const featObj = (featuresList || []).find(
+            (f) => String(f.id) === String(rc.feature_id),
+          )
           const prodObj = (productsList || []).find(
-            (p) => p.id === featObj?.product_id || p.id === rc.feature?.product_id,
+            (p) =>
+              String(p.id) === String(featObj?.product_id) ||
+              String(p.id) === String(rc.feature?.product_id),
           )
           const familyId =
             prodObj?.product_family_id ||
@@ -252,7 +281,7 @@ export function RateCardPage() {
           const groupKey = `${rc.feature_id}-${rc.country_id}-${rc.deployment_model_id}-${rc.pricing_model_id}`
           if (!liveFeatureRatesMap.has(groupKey)) {
             liveFeatureRatesMap.set(groupKey, {
-              id: `fr-db-${rc.id}`,
+              id: `fr-feat-${rc.feature_id}-${rc.deployment_model_id}-${rc.pricing_model_id}`,
               featureId: rc.feature_id,
               productId: featObj?.product_id || rc.feature?.product_id,
               productCode: featObj?.code || rc.feature?.code || `FEAT-${rc.feature_id}`,
@@ -274,25 +303,18 @@ export function RateCardPage() {
             })
           }
           const row = liveFeatureRatesMap.get(groupKey)
-          const tierIdx = tiersList.findIndex((t) => t.id === rc.tier_id)
+          const tierIdx = tiersList.findIndex(
+            (t) => String(t.id) === String(rc.tier_id),
+          )
           const rateVal = String(rc.unit_rate ?? '')
           const fixedVal = String(rc.fixed_fee ?? '')
-          if (tierIdx === 0) {
+          if (tierIdx === 0 || rc.tier_id === 1 || String(rc.tier_id).endsWith('1')) {
             row.tier1Rate = rateVal
             row.fixed_tier1Rate = fixedVal
-          } else if (tierIdx === 1) {
+          } else if (tierIdx === 1 || rc.tier_id === 2 || String(rc.tier_id).endsWith('2')) {
             row.tier2Rate = rateVal
             row.fixed_tier2Rate = fixedVal
-          } else if (tierIdx === 2) {
-            row.tier3Rate = rateVal
-            row.fixed_tier3Rate = fixedVal
-          } else if (rc.tier_id === 1) {
-            row.tier1Rate = rateVal
-            row.fixed_tier1Rate = fixedVal
-          } else if (rc.tier_id === 2) {
-            row.tier2Rate = rateVal
-            row.fixed_tier2Rate = fixedVal
-          } else if (rc.tier_id === 3) {
+          } else if (tierIdx === 2 || rc.tier_id === 3 || String(rc.tier_id).endsWith('3')) {
             row.tier3Rate = rateVal
             row.fixed_tier3Rate = fixedVal
           }
@@ -301,6 +323,12 @@ export function RateCardPage() {
           row[rc.tier_id] = rateVal
           row[`fixed_tier_${rc.tier_id}`] = fixedVal
           row[`fixed_${rc.tier_id}Rate`] = fixedVal
+          if (tierIdx >= 0) {
+            row[`tier_${tierIdx + 1}`] = rateVal
+            row[`tier${tierIdx + 1}Rate`] = rateVal
+            row[`fixed_tier_${tierIdx + 1}`] = fixedVal
+            row[`fixed_tier${tierIdx + 1}Rate`] = fixedVal
+          }
         }
       })
 
@@ -366,6 +394,7 @@ export function RateCardPage() {
     setActiveVersion(selected)
     try {
       const cards = await getRateCards({ rate_card_version_id: versionId })
+      setRawRateCards(Array.isArray(cards) ? cards : [])
       processRateCards(cards, pricingTiers, deploymentModels, pricingModels, packs, null, products)
       showToast(`Loaded rate card version "${selected.version_no}".`)
     } catch (err) {
@@ -445,15 +474,22 @@ export function RateCardPage() {
       // If countries was loaded, we consider backend connected
       if (Array.isArray(backendCountries) && backendCountries.length > 0) {
         // 1. Countries
-        const mappedCountries = backendCountries.map((c) => ({
-          id: c.id,
-          code: c.iso_code,
-          name: c.name,
-          currency: c.currency?.code || 'USD',
-          symbol: c.currency?.symbol || '$',
-          defaultCurrencyId: c.default_currency_id,
-          is_active: c.is_active,
-        }))
+        const mappedCountries = backendCountries.map((c) => {
+          const currCode = c.currency?.code || c.currency_code || 'USD'
+          const sym =
+            c.currency?.symbol && c.currency.symbol !== '$'
+              ? c.currency.symbol
+              : getCurrencySymbol(currCode)
+          return {
+            id: c.id,
+            code: c.iso_code,
+            name: c.name,
+            currency: currCode,
+            symbol: sym,
+            defaultCurrencyId: c.default_currency_id,
+            is_active: c.is_active,
+          }
+        })
         setCountries(mappedCountries)
         if (mappedCountries.length > 0) {
           setSelectedCountryId(mappedCountries[0].id)
@@ -635,13 +671,37 @@ export function RateCardPage() {
               name: it.feature?.name || `Feature ${it.feature_id}`,
               code: it.feature?.code,
             }))
+
+            const familyIdSet = new Set()
+            if (bp.product_family_id) {
+              familyIdSet.add(bp.product_family_id)
+            }
+            rawItems.forEach((it) => {
+              const feat =
+                (mappedFeatures || []).find((f) => f.id === it.feature_id) ||
+                (backendFeatures || []).find((f) => f.id === it.feature_id) ||
+                it.feature
+              if (feat?.familyId) familyIdSet.add(feat.familyId)
+              if (feat?.product_family_id) familyIdSet.add(feat.product_family_id)
+              const prod =
+                (mappedProducts || []).find((p) => p.id === feat?.product_id) ||
+                (backendProducts || []).find((p) => p.id === feat?.product_id)
+              if (prod?.familyId) familyIdSet.add(prod.familyId)
+              if (prod?.product_family_id) familyIdSet.add(prod.product_family_id)
+            })
+            const resolvedFamilyIds = Array.from(familyIdSet)
+            const resolvedFamilyId =
+              bp.product_family_id ||
+              (resolvedFamilyIds.length > 0 ? resolvedFamilyIds[0] : null)
+
             return {
               id: bp.id,
               packId: bp.id,
               code: bp.code,
               name: bp.name,
-              familyId: bp.product_family_id,
-              product_family_id: bp.product_family_id,
+              familyId: resolvedFamilyId,
+              product_family_id: bp.product_family_id || resolvedFamilyId,
+              familyIds: resolvedFamilyIds,
               latestVersionId: latestVer?.id,
               versions: bp.pack_versions || bp.versions || [],
               pack_versions: bp.pack_versions || bp.versions || [],
@@ -660,6 +720,7 @@ export function RateCardPage() {
         })
 
         if (Array.isArray(backendRateCards) && backendRateCards.length > 0) {
+          setRawRateCards(backendRateCards)
           processRateCards(
             backendRateCards,
             mappedTiers,
@@ -669,6 +730,8 @@ export function RateCardPage() {
             backendFeatures,
             backendProducts,
           )
+        } else {
+          setRawRateCards([])
         }
 
         setIsLiveBackendData(true)
@@ -717,8 +780,33 @@ export function RateCardPage() {
       return
     }
 
+    // Determine tier number and all alias keys
+    let tierNum = 1
+    const clean = String(field).toLowerCase()
+    if (clean.includes('3')) tierNum = 3
+    else if (clean.includes('2')) tierNum = 2
+    else tierNum = 1
+
+    const tierObj = pricingTiers[tierNum - 1] || { id: tierNum }
+    const tierIdVal = tierObj.id
+    const isFixed = clean.includes('fixed')
+
+    const fieldAliases = { [field]: value }
+    if (isFixed) {
+      fieldAliases[`fixed_tier_${tierIdVal}`] = value
+      fieldAliases[`fixed_tier${tierNum}Rate`] = value
+      fieldAliases[`fixed_${tierIdVal}Rate`] = value
+      fieldAliases[`fixed_tier_${tierNum}`] = value
+    } else {
+      fieldAliases[`tier_${tierIdVal}`] = value
+      fieldAliases[`tier${tierNum}Rate`] = value
+      fieldAliases[`${tierIdVal}Rate`] = value
+      fieldAliases[`tier_${tierNum}`] = value
+      fieldAliases[`tier${tierNum}`] = value
+    }
+
     setPackRates((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
+      prev.map((r) => (r.id === id ? { ...r, ...fieldAliases } : r)),
     )
 
     if (!isLiveBackendData) return
@@ -751,7 +839,11 @@ export function RateCardPage() {
         }
 
         const activeCountryObj =
-          countries.find((c) => c.id === selectedCountryId) || countries[0]
+          countries.find(
+            (c) =>
+              String(c.id) === String(selectedCountryId) ||
+              (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+          ) || countries[0]
         const activeCountryId =
           typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
         const countryIdToPersist =
@@ -790,7 +882,7 @@ export function RateCardPage() {
     }, 600)
   }
 
-  const handleRemovePackRate = async (id) => {
+  const handleRemovePackRate = (id) => {
     if (isVersionLocked) {
       showToast(
         `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
@@ -800,35 +892,53 @@ export function RateCardPage() {
     }
 
     const rate = packRates.find((r) => r.id === id)
-    try {
-      if (isLiveBackendData && rate?.packVersionId) {
-        const activeCountryObj =
-          countries.find((c) => c.id === selectedCountryId) || countries[0]
-        const activeCountryId =
-          typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
-        const depId = rate.deploymentModelId || 1
-        const pmId = rate.pricingModelId || 1
-        const versionId = activeVersion?.id || 1
+    const name = rate?.packName || 'Pack Rate'
 
-        await deleteRateCardGroup({
-          rate_card_version_id: versionId,
-          country_id: activeCountryId,
-          deployment_model_id: depId,
-          pricing_model_id: pmId,
-          pack_version_id: rate.packVersionId,
-        })
-        setPackRates((prev) => prev.filter((r) => r.id !== id))
-        showToast('Pack rate removed from database.')
-      } else {
-        setPackRates((prev) => prev.filter((r) => r.id !== id))
-        showToast('Pack rate removed.')
-      }
-    } catch (err) {
-      showToast(
-        `Failed to remove pack rate: ${formatApiError(err)}`,
-        'error',
-      )
-    }
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Pack Rate',
+      recordName: name,
+      recordType: 'pack rate',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && rate?.packVersionId) {
+            const activeCountryObj =
+              countries.find(
+                (c) =>
+                  String(c.id) === String(selectedCountryId) ||
+                  (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+              ) || countries[0]
+            const activeCountryId =
+              typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
+            const depId = rate.deploymentModelId || 1
+            const pmId = rate.pricingModelId || 1
+            const versionId = activeVersion?.id || 1
+
+            await deleteRateCardGroup({
+              rate_card_version_id: versionId,
+              country_id: activeCountryId,
+              deployment_model_id: depId,
+              pricing_model_id: pmId,
+              pack_version_id: rate.packVersionId,
+            })
+            setPackRates((prev) => prev.filter((r) => r.id !== id))
+            showToast('Pack rate removed from database.')
+          } else {
+            setPackRates((prev) => prev.filter((r) => r.id !== id))
+            showToast('Pack rate removed.')
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(
+            `Failed to remove pack rate: ${formatApiError(err)}`,
+            'error',
+          )
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
   }
 
   const handleSavePackRate = async (newRate) => {
@@ -843,7 +953,11 @@ export function RateCardPage() {
     try {
       if (isLiveBackendData) {
         const activeCountryObj =
-          countries.find((c) => c.id === selectedCountryId) || countries[0]
+          countries.find(
+            (c) =>
+              String(c.id) === String(selectedCountryId) ||
+              (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+          ) || countries[0]
         const activeCountryId =
           typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
 
@@ -874,28 +988,55 @@ export function RateCardPage() {
             newRate[`tier${idx + 1}Rate`] ??
             newRate[`${tier.id}Rate`] ??
             newRate[tier.id]
-          return { tier, rate: rateVal }
+          const fixedVal =
+            newRate.fixedTierRates?.[tier.id] ??
+            newRate[`fixed_tier${idx + 1}Rate`] ??
+            newRate[`fixed_tier_${tier.id}`] ??
+            newRate[`fixed_${tier.id}Rate`]
+          return { tier, rate: rateVal, fixed: fixedVal }
         })
 
         for (const entry of tierEntries) {
-          if (
+          const hasRate =
             entry.tier &&
             entry.rate !== undefined &&
             entry.rate !== null &&
             entry.rate !== ''
-          ) {
+          const hasFixed =
+            entry.tier &&
+            entry.fixed !== undefined &&
+            entry.fixed !== null &&
+            entry.fixed !== ''
+
+          if (hasRate || hasFixed) {
             const tierId = typeof entry.tier.id === 'number' ? entry.tier.id : 1
-            await upsertRateCard({
+            const payload = {
               rate_card_version_id: versionId,
               country_id: activeCountryId,
               deployment_model_id: depId,
               pricing_model_id: pmId,
               tier_id: tierId,
               pack_version_id: packVersionId,
-              unit_rate: parseFloat(entry.rate) || 0,
-            })
+            }
+            if (hasRate) {
+              payload.unit_rate = parseFloat(entry.rate) || 0
+            }
+            if (hasFixed) {
+              payload.fixed_fee = parseFloat(entry.fixed) || 0
+            }
+            await upsertRateCard(payload)
           }
         }
+
+        const packFamilyId =
+          packObj?.familyId ||
+          packObj?.product_family_id ||
+          packObj?.familyIds?.[0] ||
+          (newRate.familyId && newRate.familyId !== 'fam-ta' ? newRate.familyId : null) ||
+          'all'
+        const packFamilyIds =
+          packObj?.familyIds ||
+          (packFamilyId !== 'all' ? [packFamilyId] : [])
 
         const rateWithId = {
           id: `pr-${newRate.packId}-${depId}-${pmId}`,
@@ -903,7 +1044,8 @@ export function RateCardPage() {
           packVersionId,
           packCode: newRate.packCode,
           packName: newRate.packName,
-          familyId: newRate.familyId,
+          familyId: packFamilyId,
+          familyIds: packFamilyIds,
           items: packObj?.items || [],
           deploymentModel: activeDepObj.name,
           deploymentModelId: depId,
@@ -914,6 +1056,9 @@ export function RateCardPage() {
           tier1Rate: newRate.tier1Rate || newRate.tierRates?.[pricingTiers[0]?.id] || '',
           tier2Rate: newRate.tier2Rate || newRate.tierRates?.[pricingTiers[1]?.id] || '',
           tier3Rate: newRate.tier3Rate || newRate.tierRates?.[pricingTiers[2]?.id] || '',
+          fixed_tier1Rate: newRate.fixed_tier1Rate || newRate.fixedTierRates?.[pricingTiers[0]?.id] || '',
+          fixed_tier2Rate: newRate.fixed_tier2Rate || newRate.fixedTierRates?.[pricingTiers[1]?.id] || '',
+          fixed_tier3Rate: newRate.fixed_tier3Rate || newRate.fixedTierRates?.[pricingTiers[2]?.id] || '',
         }
         pricingTiers.forEach((tier, idx) => {
           const val =
@@ -921,14 +1066,39 @@ export function RateCardPage() {
             newRate[`tier${idx + 1}Rate`] ??
             newRate[`${tier.id}Rate`] ??
             newRate[tier.id] ?? ''
+          const fixedVal =
+            newRate.fixedTierRates?.[tier.id] ??
+            newRate[`fixed_tier${idx + 1}Rate`] ??
+            newRate[`fixed_tier_${tier.id}`] ??
+            newRate[`fixed_${tier.id}Rate`] ?? ''
           rateWithId[`tier_${tier.id}`] = String(val)
           rateWithId[`${tier.id}Rate`] = String(val)
           rateWithId[tier.id] = String(val)
+          rateWithId[`fixed_tier_${tier.id}`] = String(fixedVal)
+          rateWithId[`fixed_${tier.id}Rate`] = String(fixedVal)
         })
-        setPackRates((prev) => [...prev, rateWithId])
+        setPackRates((prev) => [...prev.filter((r) => r.id !== rateWithId.id), rateWithId])
         showToast(
           `Pack rate for "${newRate.packName}" saved to PostgreSQL database.`,
         )
+
+        // Resync backend rate cards so rawRateCards and UI matrix are in lockstep
+        const currentVersionId = activeVersion?.id
+        const refreshedCards = await getRateCards(
+          currentVersionId ? { rate_card_version_id: currentVersionId } : {}
+        ).catch(() => null)
+        if (Array.isArray(refreshedCards) && refreshedCards.length > 0) {
+          setRawRateCards(refreshedCards)
+          processRateCards(
+            refreshedCards,
+            pricingTiers,
+            deploymentModels,
+            pricingModels,
+            packs,
+            features,
+            products,
+          )
+        }
       } else {
         const rateWithId = {
           ...newRate,
@@ -954,9 +1124,127 @@ export function RateCardPage() {
       return
     }
 
-    setFeatureRates((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
+    // 1. Resolve matching catalogue feature and target feature ID
+    const existingRateRow = featureRates.find(
+      (r) =>
+        r.id === id ||
+        String(r.id) === String(id) ||
+        (r.featureId != null && (String(r.featureId) === String(id) || String(r.id) === `fr-feat-${id}`)),
     )
+
+    let targetFeatureId = null
+    if (existingRateRow?.featureId != null && !isNaN(parseInt(existingRateRow.featureId, 10))) {
+      targetFeatureId = parseInt(existingRateRow.featureId, 10)
+    } else if (typeof id === 'number' && !isNaN(id)) {
+      targetFeatureId = id
+    } else if (typeof id === 'string') {
+      const matchedNum = id.replace(/^(feat-row-|fr-feat-|fr-db-|fr-|feat-)/, '').split('-')[0]
+      const parsed = parseInt(matchedNum, 10)
+      if (!isNaN(parsed)) targetFeatureId = parsed
+    }
+
+    const featObj = features.find(
+      (f) =>
+        (targetFeatureId != null && Number(f.id) === Number(targetFeatureId)) ||
+        Number(f.id) === Number(id),
+    )
+
+    const resolvedNumericFeatureId =
+      targetFeatureId != null && !isNaN(targetFeatureId)
+        ? targetFeatureId
+        : featObj?.id != null
+        ? Number(featObj.id)
+        : null
+
+    // Determine tier number and all alias keys
+    let tierNum = 1
+    const clean = String(field).toLowerCase()
+    if (clean.includes('3')) tierNum = 3
+    else if (clean.includes('2')) tierNum = 2
+    else tierNum = 1
+
+    const tierObj = pricingTiers[tierNum - 1] || { id: tierNum }
+    const tierIdVal = tierObj.id
+    const isFixed = clean.includes('fixed')
+
+    const fieldAliases = { [field]: value }
+    if (isFixed) {
+      fieldAliases[`fixed_tier_${tierIdVal}`] = value
+      fieldAliases[`fixed_tier${tierNum}Rate`] = value
+      fieldAliases[`fixed_${tierIdVal}Rate`] = value
+      fieldAliases[`fixed_tier_${tierNum}`] = value
+    } else {
+      fieldAliases[`tier_${tierIdVal}`] = value
+      fieldAliases[`tier${tierNum}Rate`] = value
+      fieldAliases[`${tierIdVal}Rate`] = value
+      fieldAliases[`tier_${tierNum}`] = value
+      fieldAliases[`tier${tierNum}`] = value
+    }
+
+    setFeatureRates((prev) => {
+      const matchIndex = prev.findIndex((r) => {
+        if (r.id === id || String(r.id) === String(id)) return true
+        if (r.id && (String(r.id) === `fr-${id}` || String(r.id) === `fr-feat-${id}` || String(r.id).startsWith(`fr-feat-${id}-`))) return true
+        if (resolvedNumericFeatureId != null) {
+          if (r.featureId != null && Number(r.featureId) === Number(resolvedNumericFeatureId)) return true
+          const rClean = String(r.id).replace(/^(feat-row-|fr-feat-|fr-db-|fr-|feat-)/, '').split('-')[0]
+          if (rClean === String(resolvedNumericFeatureId)) return true
+        }
+        return false
+      })
+
+      if (matchIndex >= 0) {
+        const next = [...prev]
+        next[matchIndex] = {
+          ...next[matchIndex],
+          ...fieldAliases,
+        }
+        return next
+      } else {
+        const activeCountryObj =
+          countries.find(
+            (c) =>
+              c.id === selectedCountryId ||
+              String(c.id) === String(selectedCountryId) ||
+              (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+          ) || countries[0]
+        const activeDepObj =
+          deploymentModels.find(
+            (d) =>
+              d.name === selectedDeployment ||
+              d.code === selectedDeployment ||
+              String(d.id) === String(selectedDeployment),
+          ) || deploymentModels[0]
+        const activePmObj =
+          pricingModels.find(
+            (p) =>
+              String(p.code).toLowerCase() === String(selectedPricingModel).toLowerCase() ||
+              String(p.name).toLowerCase() === String(selectedPricingModel).toLowerCase() ||
+              String(p.id) === String(selectedPricingModel),
+          ) || pricingModels[0]
+
+        const newRow = {
+          id: `fr-feat-${resolvedNumericFeatureId || id}`,
+          featureId: resolvedNumericFeatureId || featObj?.id || id,
+          productId: featObj?.productId,
+          productCode: featObj?.code || `FEAT-${resolvedNumericFeatureId || id}`,
+          featureName: featObj?.name || `Feature ${resolvedNumericFeatureId || id}`,
+          familyId:
+            featObj?.familyId ||
+            featObj?.product_family_id ||
+            (selectedFamilyId !== 'all' ? selectedFamilyId : 'all'),
+          deploymentModel: activeDepObj.name,
+          deploymentModelId: activeDepObj.id,
+          pricingModel: activePmObj.code,
+          pricingModelId: activePmObj.id,
+          countryId: activeCountryObj?.id || selectedCountryId || 1,
+          productType: featObj?.productType || 'Adrenalin Native',
+          unitOfMeasure: 'Active Employees (with ESS)',
+          ...fieldAliases,
+        }
+        return [...prev, newRow]
+      }
+    })
 
     if (!isLiveBackendData) return
 
@@ -967,56 +1255,112 @@ export function RateCardPage() {
 
     debounceTimers.current[timerKey] = setTimeout(async () => {
       try {
-        const rateRow = featureRates.find((r) => r.id === id)
-        if (!rateRow || !rateRow.featureId) return
-
-        const isFixedField = String(field).toLowerCase().includes('fixed')
-        let tierId = 1
-        const cleanField = String(field).replace(/^fixed_/, '')
-        if (cleanField === 'tier1Rate' || cleanField === '1Rate') {
-          tierId = pricingTiers[0]?.id || 1
-        } else if (cleanField === 'tier2Rate' || cleanField === '2Rate') {
-          tierId = pricingTiers[1]?.id || 2
-        } else if (cleanField === 'tier3Rate' || cleanField === '3Rate') {
-          tierId = pricingTiers[2]?.id || 3
-        } else {
-          const m1 = cleanField.match(/^tier_(\d+)$/)
-          const m2 = cleanField.match(/^(\d+)Rate$/)
-          if (m1) tierId = parseInt(m1[1], 10)
-          else if (m2) tierId = parseInt(m2[1], 10)
-          else if (!isNaN(parseInt(cleanField, 10))) tierId = parseInt(cleanField, 10)
-        }
-
         const activeCountryObj =
-          countries.find((c) => c.id === selectedCountryId) || countries[0]
+          countries.find(
+            (c) =>
+              c.id === selectedCountryId ||
+              String(c.id) === String(selectedCountryId) ||
+              (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+          ) || countries[0]
         const activeCountryId =
           typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
-        const countryIdToPersist =
-          typeof rateRow.countryId === 'number' ? rateRow.countryId : activeCountryId
+
+        const activeDepObj =
+          deploymentModels.find(
+            (d) =>
+              d.name === selectedDeployment ||
+              d.code === selectedDeployment ||
+              String(d.id) === String(selectedDeployment),
+          ) || deploymentModels[0]
+
+        const activePmObj =
+          pricingModels.find(
+            (p) =>
+              String(p.code).toLowerCase() === String(selectedPricingModel).toLowerCase() ||
+              String(p.name).toLowerCase() === String(selectedPricingModel).toLowerCase() ||
+              String(p.id) === String(selectedPricingModel),
+          ) || pricingModels[0]
+
+        const rateRow = featureRates.find(
+          (r) =>
+            r.id === id ||
+            String(r.id) === String(id) ||
+            (resolvedNumericFeatureId != null &&
+              r.featureId != null &&
+              Number(r.featureId) === Number(resolvedNumericFeatureId)),
+        )
+
+        let targetFeatureId = resolvedNumericFeatureId
+        if (targetFeatureId == null && rateRow?.featureId != null) {
+          const parsed = parseInt(rateRow.featureId, 10)
+          if (!isNaN(parsed)) targetFeatureId = parsed
+        }
+        if (targetFeatureId == null && typeof id === 'string') {
+          const matchedNum = id.replace(/^(feat-row-|fr-feat-|fr-db-|fr-|feat-)/, '').split('-')[0]
+          const parsed = parseInt(matchedNum, 10)
+          if (!isNaN(parsed)) targetFeatureId = parsed
+        }
+        if (targetFeatureId == null) {
+          const matchedFeat = features.find((f) => f.id === id || String(f.id) === String(id))
+          if (matchedFeat?.id && !isNaN(parseInt(matchedFeat.id, 10))) {
+            targetFeatureId = parseInt(matchedFeat.id, 10)
+          }
+        }
+        if (targetFeatureId == null) {
+          console.warn('Cannot persist feature rate: feature_id is not a valid integer:', id)
+          return
+        }
+
+        const tierId = typeof tierIdVal === 'number' ? tierIdVal : tierNum
 
         const payload = {
           rate_card_version_id: activeVersion?.id || 1,
-          country_id: countryIdToPersist,
-          deployment_model_id: rateRow.deploymentModelId || 1,
-          pricing_model_id: rateRow.pricingModelId || 1,
+          country_id: typeof rateRow?.countryId === 'number' ? rateRow.countryId : activeCountryId,
+          deployment_model_id: rateRow?.deploymentModelId || activeDepObj.id || 1,
+          pricing_model_id: rateRow?.pricingModelId || activePmObj.id || 1,
           tier_id: tierId,
-          feature_id: rateRow.featureId,
+          feature_id: targetFeatureId,
         }
-        if (isFixedField) {
+
+        if (isFixed) {
           payload.fixed_fee = parseFloat(value) || 0
-          const existingUnit = rateRow[`tier_${tierId}`] ?? rateRow[`tier${tierId}Rate`]
+          const existingUnit =
+            rateRow?.[`tier_${tierId}`] ??
+            rateRow?.[`tier${tierNum}Rate`] ??
+            rateRow?.[`tier_${tierNum}`]
           if (existingUnit !== undefined && existingUnit !== '') {
             payload.unit_rate = parseFloat(existingUnit) || 0
           }
         } else {
           payload.unit_rate = parseFloat(value) || 0
-          const existingFixed = rateRow[`fixed_tier_${tierId}`] ?? rateRow[`fixed_tier${tierId}Rate`]
+          const existingFixed =
+            rateRow?.[`fixed_tier_${tierId}`] ??
+            rateRow?.[`fixed_tier${tierNum}Rate`] ??
+            rateRow?.[`fixed_tier_${tierNum}`]
           if (existingFixed !== undefined && existingFixed !== '') {
             payload.fixed_fee = parseFloat(existingFixed) || 0
           }
         }
 
-        await upsertRateCard(payload)
+        const savedResult = await upsertRateCard(payload)
+
+        // Keep local state in sync without mutating the stable feature row identity
+        if (savedResult?.id) {
+          setFeatureRates((prev) =>
+            prev.map((r) =>
+              r.id === id ||
+              (resolvedNumericFeatureId != null &&
+                r.featureId != null &&
+                Number(r.featureId) === Number(resolvedNumericFeatureId))
+                ? {
+                    ...r,
+                    id: r.id || `fr-feat-${targetFeatureId}`,
+                    lastSavedDbId: savedResult.id,
+                  }
+                : r,
+            ),
+          )
+        }
         showToast('Feature rate updated in PostgreSQL database.')
       } catch (err) {
         showToast(
@@ -1027,7 +1371,7 @@ export function RateCardPage() {
     }, 600)
   }
 
-  const handleRemoveFeatureRate = async (id) => {
+  const handleRemoveFeatureRate = (id) => {
     if (isVersionLocked) {
       showToast(
         `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
@@ -1036,36 +1380,54 @@ export function RateCardPage() {
       return
     }
 
-    const rate = featureRates.find((r) => r.id === id)
-    try {
-      if (isLiveBackendData && rate?.featureId) {
-        const activeCountryObj =
-          countries.find((c) => c.id === selectedCountryId) || countries[0]
-        const activeCountryId =
-          typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
-        const depId = rate.deploymentModelId || 1
-        const pmId = rate.pricingModelId || 1
-        const versionId = activeVersion?.id || 1
+    const rate = featureRates.find((r) => r.id === id || r.featureId === id)
+    const name = rate?.featureName || 'Feature Rate'
 
-        await deleteRateCardGroup({
-          rate_card_version_id: versionId,
-          country_id: activeCountryId,
-          deployment_model_id: depId,
-          pricing_model_id: pmId,
-          feature_id: rate.featureId,
-        })
-        setFeatureRates((prev) => prev.filter((r) => r.id !== id))
-        showToast('Feature rate removed from database.')
-      } else {
-        setFeatureRates((prev) => prev.filter((r) => r.id !== id))
-        showToast('Feature rate removed.')
-      }
-    } catch (err) {
-      showToast(
-        `Failed to remove feature rate: ${formatApiError(err)}`,
-        'error',
-      )
-    }
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Feature Rate',
+      recordName: name,
+      recordType: 'feature rate',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && rate?.featureId) {
+            const activeCountryObj =
+              countries.find(
+                (c) =>
+                  String(c.id) === String(selectedCountryId) ||
+                  (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+              ) || countries[0]
+            const activeCountryId =
+              typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
+            const depId = rate.deploymentModelId || 1
+            const pmId = rate.pricingModelId || 1
+            const versionId = activeVersion?.id || 1
+
+            await deleteRateCardGroup({
+              rate_card_version_id: versionId,
+              country_id: activeCountryId,
+              deployment_model_id: depId,
+              pricing_model_id: pmId,
+              feature_id: rate.featureId,
+            })
+            setFeatureRates((prev) => prev.filter((r) => r.id !== id))
+            showToast('Feature rate removed from database.')
+          } else {
+            setFeatureRates((prev) => prev.filter((r) => r.id !== id))
+            showToast('Feature rate removed.')
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(
+            `Failed to remove feature rate: ${formatApiError(err)}`,
+            'error',
+          )
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
   }
 
   const handleSaveFeatureRate = async (newRate) => {
@@ -1080,7 +1442,11 @@ export function RateCardPage() {
     try {
       if (isLiveBackendData) {
         const activeCountryObj =
-          countries.find((c) => c.id === selectedCountryId) || countries[0]
+          countries.find(
+            (c) =>
+              String(c.id) === String(selectedCountryId) ||
+              (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+          ) || countries[0]
         const activeCountryId =
           typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
 
@@ -1092,11 +1458,67 @@ export function RateCardPage() {
 
         const activePmObj =
           pricingModels.find(
-            (p) => p.code === (newRate.pricingModel || selectedPricingModel),
+            (p) =>
+              p.code === (newRate.pricingModel || selectedPricingModel) ||
+              p.name === (newRate.pricingModel || selectedPricingModel) ||
+              p.id === newRate.pricingModelId,
           ) || pricingModels[0]
-        const pmId = typeof activePmObj?.id === 'number' ? activePmObj.id : 1
+        const pmId =
+          typeof newRate.pricingModelId === 'number' && !isNaN(newRate.pricingModelId)
+            ? newRate.pricingModelId
+            : typeof activePmObj?.id === 'number'
+            ? activePmObj.id
+            : 1
+        let featureId = null
+        if (typeof newRate.featureId === 'number' && !isNaN(newRate.featureId)) {
+          featureId = newRate.featureId
+        } else if (newRate.featureId) {
+          const parsed = parseInt(newRate.featureId, 10)
+          if (!isNaN(parsed)) featureId = parsed
+        }
+        if (!featureId && newRate.id) {
+          const matchedNum = String(newRate.id).replace(/^(feat-row-|fr-feat-|fr-db-|fr-|feat-)/, '').split('-')[0]
+          const parsed = parseInt(matchedNum, 10)
+          if (!isNaN(parsed)) featureId = parsed
+        }
+        if (!featureId) {
+          const matchedFeat = features.find(
+            (f) =>
+              (newRate.productCode && f.code === newRate.productCode) ||
+              (newRate.featureName && f.name === newRate.featureName),
+          )
+          if (matchedFeat?.id && !isNaN(parseInt(matchedFeat.id, 10))) {
+            featureId = parseInt(matchedFeat.id, 10)
+          }
+        }
 
-        const featureId = typeof newRate.featureId === 'number' ? newRate.featureId : 52
+        if (!featureId) {
+          console.warn('Feature ID could not be resolved for backend persistence; saving locally.')
+          const localRate = {
+            ...newRate,
+            id: newRate.id || `fr-feat-${newRate.productCode || Date.now()}-${depId}-${pmId}`,
+            deploymentModel: activeDepObj.name,
+            deploymentModelId: depId,
+            pricingModel: activePmObj.code,
+            pricingModelId: pmId,
+          }
+          setFeatureRates((prev) => {
+            const idx = prev.findIndex(
+              (r) =>
+                r.id === localRate.id ||
+                (localRate.featureName && r.featureName === localRate.featureName),
+            )
+            if (idx >= 0) {
+              const next = [...prev]
+              next[idx] = { ...next[idx], ...localRate }
+              return next
+            }
+            return [...prev, localRate]
+          })
+          showToast(`Feature rate for "${newRate.featureName}" configured locally.`)
+          return
+        }
+
         const versionId = activeVersion?.id || 1
 
         // Upsert across all dynamic tiers
@@ -1130,7 +1552,7 @@ export function RateCardPage() {
         }
 
         const rateWithId = {
-          id: `fr-${featureId}-${depId}-${pmId}`,
+          id: `fr-feat-${featureId}-${depId}-${pmId}`,
           featureId,
           productId: newRate.productId,
           productCode: newRate.productCode || newRate.featureCode,
@@ -1157,16 +1579,67 @@ export function RateCardPage() {
           rateWithId[`${tier.id}Rate`] = String(val)
           rateWithId[tier.id] = String(val)
         })
-        setFeatureRates((prev) => [...prev, rateWithId])
+
+        // Upsert into state without creating duplicate keys
+        setFeatureRates((prev) => {
+          const matchIdx = prev.findIndex(
+            (r) =>
+              r.id === rateWithId.id ||
+              (featureId != null && r.featureId != null && Number(r.featureId) === Number(featureId)),
+          )
+          if (matchIdx >= 0) {
+            const next = [...prev]
+            next[matchIdx] = { ...next[matchIdx], ...rateWithId }
+            return next
+          }
+          return [...prev, rateWithId]
+        })
+
         showToast(
           `Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`,
         )
       } else {
+        const activeDepObj =
+          deploymentModels.find(
+            (d) => d.name === (newRate.deploymentModel || selectedDeployment),
+          ) || deploymentModels[0]
+        const depId = typeof activeDepObj?.id === 'number' ? activeDepObj.id : 1
+
+        const activePmObj =
+          pricingModels.find(
+            (p) =>
+              p.code === (newRate.pricingModel || selectedPricingModel) ||
+              p.name === (newRate.pricingModel || selectedPricingModel) ||
+              p.id === newRate.pricingModelId,
+          ) || pricingModels[0]
+        const pmId =
+          typeof newRate.pricingModelId === 'number' && !isNaN(newRate.pricingModelId)
+            ? newRate.pricingModelId
+            : typeof activePmObj?.id === 'number'
+            ? activePmObj.id
+            : 1
+
         const rateWithId = {
           ...newRate,
-          id: newRate.id || `fr-${Date.now()}`,
+          id: newRate.id || `fr-feat-${newRate.featureId || Date.now()}-${depId}-${pmId}`,
+          deploymentModel: activeDepObj.name,
+          deploymentModelId: depId,
+          pricingModel: activePmObj.code,
+          pricingModelId: pmId,
         }
-        setFeatureRates((prev) => [...prev, rateWithId])
+        setFeatureRates((prev) => {
+          const matchIdx = prev.findIndex(
+            (r) =>
+              r.id === rateWithId.id ||
+              (rateWithId.featureId && r.featureId && String(r.featureId) === String(rateWithId.featureId)),
+          )
+          if (matchIdx >= 0) {
+            const next = [...prev]
+            next[matchIdx] = { ...next[matchIdx], ...rateWithId }
+            return next
+          }
+          return [...prev, rateWithId]
+        })
         showToast(`Feature rate for "${newRate.featureName}" configured.`)
       }
     } catch (err) {
@@ -1204,7 +1677,11 @@ export function RateCardPage() {
         debounceTimers.current[timerKey] = setTimeout(async () => {
           try {
             const activeCountryObj =
-              countries.find((c) => c.id === selectedCountryId) || countries[0]
+              countries.find(
+                (c) =>
+                  String(c.id) === String(selectedCountryId) ||
+                  (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+              ) || countries[0]
             const activeCountryId =
               typeof activeCountryObj?.id === 'number' ? activeCountryObj.id : 1
 
@@ -1214,14 +1691,20 @@ export function RateCardPage() {
               ) || deploymentModels[0]
             const depId = typeof activeDepObj?.id === 'number' ? activeDepObj.id : 1
 
+            const isLicenseAmc =
+              String(selectedPricingModel).toLowerCase().includes('license') ||
+              String(selectedPricingModel).toLowerCase().includes('amc')
+
             const platPm =
               pricingModels.find(
                 (p) =>
-                  p.code === 'platform_subscription' ||
-                  p.code === selectedPricingModel ||
-                  (p.name || '').toLowerCase().includes('platform'),
+                  isLicenseAmc
+                    ? p.code === 'license_amc' || (p.name || '').toLowerCase().includes('license')
+                    : p.code === 'platform_subscription' ||
+                      p.code === selectedPricingModel ||
+                      (p.name || '').toLowerCase().includes('platform'),
               ) || pricingModels[0]
-            const pmId = typeof platPm?.id === 'number' ? platPm.id : 2
+            const pmId = typeof platPm?.id === 'number' ? platPm.id : (isLicenseAmc ? 3 : 2)
 
             let tierId = 1
             if (tierKey === 'tier1') tierId = pricingTiers[0]?.id || 1
@@ -1242,10 +1725,10 @@ export function RateCardPage() {
               fixed_fee: parseFloat(updatedTier.annualPlatformFee) || 0,
               unit_rate: parseFloat(updatedTier.monthlySubscriptionFee) || 0,
             })
-            showToast('Platform Subscription rate updated in PostgreSQL database.')
+            showToast(`${platPm.name || 'Rate'} updated in PostgreSQL database.`)
           } catch (err) {
             showToast(
-              `Failed to persist platform rate: ${formatApiError(err)}`,
+              `Failed to persist rate: ${formatApiError(err)}`,
               'error',
             )
           }
@@ -1303,22 +1786,37 @@ export function RateCardPage() {
     }
   }
 
-  const handleDeleteCountry = async (id) => {
-    try {
-      if (isLiveBackendData && typeof id === 'number') {
-        await deleteCountry(id)
-        setCountries((prev) => prev.filter((c) => c.id !== id))
-        showToast('Country removed from database.')
-      } else {
-        setCountries((prev) => prev.filter((c) => c.id !== id))
-        showToast('Country removed from master catalog.')
-      }
-    } catch (err) {
-      showToast(
-        `Cannot delete country: ${err.response?.data?.detail || err.message}`,
-        'error',
-      )
-    }
+  const handleDeleteCountry = (id) => {
+    const c = countries.find((country) => country.id === id)
+    const name = c?.name || 'Country'
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Country',
+      recordName: name,
+      recordType: 'country',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && typeof id === 'number') {
+            await deleteCountry(id)
+            setCountries((prev) => prev.filter((country) => country.id !== id))
+            showToast('Country removed from database.')
+          } else {
+            setCountries((prev) => prev.filter((country) => country.id !== id))
+            showToast('Country removed from master catalog.')
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(
+            `Cannot delete country: ${err.response?.data?.detail || err.message}`,
+            'error',
+          )
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
   }
 
   const handleUpdateCountry = async (id, updatedFields) => {
@@ -1583,50 +2081,64 @@ export function RateCardPage() {
     }
   }
 
-  const handleDeleteDeploymentModel = async (id) => {
+  const handleDeleteDeploymentModel = (id) => {
     const model = deploymentModels.find((m) => m.id === id)
     if (!model) return
-    const confirmed =
-      typeof window !== 'undefined' && typeof window.confirm === 'function'
-        ? window.confirm(`Are you sure you want to remove deployment model "${model.name}"?`)
-        : true
-    if (!confirmed) return
 
-    try {
-      if (isLiveBackendData && typeof id === 'number') {
-        await deleteDeploymentModel(id)
-        setDeploymentModels((prev) => prev.filter((m) => m.id !== id))
-        showToast(`Deployment model "${model.name}" removed from database.`)
-      } else {
-        setDeploymentModels((prev) => prev.filter((m) => m.id !== id))
-        showToast(`Deployment model "${model.name}" removed.`)
-      }
-    } catch (err) {
-      showToast(`Cannot delete deployment model: ${formatApiError(err)}`, 'error')
-    }
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Deployment Model',
+      recordName: model.name,
+      recordType: 'deployment model',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && typeof id === 'number') {
+            await deleteDeploymentModel(id)
+            setDeploymentModels((prev) => prev.filter((m) => m.id !== id))
+            showToast(`Deployment model "${model.name}" removed from database.`)
+          } else {
+            setDeploymentModels((prev) => prev.filter((m) => m.id !== id))
+            showToast(`Deployment model "${model.name}" removed.`)
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(`Cannot delete deployment model: ${formatApiError(err)}`, 'error')
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
   }
 
-  const handleDeletePricingModel = async (id) => {
+  const handleDeletePricingModel = (id) => {
     const model = pricingModels.find((pm) => pm.id === id)
     if (!model) return
-    const confirmed =
-      typeof window !== 'undefined' && typeof window.confirm === 'function'
-        ? window.confirm(`Are you sure you want to remove pricing model "${model.name}"?`)
-        : true
-    if (!confirmed) return
 
-    try {
-      if (isLiveBackendData && typeof id === 'number') {
-        await deletePricingModel(id)
-        setPricingModels((prev) => prev.filter((pm) => pm.id !== id))
-        showToast(`Pricing model "${model.name}" removed from database.`)
-      } else {
-        setPricingModels((prev) => prev.filter((pm) => pm.id !== id))
-        showToast(`Pricing model "${model.name}" removed.`)
-      }
-    } catch (err) {
-      showToast(`Cannot delete pricing model: ${formatApiError(err)}`, 'error')
-    }
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Pricing Model',
+      recordName: model.name,
+      recordType: 'pricing model',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && typeof id === 'number') {
+            await deletePricingModel(id)
+            setPricingModels((prev) => prev.filter((pm) => pm.id !== id))
+            showToast(`Pricing model "${model.name}" removed from database.`)
+          } else {
+            setPricingModels((prev) => prev.filter((pm) => pm.id !== id))
+            showToast(`Pricing model "${model.name}" removed.`)
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(`Cannot delete pricing model: ${formatApiError(err)}`, 'error')
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
   }
 
   const handleSaveHourlyRate = async (newRate) => {
@@ -1681,22 +2193,37 @@ export function RateCardPage() {
     }
   }
 
-  const handleDeleteHourlyRate = async (id) => {
-    try {
-      if (isLiveBackendData && typeof id === 'number') {
-        await deleteServiceRate(id)
-        setHourlyRates((prev) => prev.filter((hr) => hr.id !== id))
-        showToast('Hourly rate removed from database.')
-      } else {
-        setHourlyRates((prev) => prev.filter((hr) => hr.id !== id))
-        showToast('Hourly rate removed.')
-      }
-    } catch (err) {
-      showToast(
-        `Cannot delete hourly rate: ${err.response?.data?.detail || err.message}`,
-        'error',
-      )
-    }
+  const handleDeleteHourlyRate = (id) => {
+    const hr = hourlyRates.find((h) => h.id === id)
+    const name = hr?.serviceLine ? `${hr.serviceLine} (${hr.country || ''})` : 'Service Role'
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Service Rate',
+      recordName: name,
+      recordType: 'service rate',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && typeof id === 'number') {
+            await deleteServiceRate(id)
+            setHourlyRates((prev) => prev.filter((item) => item.id !== id))
+            showToast('Hourly rate removed from database.')
+          } else {
+            setHourlyRates((prev) => prev.filter((item) => item.id !== id))
+            showToast('Hourly rate removed.')
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(
+            `Cannot delete hourly rate: ${err.response?.data?.detail || err.message}`,
+            'error',
+          )
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
   }
 
   const handleUpdateHourlyRate = async (id, updatedFields) => {
@@ -1786,38 +2313,93 @@ export function RateCardPage() {
     }
   }
 
-  const handleDeleteFxRate = async (id) => {
-    try {
-      if (isLiveBackendData && typeof id === 'number') {
-        await deleteFxRate(id)
-        setExchangeRates((prev) => prev.filter((fx) => fx.id !== id))
-        showToast('Exchange rate removed from database.')
-      } else {
-        setExchangeRates((prev) => prev.filter((fx) => fx.id !== id))
-        showToast('Exchange rate removed.')
-      }
-    } catch (err) {
+  const handleDeleteFxRate = (id) => {
+    const fx = exchangeRates.find((f) => f.id === id)
+    const name = fx ? `${fx.sourceCurrency}/${fx.targetCurrency}` : 'Exchange Rate'
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Exchange Rate',
+      recordName: name,
+      recordType: 'exchange rate',
+      isDeleting: false,
+      onConfirm: async () => {
+        setDeleteConfirm((prev) => ({ ...prev, isDeleting: true }))
+        try {
+          if (isLiveBackendData && typeof id === 'number') {
+            await deleteFxRate(id)
+            setExchangeRates((prev) => prev.filter((item) => item.id !== id))
+            showToast('Exchange rate removed from database.')
+          } else {
+            setExchangeRates((prev) => prev.filter((item) => item.id !== id))
+            showToast('Exchange rate removed.')
+          }
+          setDeleteConfirm({ isOpen: false, title: '', recordName: '', recordType: '', isDeleting: false, onConfirm: null })
+        } catch (err) {
+          showToast(
+            `Cannot delete FX rate: ${err.response?.data?.detail || err.message}`,
+            'error',
+          )
+          setDeleteConfirm((prev) => ({ ...prev, isDeleting: false }))
+        }
+      },
+    })
+  }
+
+  const handleUpdateRegistryRate = async ({ id, raw, fixed_fee, unit_rate }) => {
+    if (isVersionLocked) {
       showToast(
-        `Cannot delete FX rate: ${err.response?.data?.detail || err.message}`,
+        `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
         'error',
       )
+      return
+    }
+
+    try {
+      const payload = {
+        rate_card_version_id: raw.rate_card_version_id,
+        country_id: raw.country_id,
+        deployment_model_id: raw.deployment_model_id,
+        pricing_model_id: raw.pricing_model_id,
+        tier_id: raw.tier_id,
+        uom_id: raw.uom_id,
+        currency_id: raw.currency_id,
+        pack_version_id: raw.pack_version_id || null,
+        feature_id: raw.feature_id || null,
+        fixed_fee: fixed_fee != null ? fixed_fee : raw.fixed_fee,
+        unit_rate: unit_rate != null ? unit_rate : raw.unit_rate,
+      }
+
+      await upsertRateCard(payload)
+
+      // Refresh list to sync live state
+      const refreshed = await getRateCards({ rate_card_version_id: activeVersion?.id })
+      setRawRateCards(Array.isArray(refreshed) ? refreshed : [])
+      processRateCards(refreshed, pricingTiers, deploymentModels, pricingModels, packs, features, products)
+      showToast('Rate card record updated and persisted to PostgreSQL.')
+    } catch (err) {
+      showToast(`Failed to update rate card: ${formatApiError(err)}`, 'error')
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100 text-slate-800">
+    <div className="h-screen h-[100dvh] max-h-screen flex flex-col bg-slate-100 text-slate-800 overflow-hidden">
       {/* 1. Dark Navy Top Navigation */}
-      <CatalogueTopNav activeSection="rate-cards" />
+      <div className="shrink-0">
+        <CatalogueTopNav activeSection="rate-cards" />
+      </div>
 
       {/* 2. White Commercial Master Summary Strip */}
-      <SummaryStrip
-        productLinesCount={families.length}
-        totalProductsCount={products.length}
-      />
+      <div className="shrink-0">
+        <SummaryStrip
+          productLinesCount={families.length}
+          totalProductsCount={products.length}
+        />
+      </div>
 
       {/* 3. Live Database Status Strip */}
       {isLoading && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-1.5 text-xs text-blue-700 flex items-center justify-between">
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-1 text-xs text-blue-700 flex items-center justify-between shrink-0">
           <span className="flex items-center gap-2">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
             Connecting to PostgreSQL database & loading live rate cards...
@@ -1826,7 +2408,7 @@ export function RateCardPage() {
       )}
 
       {apiError && !isLoading && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 text-xs text-amber-800 flex items-center justify-between">
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1 text-xs text-amber-800 flex items-center justify-between shrink-0">
           <span className="flex items-center gap-2">
             <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
             Backend offline: {apiError}. Changes will apply to current local state.
@@ -1843,7 +2425,7 @@ export function RateCardPage() {
 
       {isLiveBackendData && !isLoading && (
         <div
-          className={`border-b px-4 py-1 text-xs flex flex-wrap items-center justify-between gap-2 ${
+          className={`border-b px-4 py-1 text-xs flex flex-wrap items-center justify-between gap-2 shrink-0 ${
             isVersionLocked
               ? 'bg-amber-50/90 border-amber-300 text-amber-900'
               : 'bg-emerald-50 border-emerald-200 text-emerald-800'
@@ -1909,19 +2491,60 @@ export function RateCardPage() {
         </div>
       )}
 
-      {/* 4. Main Workspace: Three Independently Scrollable Columns */}
-      <div className="flex-1 flex overflow-hidden h-[calc(100vh-136px)]">
-        {/* Left Column: Products & Families */}
+      {/* Mobile/Tablet Column Selector (< lg) */}
+      <div className="lg:hidden flex items-center justify-between px-3 py-1.5 bg-white border-b border-slate-200 shrink-0 text-xs">
+        <span className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">Workspace:</span>
+        <div className="inline-flex rounded-lg bg-slate-100 p-0.5 font-semibold">
+          <button
+            type="button"
+            onClick={() => setMobileView('products')}
+            className={`px-2.5 py-1 rounded-md transition-colors ${
+              mobileView === 'products' ? 'bg-white text-orange-600 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Families
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileView('center')}
+            className={`px-2.5 py-1 rounded-md transition-colors ${
+              mobileView === 'center' ? 'bg-white text-orange-600 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Rate Matrix
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileView('masters')}
+            className={`px-2.5 py-1 rounded-md transition-colors ${
+              mobileView === 'masters' ? 'bg-white text-orange-600 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Master Data
+          </button>
+        </div>
+      </div>
+
+      {/* 4. Main Workspace: Three-Column Professional Workspace */}
+      <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden w-full relative">
+        {/* Left Column: Products & Families (Fixed Left in Workspace, Internal Scroll) */}
         <RateCardProductsSidebar
           families={families}
           products={products}
           selectedFamilyId={selectedFamilyId}
-          onSelectFamily={setSelectedFamilyId}
+          onSelectFamily={(famId) => {
+            setSelectedFamilyId(famId)
+            if (window.innerWidth < 1024) {
+              setMobileView('center')
+            }
+          }}
           onOpenAddProduct={() => setIsAddProductOpen(true)}
+          className={`${mobileView === 'products' ? 'flex' : 'hidden'} lg:flex`}
         />
 
-        {/* Center Column: Deployment / Pricing Model / Rates Editor */}
+        {/* Center Column: Deployment / Pricing Model / Rates Editor (Independently Scrolls) */}
         <RateCardCenterEditor
+          apiError={apiError}
           selectedDeployment={selectedDeployment}
           onChangeDeployment={setSelectedDeployment}
           deploymentModels={deploymentModels}
@@ -1967,9 +2590,14 @@ export function RateCardPage() {
           platformConfig={platformConfig}
           onChangePlatformConfig={handleChangePlatformConfig}
           onResetPlatformDemo={handleResetPlatformDemo}
+          // Full Registry Table Data & Handlers
+          rawRateCards={rawRateCards}
+          onUpdateRegistryRate={handleUpdateRegistryRate}
+          onRefreshRegistry={handleRefresh}
+          className={`${mobileView === 'center' ? 'flex' : 'hidden'} lg:flex`}
         />
 
-        {/* Right Column: Master Data Panels */}
+        {/* Right Column: Master Data Panels (Fixed Right in Workspace, Internal Scroll) */}
         <RateCardMasterPanels
           countries={countries}
           onOpenAddCountry={() => setIsAddCountryOpen(true)}
@@ -1996,6 +2624,7 @@ export function RateCardPage() {
           families={families}
           packRates={packRates}
           featureRates={featureRates}
+          className={`${mobileView === 'masters' ? 'flex' : 'hidden'} lg:flex`}
         />
       </div>
 
@@ -2066,6 +2695,7 @@ export function RateCardPage() {
         families={families}
         activeDeployment={selectedDeployment}
         activePricing={selectedPricingModel}
+        activeCurrencySymbol={activeCurrencySymbol}
         existingPackRates={packRates}
       />
 
@@ -2083,7 +2713,22 @@ export function RateCardPage() {
         families={families}
         activeDeployment={selectedDeployment}
         activePricing={selectedPricingModel}
+        activeCurrencySymbol={activeCurrencySymbol}
         existingFeatureRates={featureRates}
+      />
+
+      <DeleteRateCardConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title={deleteConfirm.title}
+        recordName={deleteConfirm.recordName}
+        recordType={deleteConfirm.recordType}
+        isDeleting={deleteConfirm.isDeleting}
+        onClose={() => {
+          if (!deleteConfirm.isDeleting) {
+            setDeleteConfirm((prev) => ({ ...prev, isOpen: false, onConfirm: null }))
+          }
+        }}
+        onConfirm={deleteConfirm.onConfirm}
       />
     </div>
   )

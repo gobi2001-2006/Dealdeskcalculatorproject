@@ -85,8 +85,42 @@ export function CalculatorPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [isCalculating, setIsCalculating] = useState(false)
   const [calcApiResult, setCalcApiResult] = useState(null)
+  const [calculatedInputsSignature, setCalculatedInputsSignature] = useState(null)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState('success') // 'success' | 'warning' | 'error'
+
+  // Input signature to detect when parameters change after calculation
+  const currentInputsSignature = useMemo(() => {
+    return JSON.stringify({
+      currencyId: clientInfo.reportingCurrencyId,
+      countries: (countryConfigs || []).map((c) => ({
+        id: c.countryId,
+        tier: c.pricingTierId,
+        dep: c.deploymentModelId,
+        pm: c.pricingModelId,
+        term: c.contractTerm,
+        headcount: c.headcount,
+        families: (c.families || []).map((f) => ({
+          famId: f.familyId,
+          packId: f.selectedPackId,
+          featIds: f.selectedFeatureIds,
+          fHeadcounts: f.featureHeadcounts,
+        })),
+        services: (c.serviceLines || []).map((s) => ({
+          role: s.roleName,
+          hours: s.hoursOrDays,
+          rate: s.rateApplied,
+          disc: s.discountPct,
+        })),
+      })),
+    })
+  }, [clientInfo.reportingCurrencyId, countryConfigs])
+
+  const isCalculationStale = Boolean(
+    calcApiResult?.status === 'success' &&
+    calculatedInputsSignature &&
+    currentInputsSignature !== calculatedInputsSignature
+  )
 
   const showToast = (msg, type = 'success') => {
     setToastMessage(msg)
@@ -291,8 +325,8 @@ export function CalculatorPage() {
 
   // Serialized schema payload for modals and backend API preview
   const serializedPayload = useMemo(() => {
-    return serializeProposalToBackendSchema(clientInfo, countryConfigs)
-  }, [clientInfo, countryConfigs])
+    return serializeProposalToBackendSchema(clientInfo, countryConfigs, masters)
+  }, [clientInfo, countryConfigs, masters])
 
   // Handle Save Proposal Draft to PostgreSQL (Phase 4)
   const handleTriggerSave = () => {
@@ -365,6 +399,7 @@ export function CalculatorPage() {
       setCalcApiResult(res)
 
       if (res.status === 'success') {
+        setCalculatedInputsSignature(currentInputsSignature)
         if (res.proposalId && !clientInfo.proposalId) {
           setClientInfo((prev) => ({
             ...prev,
@@ -402,51 +437,79 @@ export function CalculatorPage() {
 
     const data = calcApiResult.data
     const curr = data.reporting_currency_code || 'USD'
-    const total = Number(data.total_proposal_reporting_currency || 0).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+    const grandTotalNum = Number(data.total_proposal_reporting_currency || 0)
+
+    let subscriptionReportingTotal = 0
+    let serviceReportingTotal = 0
+    const rawProducts = data.snapshot_payload?.products || []
+    const productsList = Array.isArray(rawProducts)
+      ? rawProducts
+      : typeof rawProducts === 'object'
+      ? Object.values(rawProducts)
+      : []
+
+    productsList.forEach((p) => {
+      const fx = Number(p.fx_rate_multiplier || 1)
+      const sub = Number(p.subscription_total_after_discount ?? p.subscription_total_net ?? 0)
+      const srv = Number(p.service_total_after_discount ?? p.services_total_net ?? 0)
+      subscriptionReportingTotal += sub * fx
+      serviceReportingTotal += srv * fx
     })
 
-    // Sum service totals across products if available
-    let serviceTotal = 0
-    const products = data.snapshot_payload?.products || []
-    products.forEach((p) => {
-      serviceTotal += Number(p.service_total_after_discount || 0) * Number(p.fx_rate_multiplier || 1)
-    })
+    const staleSuffix = isCalculationStale ? ' (Outdated)' : ''
 
-    const servicesStr = `${curr} ${serviceTotal.toLocaleString(undefined, {
+    const fcvStr = `${curr} ${subscriptionReportingTotal.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    })}`
+    })}${staleSuffix}`
+
+    const servicesStr = `${curr} ${serviceReportingTotal.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}${staleSuffix}`
+
+    const grandTotalStr = `${curr} ${grandTotalNum.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}${staleSuffix}`
 
     return {
-      fcv: `${curr} ${total}`,
+      fcv: fcvStr,
       services: servicesStr,
-      grandTotal: `${curr} ${total}`,
+      grandTotal: grandTotalStr,
+      isStale: isCalculationStale,
     }
-  }, [calcApiResult])
+  }, [calcApiResult, isCalculationStale])
 
   return (
-    <div className="h-screen w-full flex flex-col bg-slate-100 overflow-hidden text-slate-800 antialiased font-sans">
+    <div className="h-screen h-[100dvh] max-h-screen w-full flex flex-col bg-slate-100 overflow-hidden text-slate-800 antialiased font-sans">
       {/* 1. Top Navigation */}
-      <CatalogueTopNav activeSection="calculator" />
+      <div className="shrink-0">
+        <CatalogueTopNav
+          activeSection="calculator"
+          isConnected={!masters.isLoading}
+          isDemo={false}
+        />
+      </div>
 
       {/* 2. Existing White Commercial Summary Strip */}
-      <SummaryStrip
-        clientName={clientInfo.clientName || 'Untitled Proposal'}
-        countriesValue={`${summaryCounts.countriesCount} Configured`}
-        productLinesValue={`${summaryCounts.totalFamilies} Families (${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Features)`}
-        pricingFcv={summaryStripValues.fcv}
-        servicesValue={summaryStripValues.services}
-        grandTotal={summaryStripValues.grandTotal}
-      />
+      <div className="shrink-0">
+        <SummaryStrip
+          clientName={clientInfo.clientName || 'Untitled Proposal'}
+          countriesValue={`${summaryCounts.countriesCount} Configured`}
+          productLinesValue={`${summaryCounts.totalFamilies} Families (${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Features)`}
+          pricingFcv={summaryStripValues.fcv}
+          servicesValue={summaryStripValues.services}
+          grandTotal={summaryStripValues.grandTotal}
+        />
+      </div>
 
       {/* Toast Notification Banner */}
       {toastMessage && (
         <div
           role="status"
           aria-live="polite"
-          className={`px-4 sm:px-6 py-2 text-xs font-medium flex items-center justify-between border-b transition-all animate-in slide-in-from-top-2 ${
+          className={`px-4 sm:px-6 py-2 text-xs font-medium flex items-center justify-between border-b transition-all animate-in slide-in-from-top-2 shrink-0 ${
             toastType === 'success'
               ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
               : toastType === 'warning'
@@ -468,40 +531,62 @@ export function CalculatorPage() {
       )}
 
       {/* 3. Main Workspace */}
-      <div className="flex-1 overflow-y-auto bg-[#F8FAFC]">
+      <div className="flex-1 min-h-0 overflow-y-auto bg-slate-100">
         <main
-          className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6"
+          className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6 pb-8"
           aria-label="Proposal Configurator Workspace"
         >
           {/* Workspace Title & Actions Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200/80">
-            <div>
-              <div className="flex items-center gap-2.5">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-4 border-b border-slate-200">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                   Proposal Configurator
                 </h1>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true"></span>
-                  <span>FastAPI Calculation Engine Active</span>
-                </span>
+                {isCalculating ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" aria-hidden="true"></span>
+                    <span>FastAPI Calculating...</span>
+                  </span>
+                ) : isCalculationStale ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs" title="Parameters were modified after calculation. Click 'Calculate Pricing' to refresh.">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>
+                    <span>Inputs Modified — Recalculation Required (Snapshot #{calcApiResult.data?.snapshot_id})</span>
+                  </span>
+                ) : calcApiResult?.status === 'success' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+                    <span>FastAPI Calculated (Snapshot #{calcApiResult.data?.snapshot_id})</span>
+                  </span>
+                ) : calcApiResult?.status === 'error' ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500" aria-hidden="true"></span>
+                    <span>FastAPI Calculation Failed</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" aria-hidden="true"></span>
+                    <span>FastAPI Calculation Engine Ready</span>
+                  </span>
+                )}
                 {clientInfo.proposalId && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-mono font-bold bg-blue-50 text-blue-800 border border-blue-200">
                     Proposal #{clientInfo.proposalId}
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="text-xs text-slate-500 leading-normal">
                 Configure multi-country commercial terms, packaging suites, à la carte features, and professional services connected to PostgreSQL.
               </p>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0">
               {clientInfo.proposalId && (
                 <button
                   type="button"
                   onClick={() => handleReloadProposal()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors shadow-2xs"
+                  className="inline-flex items-center justify-center gap-1.5 h-9 px-3.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-2xs focus:outline-none focus:ring-2 focus:ring-slate-300"
                   title="Reload saved proposal from database"
                 >
                   <RotateCcw className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
@@ -512,7 +597,7 @@ export function CalculatorPage() {
               <button
                 type="button"
                 onClick={() => setIsAddCountryOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors shadow-2xs focus:outline-none focus:ring-2 focus:ring-orange-200"
+                className="inline-flex items-center justify-center gap-1.5 h-9 px-3.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 transition-colors shadow-2xs focus:outline-none focus:ring-2 focus:ring-orange-200"
               >
                 <Plus className="w-3.5 h-3.5 text-orange-600" aria-hidden="true" />
                 <span>Add Country</span>
@@ -522,7 +607,7 @@ export function CalculatorPage() {
                 type="button"
                 onClick={handleTriggerSave}
                 disabled={isSaving}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors shadow-2xs focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 h-9 px-4 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 transition-colors shadow-2xs focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:opacity-50"
               >
                 <Save className="w-3.5 h-3.5 text-slate-600" aria-hidden="true" />
                 <span>{clientInfo.proposalId ? 'Update Proposal' : 'Save Proposal'}</span>
@@ -532,7 +617,7 @@ export function CalculatorPage() {
                 type="button"
                 onClick={handleTriggerCalculation}
                 disabled={isCalculating}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 h-9 px-4 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-xs transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-1 disabled:opacity-50"
               >
                 <Calculator className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>{isCalculating ? 'Calculating...' : 'Calculate Pricing'}</span>
@@ -547,6 +632,14 @@ export function CalculatorPage() {
             errors={clientErrors}
             customers={masters.customers}
             currencies={masters.currencies}
+            onSelectCustomerTier={(tierId) => {
+              setCountryConfigs((prev) =>
+                prev.map((c) => ({
+                  ...c,
+                  pricingTierId: tierId,
+                }))
+              )
+            }}
           />
 
           {/* Phase B: Country Configurations Section */}
@@ -568,7 +661,7 @@ export function CalculatorPage() {
               <button
                 type="button"
                 onClick={() => setIsAddCountryOpen(true)}
-                className="text-xs font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-1 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-200"
               >
                 <Plus className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Add Another Country</span>

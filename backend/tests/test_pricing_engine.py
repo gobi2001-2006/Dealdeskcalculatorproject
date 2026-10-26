@@ -855,3 +855,78 @@ def test_25_api_latest_calculation_endpoint(client, db):
     assert abs(latest_data["total_proposal_reporting_currency"] - 733000.0) < 0.01
     assert "snapshot_payload" in latest_data
     assert "products" in latest_data["snapshot_payload"]
+
+
+# =============================================================================
+# Test 27: PEPM dynamic contract-term test (Annual vs 36-Month Full Contract)
+# =============================================================================
+def test_27_pepm_contract_term_formula(db):
+    """Monthly PEPM rate = ₹2,000, Employee count = 5,000, Contract term = 36 months.
+    Expected annual consumption: 2,000 * 5,000 * 12 = ₹120,000,000
+    Expected full-contract consumption: 2,000 * 5,000 * 36 = ₹360,000,000
+    Repeat with a 12-month contract to verify that annual and contract values match.
+    """
+    engine = PricingCalculationEngine(db=db)
+
+    # Mock line item and rate card with unit_rate = 2000, quantity = 5000
+    from unittest.mock import MagicMock
+    item = MagicMock()
+    item.id = 999
+    item.line_number = 1
+    item.feature_id = 1
+    item.pack_version_id = None
+    item.quantity = Decimal("5000")
+    item.discount_pct = Decimal("0.00")
+    item.uom_id = 1
+
+    # Test 36-month contract
+    res_36 = engine._calculate_subscription_item(
+        item=item,
+        rate_card_version_id=1,
+        default_country_id=1,
+        default_tier_id=1,
+        persist_amounts=False,
+        contract_term_months=36,
+    )
+    # Annual consumption fee (12 months): unit_rate * 5000 * 12
+    # Full contract consumption fee (36 months): unit_rate * 5000 * 36
+    rate = Decimal(str(res_36["rate_per_unit"]))
+    assert res_36["annual_consumption_fee"] == float(rate * Decimal("5000") * Decimal("12"))
+    assert res_36["contract_consumption_fee"] == float(rate * Decimal("5000") * Decimal("36"))
+    assert res_36["contract_term_months"] == 36
+
+    # Test 12-month contract: annual and contract must match exactly
+    res_12 = engine._calculate_subscription_item(
+        item=item,
+        rate_card_version_id=1,
+        default_country_id=1,
+        default_tier_id=1,
+        persist_amounts=False,
+        contract_term_months=12,
+    )
+    assert res_12["annual_consumption_fee"] == res_12["contract_consumption_fee"]
+    assert res_12["item_subscription_before_discount"] == res_12["contract_subscription_before_discount"]
+    assert res_12["contract_term_months"] == 12
+
+
+# =============================================================================
+# Test 28: API POST /proposals/{id}/calculate with dynamic contract_term_months
+# =============================================================================
+def test_28_api_calculate_with_dynamic_contract_term(client, db):
+    """POST /api/proposals/{id}/calculate with contract_term_months=36 should return contract totals."""
+    proposal = db._test_proposal
+    response = client.post(
+        f"/api/proposals/{proposal.id}/calculate",
+        json={"contract_term_months": 36},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["contract_term_months"] == 36
+    assert "total_proposal_annual_reporting_currency" in data
+    assert "total_proposal_contract_reporting_currency" in data
+    # Contract total (36 months subscription + 1x services) must be greater than annual total (12 months)
+    assert data["total_proposal_contract_reporting_currency"] > data["total_proposal_annual_reporting_currency"]
+    # Snapshot payload preserves both
+    payload = data["snapshot_payload"]
+    assert payload["contract_term_months"] == 36
+    assert payload["total_proposal_contract_reporting_currency"] == data["total_proposal_contract_reporting_currency"]

@@ -3,6 +3,14 @@ import { render, screen, within, fireEvent, waitFor } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom'
 import { RateCardPage } from '../features/ratecard/RateCardPage'
 
+import * as ratesApi from '../api/ratesApi'
+import * as catalogueApi from '../api/catalogueApi'
+import * as packsApi from '../api/packsApi'
+
+vi.mock('../api/ratesApi')
+vi.mock('../api/catalogueApi')
+vi.mock('../api/packsApi')
+
 function renderRateCardPage() {
   return render(
     <MemoryRouter initialEntries={['/rate-cards']}>
@@ -12,6 +20,24 @@ function renderRateCardPage() {
 }
 
 describe('Rate Card & Masters Feature Tests', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    ratesApi.getCountries.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getCustomerTiers.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getDeploymentModels.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getPricingModels.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getDeploymentPricingOptions.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getCurrencies.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getFxRates.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getServiceRates.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getRateCardVersions.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getActiveRateCardVersion.mockRejectedValue(new Error('Network Error'))
+    ratesApi.getRateCards.mockRejectedValue(new Error('Network Error'))
+    catalogueApi.getCatalogueFamilies.mockRejectedValue(new Error('Network Error'))
+    catalogueApi.getCatalogueProducts.mockRejectedValue(new Error('Network Error'))
+    catalogueApi.getCatalogueFeatures.mockRejectedValue(new Error('Network Error'))
+    packsApi.getPacks.mockRejectedValue(new Error('Network Error'))
+  })
   // 1. Rendering the three-column page and active navigation
   it('renders the top navigation, summary strip, and 3 desktop columns with active navigation', () => {
     renderRateCardPage()
@@ -100,7 +126,7 @@ describe('Rate Card & Masters Feature Tests', () => {
     fireEvent.change(pricingSelect, { target: { value: 'Platform Subscription' } })
 
     // Edit an input in Platform Subscription
-    const tier1PlatformFee = screen.getByLabelText(/Tier 1 Annual Platform Fee/i)
+    const tier1PlatformFee = screen.getByLabelText(/Talent Acquisition Growth Suite Tier 1 Platform Fee/i)
     fireEvent.change(tier1PlatformFee, { target: { value: '150000' } })
     expect(tier1PlatformFee.value).toBe('150000')
 
@@ -113,7 +139,7 @@ describe('Rate Card & Masters Feature Tests', () => {
 
     // 4. Switch back to Platform Subscription
     fireEvent.change(pricingSelect, { target: { value: 'Platform Subscription' } })
-    expect(screen.getByLabelText(/Tier 1 Annual Platform Fee/i).value).toBe('150000')
+    expect(screen.getByLabelText(/Talent Acquisition Growth Suite Tier 1 Platform Fee/i).value).toBe('150000')
   })
 
   // 6. Country and currency selection
@@ -166,9 +192,22 @@ describe('Rate Card & Masters Feature Tests', () => {
   it('allows removing and adding a pack rate row', async () => {
     renderRateCardPage()
 
-    // Remove pack rate
+    // Remove pack rate opens confirmation dialog
     const removeBtn = screen.getByRole('button', { name: /Remove Talent Acquisition Growth Suite rate/i })
     fireEvent.click(removeBtn)
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+
+    // Test Cancel path
+    const cancelBtn = within(dialog).getByRole('button', { name: /Cancel/i })
+    fireEvent.click(cancelBtn)
+    expect(screen.getByLabelText(/Talent Acquisition Growth Suite Tier 1 Rate/i)).toBeInTheDocument()
+
+    // Test Delete path
+    fireEvent.click(removeBtn)
+    const confirmBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /^Delete$/i })
+    fireEvent.click(confirmBtn)
 
     await waitFor(() => {
       expect(screen.queryByLabelText(/Talent Acquisition Growth Suite Tier 1 Rate/i)).not.toBeInTheDocument()
@@ -278,44 +317,44 @@ describe('Rate Card & Masters Feature Tests', () => {
     expect(within(rightPanel).getAllByText(/Pending backend calculation/i).length).toBeGreaterThan(0)
   })
 
-  // 12. Rejecting invalid negative rate inputs
-  it('flags negative rate inputs in Platform + Subscription', () => {
+  // 12. Removing Tier 1, Tier 2, and Tier 3 prototype cards and employee inputs
+  it('confirms the prototype Tier 1, Tier 2, and Tier 3 pricing cards and employee count inputs are removed', () => {
     renderRateCardPage()
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })
     fireEvent.change(pricingSelect, { target: { value: 'Platform Subscription' } })
 
-    const platformFeeInput = screen.getByLabelText(/Tier 1 Annual Platform Fee/i)
-    fireEvent.change(platformFeeInput, { target: { value: '-5000' } })
-
-    expect(screen.getByText(/Rate must be a valid non-negative number/i)).toBeInTheDocument()
+    // Tier 1, 2, 3 cards and their inputs must NOT exist
+    expect(screen.queryByLabelText(/Tier 1 Annual Platform Fee/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 2 Annual Platform Fee/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 3 Annual Platform Fee/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 1 Number of Employees/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 2 Number of Employees/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 3 Number of Employees/i)).not.toBeInTheDocument()
   })
 
-  // 13. Validating employee count
-  it('validates employee count as a non-negative whole number', () => {
+  // 13. Verifying dual-component rate matrix in Platform + Subscription
+  it('renders dual-component rate matrix for packs and features under Platform + Subscription', () => {
     renderRateCardPage()
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })
     fireEvent.change(pricingSelect, { target: { value: 'Platform Subscription' } })
 
-    const empCountInput = screen.getByLabelText(/Tier 1 Number of Employees/i)
-    fireEvent.change(empCountInput, { target: { value: '125.75' } })
-
-    expect(
-      screen.getByText(/Employee count must be a non-negative whole number/i),
-    ).toBeInTheDocument()
+    // Dual-component pack rate inputs
+    expect(screen.getByLabelText(/Talent Acquisition Growth Suite Tier 1 Platform Fee/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Talent Acquisition Growth Suite Tier 1 Subscription Rate/i)).toBeInTheDocument()
   })
 
-  // 14. Displaying pending backend-calculation outputs instead of locally calculated totals
-  it('displays pending backend calculation placeholders for annual subscription and total price without client math', () => {
+  // 14. Displaying legitimate formulas without fabricated client math
+  it('displays legitimate platform subscription formula without client math totals', () => {
     renderRateCardPage()
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })
     fireEvent.change(pricingSelect, { target: { value: 'Platform Subscription' } })
 
-    // Output fields must show 'Pending backend calculation'
-    const pendingBadges = screen.getAllByText('Pending backend calculation')
-    expect(pendingBadges.length).toBeGreaterThanOrEqual(6) // 2 outputs * 3 tiers = 6
+    // Formula banner is present
+    expect(screen.getByText(/Platform \+ Subscription Commercial Model/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/Contract Value = Platform Fee/i).length).toBeGreaterThan(0)
 
     // Confirm spreadsheet calculated totals are NOT fabricated in client
     expect(screen.queryByText('36,000,000')).not.toBeInTheDocument()

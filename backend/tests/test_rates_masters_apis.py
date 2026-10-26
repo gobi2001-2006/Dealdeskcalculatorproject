@@ -30,6 +30,7 @@ from app.models.master_data import (
     Currency,
     Country,
     DeploymentModel,
+    DeploymentPricingOption,
     PricingModel,
     CustomerTier,
     UnitOfMeasure,
@@ -88,6 +89,11 @@ def client():
 
     pm_pepm = PricingModel(code="pepm", name="Per Employee Per Month", status="active", has_unit_component=True)
     db.add(pm_pepm)
+    db.flush()
+
+    dpo1 = DeploymentPricingOption(deployment_model_id=dep_shared.id, pricing_model_id=pm_pepm.id)
+    dpo2 = DeploymentPricingOption(deployment_model_id=dep_private.id, pricing_model_id=pm_pepm.id)
+    db.add_all([dpo1, dpo2])
     db.flush()
 
     tier1 = CustomerTier(name="Tier 1 - Enterprise", employee_min=10000, default_multiplier=Decimal("1.0"), valid_from=date(2026, 1, 1), status="active")

@@ -132,12 +132,27 @@ def seed(db: Session) -> SeedIds:
         },
     )
 
-    for deployment, pricing in ((shared, pepm), (shared, platform_sub), (private, pepm), (private, platform_sub)):
+    license_amc = _get_or_create(
+        db, PricingModel, {"code": "license_amc"},
+        {
+            "name": "License Fee + AMC",
+            "has_fixed_component": True,
+            "has_unit_component": True,
+            "fixed_fee_basis": "annual",
+        },
+    )
+
+    for deployment, pricing in (
+        (shared, pepm),
+        (shared, platform_sub),
+        (private, pepm),
+        (private, platform_sub),
+        (on_prem, license_amc),
+    ):
         _get_or_create(
             db, DeploymentPricingOption,
             {"deployment_model_id": deployment.id, "pricing_model_id": pricing.id},
         )
-    del on_prem  # seeded as a master row only; its pricing options are an open business question
 
     tier = _get_or_create(
         db, CustomerTier, {"name": "DEV Tier 1"},

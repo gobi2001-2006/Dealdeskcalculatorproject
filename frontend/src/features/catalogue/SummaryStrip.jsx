@@ -41,33 +41,41 @@ export function SummaryStrip({
   return (
     <section
       aria-label="Commercial Master Summary"
-      className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2.5 shrink-0 shadow-2xs"
+      className="bg-white border-b border-slate-200 shrink-0 shadow-2xs"
     >
-      <div className="flex items-center justify-between overflow-x-auto gap-4 divide-x divide-slate-100">
-        {summaryItems.map((item, index) => (
-          <div
-            key={item.label}
-            className={`flex flex-col min-w-[110px] ${
-              index === 0 ? 'pr-4' : 'px-4'
-            }`}
-          >
-            <span className="text-[10px] uppercase font-semibold tracking-wider text-slate-400">
-              {item.label}
-            </span>
-            <span
-              className={`text-xs font-semibold mt-0.5 whitespace-nowrap ${
-                item.isGrand
-                  ? 'text-emerald-700 font-mono font-bold'
-                  : 'text-slate-800'
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 lg:gap-0 lg:divide-x lg:divide-slate-200/80">
+          {summaryItems.map((item, index) => (
+            <div
+              key={item.label}
+              className={`flex flex-col justify-center min-w-0 ${
+                index === 0
+                  ? 'lg:pr-4'
+                  : index === summaryItems.length - 1
+                  ? 'lg:pl-4'
+                  : 'lg:px-4'
               }`}
             >
-              {item.value}
-            </span>
-          </div>
-        ))}
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 truncate">
+                {item.label}
+              </span>
+              <span
+                title={String(item.value)}
+                className={`text-xs font-semibold mt-0.5 truncate ${
+                  item.isGrand
+                    ? 'text-emerald-700 font-mono font-bold'
+                    : 'text-slate-900'
+                }`}
+              >
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
 }
 
 export default SummaryStrip
+

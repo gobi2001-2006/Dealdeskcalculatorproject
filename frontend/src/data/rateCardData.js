@@ -216,6 +216,23 @@ export const INITIAL_PACK_RATES = [
     tier2Rate: '34',
     tier3Rate: '40',
   },
+  {
+    id: 'pr-ps-1',
+    packId: 'pack-ta-growth',
+    packCode: 'TA-GROWTH-01',
+    packName: 'Talent Acquisition Growth Suite',
+    familyId: 'fam-ta',
+    deploymentModel: 'Shared Cloud',
+    pricingModel: 'Platform Subscription',
+    pricingModelId: 2,
+    unitOfMeasure: 'Active Employees (with ESS)',
+    tier1Rate: '20',
+    tier2Rate: '25',
+    tier3Rate: '30',
+    fixed_tier1Rate: '100000',
+    fixed_tier2Rate: '120000',
+    fixed_tier3Rate: '150000',
+  },
 ]
 
 /**

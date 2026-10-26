@@ -40,7 +40,15 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.catalogue import Feature, Pack, PackItem, PackVersion, Product
-from app.models.master_data import Country, Currency, CustomerTier, FxRate, UnitOfMeasure
+from app.models.master_data import (
+    Country,
+    Currency,
+    CustomerTier,
+    DeploymentModel,
+    FxRate,
+    PricingModel,
+    UnitOfMeasure,
+)
 from app.models.proposals import (
     CalculationSnapshot,
     Proposal,
@@ -152,10 +160,17 @@ def resolve_rate_card(
         pricing_model_id=pricing_model_id,
     )
     if rate_card is None:
+        c_obj = db.get(Country, country_id) if country_id else None
+        d_obj = db.get(DeploymentModel, deployment_model_id) if deployment_model_id else None
+        p_obj = db.get(PricingModel, pricing_model_id) if pricing_model_id else None
+        t_obj = db.get(CustomerTier, tier_id) if tier_id else None
+        c_str = c_obj.name if c_obj else f"country_id={country_id}"
+        d_str = d_obj.name if d_obj else f"deployment_model_id={deployment_model_id}"
+        p_str = p_obj.name if p_obj else f"pricing_model_id={pricing_model_id}"
+        t_str = t_obj.name if t_obj else f"tier_id={tier_id}"
         raise MissingRateCardMatchError(
-            f"No rate card for rate_card_version_id={rate_card_version_id}, country_id={country_id}, "
-            f"deployment_model_id={deployment_model_id}, pricing_model_id={pricing_model_id}, "
-            f"tier_id={tier_id}, uom_id={uom_id}, pack_version_id={pack_version_id}, feature_id={feature_id}"
+            f"No saved rate card exists for {d_str} + {p_str} in {c_str} for {t_str}. "
+            "Configure the rate card before calculating the proposal."
         )
     return rate_card
 
@@ -178,6 +193,7 @@ class PricingCalculationEngine:
         product_service_discounts: Optional[Dict[str, Decimal]] = None,
         default_hours_per_day: Optional[Decimal] = None,
         user_id: Optional[int] = None,
+        contract_term_months: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Execute full server-side calculation and persist CalculationSnapshot.
 
@@ -192,6 +208,7 @@ class PricingCalculationEngine:
                 product_service_discounts=product_service_discounts,
                 default_hours_per_day=default_hours_per_day,
                 user_id=user_id,
+                contract_term_months=contract_term_months,
             )
         except Exception:
             self.db.rollback()
@@ -205,6 +222,7 @@ class PricingCalculationEngine:
         product_service_discounts: Optional[Dict[str, Decimal]],
         default_hours_per_day: Optional[Decimal],
         user_id: Optional[int],
+        contract_term_months: Optional[int] = None,
     ) -> Dict[str, Any]:
         # 1. Load proposal & active version
         proposal, version = self._load_proposal_and_version(proposal_id, version_id)
@@ -259,6 +277,7 @@ class PricingCalculationEngine:
                 deployment_model_id=deployment_model_id,
                 pricing_model_id=pricing_model_id,
                 persist_amounts=(version.status == "draft"),
+                contract_term_months=contract_term_months,
             )
             line_item_results.append(item_result)
 
@@ -327,6 +346,9 @@ class PricingCalculationEngine:
 
         product_results = []
         total_proposal_reporting = Decimal("0.00")
+        total_proposal_annual_reporting = Decimal("0.00")
+        total_proposal_contract_reporting = Decimal("0.00")
+        term_dec = Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
 
         for prod_key in sorted(all_product_keys):
             p_items = product_items_map.get(prod_key, [])
@@ -346,7 +368,17 @@ class PricingCalculationEngine:
             sub_discount_amt = quantize_currency(sub_subtotal_before_discount * (sub_discount_pct / Decimal("100.00")))
             sub_total_after_discount = sub_subtotal_before_discount - sub_discount_amt
 
-            # Service Subtotal — use _dec_ Decimal keys for arithmetic precision
+            # Full-Contract Subscription Subtotal
+            contract_sub_subtotal_before_discount = sum(
+                (item["_dec_contract_subscription_after_discount"] for item in p_items),
+                Decimal("0.00"),
+            )
+            contract_sub_discount_amt = quantize_currency(
+                contract_sub_subtotal_before_discount * (sub_discount_pct / Decimal("100.00"))
+            )
+            contract_sub_total_after_discount = contract_sub_subtotal_before_discount - contract_sub_discount_amt
+
+            # Service Subtotal — use _dec_ Decimal keys for arithmetic precision (one-time effort)
             serv_subtotal_before_discount = sum(
                 (Decimal(str(srv["service_line_total"])) for srv in p_services),
                 Decimal("0.00"),
@@ -360,8 +392,9 @@ class PricingCalculationEngine:
             serv_discount_amt = quantize_currency(serv_subtotal_before_discount * (serv_discount_pct / Decimal("100.00")))
             serv_total_after_discount = serv_subtotal_before_discount - serv_discount_amt
 
-            # Product Native Total
+            # Product Native Total (Annual & Contract)
             product_native_total = sub_total_after_discount + serv_total_after_discount
+            contract_product_native_total = contract_sub_total_after_discount + serv_total_after_discount
 
             # Native Currency - every amount in a product total must share one currency.
             native_curr_id = meta.get("native_currency_id") or reporting_currency_id
@@ -385,6 +418,7 @@ class PricingCalculationEngine:
             fx_rate_multiplier = fx["multiplier"]
             pair_str = fx["pair"]
             product_reporting_total = quantize_currency(product_native_total * fx_rate_multiplier)
+            contract_product_reporting_total = quantize_currency(contract_product_native_total * fx_rate_multiplier)
 
             product_results.append({
                 "product_id": meta.get("product_id"),
@@ -392,15 +426,20 @@ class PricingCalculationEngine:
                 "product_code": prod_key,
                 "native_currency_id": native_curr_id,
                 "native_currency_code": native_curr_code,
+                "contract_term_months": int(term_dec),
                 "subscription_subtotal_before_discount": float(sub_subtotal_before_discount),
                 "subscription_discount_pct": float(sub_discount_pct),
                 "subscription_discount_amount": float(sub_discount_amt),
                 "subscription_total_after_discount": float(sub_total_after_discount),
+                "contract_subscription_subtotal_before_discount": float(contract_sub_subtotal_before_discount),
+                "contract_subscription_discount_amount": float(contract_sub_discount_amt),
+                "contract_subscription_total_after_discount": float(contract_sub_total_after_discount),
                 "service_subtotal_before_discount": float(serv_subtotal_before_discount),
                 "service_discount_pct": float(serv_discount_pct),
                 "service_discount_amount": float(serv_discount_amt),
                 "service_total_after_discount": float(serv_total_after_discount),
                 "product_native_total": float(product_native_total),
+                "contract_product_native_total": float(contract_product_native_total),
                 "fx_rate_multiplier": float(fx_rate_multiplier),
                 "currency_pair": pair_str,
                 "fx_rate_id": fx["fx_rate_id"],
@@ -410,10 +449,13 @@ class PricingCalculationEngine:
                 "reporting_currency_id": reporting_currency_id,
                 "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
                 "product_reporting_total": float(product_reporting_total),
+                "contract_product_reporting_total": float(contract_product_reporting_total),
                 "line_items": p_items,
                 "service_lines": p_services,
             })
 
+            total_proposal_annual_reporting += product_reporting_total
+            total_proposal_contract_reporting += contract_product_reporting_total
             total_proposal_reporting += product_reporting_total
 
         # Strip internal _dec_ keys (Decimal) from dicts before JSON serialisation
@@ -439,14 +481,18 @@ class PricingCalculationEngine:
             "calculated_at": datetime.now(timezone.utc).isoformat(),
             "reporting_currency_id": reporting_currency_id,
             "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
+            "contract_term_months": int(term_dec),
             "pricing_context": {
                 "country_id": country_id,
                 "deployment_model_id": deployment_model_id,
                 "pricing_model_id": pricing_model_id,
                 "customer_tier_id": customer_tier_id,
+                "contract_term_months": int(term_dec),
                 "fx_convention": "1 unit of from_currency = rate units of to_currency",
             },
             "warnings": warnings,
+            "total_proposal_annual_reporting_currency": float(total_proposal_annual_reporting),
+            "total_proposal_contract_reporting_currency": float(total_proposal_contract_reporting),
             "total_proposal_reporting_currency": float(total_proposal_reporting),
             "products": serialisable_product_results,
             "all_subscription_line_items": [_strip_dec(li) for li in line_item_results],
@@ -471,6 +517,9 @@ class PricingCalculationEngine:
             "calculated_at": snapshot.calculated_at.isoformat() if snapshot.calculated_at else datetime.now(timezone.utc).isoformat(),
             "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
             "total_proposal_reporting_currency": float(total_proposal_reporting),
+            "contract_term_months": int(term_dec),
+            "total_proposal_annual_reporting_currency": float(total_proposal_annual_reporting),
+            "total_proposal_contract_reporting_currency": float(total_proposal_contract_reporting),
             "snapshot_payload": snapshot_payload,
         }
 
@@ -501,6 +550,9 @@ class PricingCalculationEngine:
             "calculated_at": snapshot.calculated_at.isoformat() if snapshot.calculated_at else None,
             "reporting_currency_code": reporting_curr_code,
             "total_proposal_reporting_currency": total_reporting,
+            "contract_term_months": snapshot.snapshot_payload.get("contract_term_months", 12),
+            "total_proposal_annual_reporting_currency": snapshot.snapshot_payload.get("total_proposal_annual_reporting_currency", total_reporting),
+            "total_proposal_contract_reporting_currency": snapshot.snapshot_payload.get("total_proposal_contract_reporting_currency", total_reporting),
             "snapshot_payload": snapshot.snapshot_payload,
         }
 
@@ -517,6 +569,7 @@ class PricingCalculationEngine:
         deployment_model_id: Optional[int] = None,
         pricing_model_id: Optional[int] = None,
         persist_amounts: bool = True,
+        contract_term_months: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Calculates a single subscription line item using the PDF formulas."""
         # Validate discount
@@ -576,11 +629,13 @@ class PricingCalculationEngine:
             pricing_model_id=pricing_model_id,
         )
         if rate_card is None:
+            c_name = self.db.get(Country, default_country_id).name if default_country_id and self.db.get(Country, default_country_id) else f"Country {default_country_id}"
+            d_name = self.db.get(DeploymentModel, deployment_model_id).name if deployment_model_id and self.db.get(DeploymentModel, deployment_model_id) else f"Deployment {deployment_model_id}"
+            p_name = self.db.get(PricingModel, pricing_model_id).name if pricing_model_id and self.db.get(PricingModel, pricing_model_id) else f"Pricing Model {pricing_model_id}"
+            t_name = self.db.get(CustomerTier, default_tier_id).name if default_tier_id and self.db.get(CustomerTier, default_tier_id) else f"Tier {default_tier_id}"
             raise MissingRateCardMatchError(
-                f"No matching rate card for '{target_name}' (line {item.line_number}): "
-                f"rate_card_version_id={rate_card_version_id}, country_id={default_country_id}, "
-                f"deployment_model_id={deployment_model_id}, pricing_model_id={pricing_model_id}, "
-                f"tier_id={default_tier_id}, uom_id={item.uom_id}"
+                f"No saved rate card exists for {d_name} + {p_name} in {c_name} for {t_name} ('{target_name}', line {item.line_number}). "
+                "Configure the rate card before calculating the proposal."
             )
 
         platform_fee = rate_card.fixed_fee or Decimal("0.00")
@@ -589,8 +644,10 @@ class PricingCalculationEngine:
         currency_code = rate_card.currency.code if rate_card.currency else str(currency_id)
 
         avg_monthly_volume = item.quantity or Decimal("0.00")
+        term_dec = Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
 
         # FORMULA (PDF Page 2 & 4):
+        # 1. Annual Figures (12-month period)
         # Annual Consumption Fee = Rate per Unit * Average Monthly Volume * 12
         annual_consumption_fee = quantize_currency(rate_per_unit * avg_monthly_volume * Decimal("12"))
 
@@ -604,6 +661,16 @@ class PricingCalculationEngine:
 
         # Item Subscription After Discount = Item Subscription Before Discount - Item Discount Amount
         subscription_after_discount = subscription_before_discount - item_discount_amount
+
+        # 2. Dynamic Contract-Period Figures (term_dec months)
+        # Contract Consumption Fee = Rate per Unit * Average Monthly Volume * Contract Months
+        contract_consumption_fee = quantize_currency(rate_per_unit * avg_monthly_volume * term_dec)
+        contract_platform_fee = quantize_currency(platform_fee * (term_dec / Decimal("12")))
+        contract_subscription_before_discount = quantize_currency(contract_platform_fee + contract_consumption_fee)
+        contract_discount_amount = quantize_currency(
+            contract_subscription_before_discount * (item_discount_pct / Decimal("100.00"))
+        )
+        contract_subscription_after_discount = contract_subscription_before_discount - contract_discount_amount
 
         # Refresh the cached amounts on the line (draft versions only; issued versions stay untouched).
         if persist_amounts:
@@ -633,6 +700,12 @@ class PricingCalculationEngine:
             "_dec_item_discount_pct": item_discount_pct,
             "_dec_item_discount_amount": item_discount_amount,
             "_dec_item_subscription_after_discount": subscription_after_discount,
+            "_dec_contract_term_months": term_dec,
+            "_dec_contract_consumption_fee": contract_consumption_fee,
+            "_dec_contract_platform_fee": contract_platform_fee,
+            "_dec_contract_subscription_before_discount": contract_subscription_before_discount,
+            "_dec_contract_discount_amount": contract_discount_amount,
+            "_dec_contract_subscription_after_discount": contract_subscription_after_discount,
             # Float fields (for JSON serialisation)
             "platform_fee": float(platform_fee),
             "rate_per_unit": float(rate_per_unit),
@@ -642,6 +715,12 @@ class PricingCalculationEngine:
             "item_discount_pct": float(item_discount_pct),
             "item_discount_amount": float(item_discount_amount),
             "item_subscription_after_discount": float(subscription_after_discount),
+            "contract_term_months": int(term_dec),
+            "contract_consumption_fee": float(contract_consumption_fee),
+            "contract_platform_fee": float(contract_platform_fee),
+            "contract_subscription_before_discount": float(contract_subscription_before_discount),
+            "contract_discount_amount": float(contract_discount_amount),
+            "contract_subscription_after_discount": float(contract_subscription_after_discount),
         }
 
     # -----------------------------------------------------------------------
@@ -861,6 +940,26 @@ class PricingCalculationEngine:
                 f"deployment_model_id={deployment_model_id}, pricing_model_id={pricing_model_id}). "
                 "Set the deployment model and pricing model on the proposal country to disambiguate."
             )
+
+        # Fallback: if exact UOM doesn't match, check if there's an exact unique rate card ignoring uom_id
+        fallback_stmt = select(RateCard).where(
+            RateCard.rate_card_version_id == rate_card_version_id,
+            RateCard.country_id == country_id,
+            RateCard.tier_id == tier_id,
+        )
+        if pack_version_id is not None:
+            fallback_stmt = fallback_stmt.where(RateCard.pack_version_id == pack_version_id)
+        else:
+            fallback_stmt = fallback_stmt.where(RateCard.feature_id == feature_id)
+        if deployment_model_id is not None:
+            fallback_stmt = fallback_stmt.where(RateCard.deployment_model_id == deployment_model_id)
+        if pricing_model_id is not None:
+            fallback_stmt = fallback_stmt.where(RateCard.pricing_model_id == pricing_model_id)
+
+        fallback_matches = self.db.scalars(fallback_stmt).all()
+        if len(fallback_matches) == 1:
+            return fallback_matches[0]
+
         return None
 
     # -----------------------------------------------------------------------

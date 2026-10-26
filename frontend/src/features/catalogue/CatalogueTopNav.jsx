@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ShieldCheck, User } from 'lucide-react'
 
-export function CatalogueTopNav({ activeSection = 'catalogue' }) {
+export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = true, isDemo = false }) {
   const NAV_ITEMS = [
     {
       label: 'Product Catalog',
@@ -108,15 +108,33 @@ export function CatalogueTopNav({ activeSection = 'catalogue' }) {
           </nav>
         </div>
 
-        {/* Right Section: DEMO DATA pill & Profile */}
+        {/* Right Section: Connection / DEMO DATA pill & Profile */}
         <div className="flex items-center gap-3">
-          <div
-            className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
-            title="Demonstration dataset — not connected to production database"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
-            <span>DEMO DATA</span>
-          </div>
+          {isDemo ? (
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
+              title="Demonstration dataset — not connected to production database"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
+              <span>DEMO DATA</span>
+            </div>
+          ) : isConnected ? (
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
+              title="Connected to PostgreSQL database"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
+              <span>POSTGRESQL LIVE</span>
+            </div>
+          ) : (
+            <div
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/80"
+              title="Disconnected from backend database"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" aria-hidden="true"></span>
+              <span>OFFLINE / DISCONNECTED</span>
+            </div>
+          )}
 
           <div className="flex items-center gap-2 pl-2 border-l border-slate-800 text-xs text-slate-300">
             <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">

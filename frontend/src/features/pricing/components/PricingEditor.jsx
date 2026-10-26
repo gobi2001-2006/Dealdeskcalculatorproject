@@ -17,6 +17,7 @@ import {
   Award,
   HeartHandshake,
   ShieldCheck,
+  CheckCircle2,
 } from 'lucide-react'
 import { INITIAL_PRODUCT_FAMILIES, INITIAL_PRODUCTS } from '../../../data/catalogueData'
 import { INITIAL_PACKS } from '../../../data/packsData'
@@ -40,6 +41,7 @@ export function PricingEditor({
   lineItemDiscounts = {},
   overallDiscounts = {},
   serviceDiscounts = {},
+  calculationSnapshot = null,
   onUpdateLineDiscount,
   onUpdateOverallDiscount,
   onUpdateServiceDiscount,
@@ -77,6 +79,72 @@ export function PricingEditor({
     value: '',
     reason: '',
   }
+
+  const snapshot = calculationSnapshot?.snapshot_payload || {}
+  const allSubLines = Array.isArray(snapshot.all_subscription_line_items)
+    ? snapshot.all_subscription_line_items
+    : []
+  const allServiceLines = Array.isArray(snapshot.all_service_lines)
+    ? snapshot.all_service_lines
+    : []
+  const snapshotProducts = Array.isArray(snapshot.products)
+    ? snapshot.products
+    : []
+
+  const findCalculatedLine = (targetPack, targetFeat) => {
+    if (!allSubLines.length) return null
+    if (targetPack) {
+      return (
+        allSubLines.find(
+          (li) =>
+            (targetPack.id && (String(li.pack_version_id) === String(targetPack.id) || String(li.pack_id) === String(targetPack.id))) ||
+            (targetPack.code && li.product_code === targetPack.code) ||
+            (targetPack.name && li.target_name?.includes(targetPack.name))
+        ) || null
+      )
+    }
+    if (targetFeat) {
+      return (
+        allSubLines.find(
+          (li) =>
+            (targetFeat.id && String(li.feature_id) === String(targetFeat.id)) ||
+            (targetFeat.code && li.product_code === targetFeat.code) ||
+            (targetFeat.name && li.target_name?.includes(targetFeat.name)) ||
+            (targetFeat.subItem && li.target_name?.includes(targetFeat.subItem)) ||
+            (targetFeat.solution && li.target_name?.includes(targetFeat.solution))
+        ) || null
+      )
+    }
+    return null
+  }
+
+  const countryGrossSubtotal =
+    snapshotProducts.length > 0
+      ? snapshotProducts.reduce(
+          (sum, p) =>
+            sum +
+            Number(
+              p.contract_subscription_subtotal_before_discount ??
+                p.subscription_subtotal_before_discount ??
+                0
+            ),
+          0
+        )
+      : null
+
+  const countryNetSubtotal =
+    snapshotProducts.length > 0
+      ? snapshotProducts.reduce(
+          (sum, p) =>
+            sum +
+            Number(
+              p.contract_subscription_total_after_discount ??
+                p.subscription_total_after_discount ??
+                0
+            ),
+          0
+        )
+      : null
 
   // Handle line discount value change with validation
   const handleLineDiscountValueChange = (itemKey, rawValue, type) => {
@@ -282,7 +350,21 @@ export function PricingEditor({
               }
             const FamilyIcon = ICON_MAP[familyMaster.iconName] || Package
             const pack = fam.selectedPackId
-              ? INITIAL_PACKS.find((p) => p.id === fam.selectedPackId)
+              ? INITIAL_PACKS.find((p) => p.id === fam.selectedPackId) ||
+                (() => {
+                  const line = allSubLines.find(
+                    (li) =>
+                      String(li.pack_version_id) === String(fam.selectedPackId) ||
+                      String(li.pack_id) === String(fam.selectedPackId)
+                  )
+                  return {
+                    id: fam.selectedPackId,
+                    name: line?.target_name || `Pack ${fam.selectedPackId}`,
+                    code: line?.product_code || `PACK-${fam.selectedPackId}`,
+                    color: '#F26522',
+                    productIds: [],
+                  }
+                })()
               : null
 
             // Included products in pack
@@ -374,7 +456,9 @@ export function PricingEditor({
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {/* 1. Base Pack Line Item */}
-                      {pack ? (
+                      {pack ? (() => {
+                        const calculatedPackItem = findCalculatedLine(pack, null)
+                        return (
                         <tr className="hover:bg-slate-50/60 transition-colors">
                           {/* Item Description */}
                           <td className="py-3 px-4">
@@ -397,12 +481,23 @@ export function PricingEditor({
 
                           {/* Unit Rate */}
                           <td className="py-3 px-3">
-                            <span
-                              className="text-[11px] font-mono text-slate-500 italic bg-slate-50 px-2 py-0.5 rounded border border-slate-100"
-                              title="Backend-owned calculation"
-                            >
-                              Pending backend calculation
-                            </span>
+                            {calculatedPackItem ? (
+                              <span className="text-[11px] font-mono text-slate-800 font-semibold">
+                                {countryConfig.currencySymbol} {Number(calculatedPackItem.rate_per_unit ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {calculatedPackItem.platform_fee > 0 && (
+                                  <span className="text-[10px] text-slate-500 font-normal block">
+                                    + {countryConfig.currencySymbol}{Number(calculatedPackItem.platform_fee).toLocaleString()} platform
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span
+                                className="text-[11px] font-mono text-slate-500 italic bg-slate-50 px-2 py-0.5 rounded border border-slate-100"
+                                title="Backend-owned calculation"
+                              >
+                                Pending backend calculation
+                              </span>
+                            )}
                           </td>
 
                           {/* Volume & Term */}
@@ -420,12 +515,18 @@ export function PricingEditor({
 
                           {/* Gross Amount */}
                           <td className="py-3 px-3">
-                            <span
-                              className="text-[11px] font-mono text-slate-500 italic"
-                              title="Backend-owned calculation"
-                            >
-                              Pending backend calculation
-                            </span>
+                            {calculatedPackItem ? (
+                              <span className="text-[11px] font-mono text-slate-800 font-semibold">
+                                {countryConfig.currencySymbol} {Number(calculatedPackItem.contract_subscription_before_discount ?? calculatedPackItem.item_subscription_before_discount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span
+                                className="text-[11px] font-mono text-slate-500 italic"
+                                title="Backend-owned calculation"
+                              >
+                                Pending backend calculation
+                              </span>
+                            )}
                           </td>
 
                           {/* Discount Input Controls */}
@@ -525,23 +626,37 @@ export function PricingEditor({
 
                           {/* Net Amount */}
                           <td className="py-3 px-3 text-right">
-                            <span
-                              className="text-[11px] font-mono text-slate-500 italic"
-                              title="Backend-owned calculation"
-                            >
-                              Pending backend calculation
-                            </span>
+                            {calculatedPackItem ? (
+                              <span className="text-[11px] font-mono text-emerald-700 font-bold">
+                                {countryConfig.currencySymbol} {Number(calculatedPackItem.contract_subscription_after_discount ?? calculatedPackItem.item_subscription_after_discount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            ) : (
+                              <span
+                                className="text-[11px] font-mono text-slate-500 italic"
+                                title="Backend-owned calculation"
+                              >
+                                Pending backend calculation
+                              </span>
+                            )}
                           </td>
 
                           {/* Status */}
                           <td className="py-3 px-3 text-center">
-                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                              <Clock className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
-                              <span>Pending</span>
-                            </span>
+                            {calculatedPackItem ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" aria-hidden="true" />
+                                <span>Calculated</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                <Clock className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
+                                <span>Pending</span>
+                              </span>
+                            )}
                           </td>
                         </tr>
-                      ) : (
+                        )
+                      })() : (
                         <tr>
                           <td colSpan={7} className="py-2.5 px-4 text-xs text-slate-400 italic">
                             No base pack selected for this family.
@@ -551,6 +666,7 @@ export function PricingEditor({
 
                       {/* 2. À la carte Feature Line Items */}
                       {alaCarteProducts.map((prod) => {
+                        const calculatedFeatItem = findCalculatedLine(null, prod)
                         const itemKey = `${countryConfig.id}:${fam.id}:feature:${prod.id}`
                         const disc = lineItemDiscounts[itemKey] || {
                           type: 'percentage',
@@ -578,9 +694,15 @@ export function PricingEditor({
 
                             {/* Unit Rate */}
                             <td className="py-2.5 px-3">
-                              <span className="text-[11px] font-mono text-slate-500 italic">
-                                Pending backend calculation
-                              </span>
+                              {calculatedFeatItem ? (
+                                <span className="text-[11px] font-mono text-slate-800 font-semibold">
+                                  {countryConfig.currencySymbol} {Number(calculatedFeatItem.rate_per_unit ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-mono text-slate-500 italic">
+                                  Pending backend calculation
+                                </span>
+                              )}
                             </td>
 
                             {/* Volume & Term */}
@@ -598,9 +720,15 @@ export function PricingEditor({
 
                             {/* Gross Amount */}
                             <td className="py-2.5 px-3">
-                              <span className="text-[11px] font-mono text-slate-500 italic">
-                                Pending backend calculation
-                              </span>
+                              {calculatedFeatItem ? (
+                                <span className="text-[11px] font-mono text-slate-800 font-semibold">
+                                  {countryConfig.currencySymbol} {Number(calculatedFeatItem.contract_subscription_before_discount ?? calculatedFeatItem.item_subscription_before_discount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-mono text-slate-500 italic">
+                                  Pending backend calculation
+                                </span>
+                              )}
                             </td>
 
                             {/* Discount Input */}
@@ -685,17 +813,30 @@ export function PricingEditor({
 
                             {/* Net Amount */}
                             <td className="py-2.5 px-3 text-right">
-                              <span className="text-[11px] font-mono text-slate-500 italic">
-                                Pending backend calculation
-                              </span>
+                              {calculatedFeatItem ? (
+                                <span className="text-[11px] font-mono text-emerald-700 font-bold">
+                                  {countryConfig.currencySymbol} {Number(calculatedFeatItem.contract_subscription_after_discount ?? calculatedFeatItem.item_subscription_after_discount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-mono text-slate-500 italic">
+                                  Pending backend calculation
+                                </span>
+                              )}
                             </td>
 
                             {/* Status */}
                             <td className="py-2.5 px-3 text-center">
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                                <Clock className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
-                                <span>Pending</span>
-                              </span>
+                              {calculatedFeatItem ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" aria-hidden="true" />
+                                  <span>Calculated</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                                  <Clock className="w-2.5 h-2.5 text-amber-600" aria-hidden="true" />
+                                  <span>Pending</span>
+                                </span>
+                              )}
                             </td>
                           </tr>
                         )
@@ -732,12 +873,18 @@ export function PricingEditor({
             <span className="text-[10px] uppercase font-semibold text-slate-500 block mb-0.5">
               Gross Software Subtotal ({countryConfig.currency})
             </span>
-            <span
-              className="text-xs font-mono text-slate-500 italic"
-              title="Awaiting backend calculation"
-            >
-              Pending backend calculation
-            </span>
+            {countryGrossSubtotal != null ? (
+              <span className="text-xs font-mono font-bold text-slate-800">
+                {countryConfig.currencySymbol} {Number(countryGrossSubtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            ) : (
+              <span
+                className="text-xs font-mono text-slate-500 italic"
+                title="Awaiting backend calculation"
+              >
+                Pending backend calculation
+              </span>
+            )}
           </div>
 
           {/* Overall Discount Input */}
@@ -784,12 +931,18 @@ export function PricingEditor({
             <span className="text-[10px] uppercase font-semibold text-slate-500 block mb-0.5">
               Net Software Subtotal ({countryConfig.currency})
             </span>
-            <span
-              className="text-xs font-mono font-bold text-slate-600 italic"
-              title="Calculated by backend pricing engine"
-            >
-              Pending backend calculation
-            </span>
+            {countryNetSubtotal != null ? (
+              <span className="text-xs font-mono font-bold text-emerald-700">
+                {countryConfig.currencySymbol} {Number(countryNetSubtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            ) : (
+              <span
+                className="text-xs font-mono font-bold text-slate-600 italic"
+                title="Calculated by backend pricing engine"
+              >
+                Pending backend calculation
+              </span>
+            )}
           </div>
         </div>
 
@@ -979,6 +1132,9 @@ export function PricingEditor({
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {(countryConfig.serviceLines || []).map((srv) => {
                   const srvDiscount = serviceDiscounts[srv.id] || { value: '' }
+                  const calculatedServiceItem = allServiceLines.find(
+                    (sl) => sl.role_name === srv.roleName || (srv.id && String(sl.id) === String(srv.id))
+                  )
 
                   return (
                     <tr key={srv.id} className="hover:bg-slate-50/60 transition-colors">
@@ -1011,8 +1167,16 @@ export function PricingEditor({
                           <span className="text-[10px] text-slate-400">%</span>
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-500 italic">
-                        Pending backend calculation
+                      <td className="py-2.5 px-3 text-right font-mono text-[11px]">
+                        {calculatedServiceItem ? (
+                          <span className="font-semibold text-slate-800">
+                            {countryConfig.currencySymbol} {Number(calculatedServiceItem.service_line_total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 italic">
+                            Pending backend calculation
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <button

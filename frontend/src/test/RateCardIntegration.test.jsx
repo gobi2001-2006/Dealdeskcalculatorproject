@@ -163,6 +163,18 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
         feature_id: null,
         unit_rate: 85.0,
       },
+      {
+        id: 2,
+        rate_card_version_id: 1,
+        country_id: 1,
+        deployment_model_id: 1,
+        pricing_model_id: 2,
+        tier_id: 1,
+        pack_version_id: 38,
+        feature_id: null,
+        unit_rate: 65.0,
+        fixed_fee: 120000.0,
+      },
     ])
 
     catalogueApi.getCatalogueFamilies.mockResolvedValue([
@@ -288,12 +300,28 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     const deleteBtn = screen.getByLabelText('Delete Integration Architect')
     fireEvent.click(deleteBtn)
 
+    // Confirm deletion dialog appears with Cancel and Delete
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByText(/Delete Service Rate/i)).toBeInTheDocument()
+
+    // Test Cancel path: clicking Cancel closes dialog without deleting
+    const cancelBtn = within(dialog).getByRole('button', { name: /Cancel/i })
+    fireEvent.click(cancelBtn)
+    expect(ratesApi.deleteServiceRate).not.toHaveBeenCalled()
+    expect(screen.getByText('Integration Architect')).toBeInTheDocument()
+
+    // Test Delete path: clicking Delete confirms deletion
+    fireEvent.click(deleteBtn)
+    const confirmBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /^Delete$/i })
+    fireEvent.click(confirmBtn)
+
     await waitFor(() => {
       expect(ratesApi.deleteServiceRate).toHaveBeenCalledWith(1)
     })
   })
 
-  it('persists pack rate row removal to PostgreSQL via deleteRateCardGroup API', async () => {
+  it('persists pack rate row removal to PostgreSQL via deleteRateCardGroup API with confirmation', async () => {
     ratesApi.deleteRateCardGroup.mockResolvedValue()
 
     render(
@@ -309,6 +337,21 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     // Click remove pack rate button
     const removeBtn = screen.getByLabelText('Remove DEV TA Premium rate')
     fireEvent.click(removeBtn)
+
+    // Confirm deletion dialog appears with Cancel and Delete
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(within(dialog).getByText(/Delete Pack Rate/i)).toBeInTheDocument()
+
+    // Test Cancel path: clicking Cancel closes dialog without deleting
+    const cancelBtn = within(dialog).getByRole('button', { name: /Cancel/i })
+    fireEvent.click(cancelBtn)
+    expect(ratesApi.deleteRateCardGroup).not.toHaveBeenCalled()
+
+    // Test Delete path: clicking Delete sends delete request
+    fireEvent.click(removeBtn)
+    const confirmBtn = within(screen.getByRole('dialog')).getByRole('button', { name: /^Delete$/i })
+    fireEvent.click(confirmBtn)
 
     await waitFor(() => {
       expect(ratesApi.deleteRateCardGroup).toHaveBeenCalledWith(
@@ -428,7 +471,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     })
   })
 
-  it('switches to Platform + Subscription and renders separate platform and subscription inputs', async () => {
+  it('switches to Platform + Subscription and renders dual-component rate matrix with Tier cards removed', async () => {
     render(
       <BrowserRouter>
         <RateCardPage />
@@ -446,14 +489,14 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
       expect(screen.getByRole('heading', { name: /Platform \+ Subscription Commercial Model/i })).toBeInTheDocument()
     })
 
-    // Check separate inputs
-    expect(screen.getByLabelText(/Tier 1 Annual Platform Fee/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Tier 1 Monthly Subscription Fee/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Tier 1 Number of Employees/i)).toBeInTheDocument()
+    // Confirms prototype cards are removed
+    expect(screen.queryByLabelText(/Tier 1 Annual Platform Fee/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 1 Monthly Subscription Fee/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Tier 1 Number of Employees/i)).not.toBeInTheDocument()
 
-    // Pending backend calculation indicators for calculated totals
-    expect(screen.getAllByText(/Pending backend calculation/i).length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/Proposal Configurator/i).length).toBeGreaterThanOrEqual(2)
+    // Confirms dual-component matrix inputs are rendered
+    expect(screen.getByLabelText(/DEV TA Premium Tier 1 Platform Fee/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/DEV TA Premium Tier 1 Subscription Rate/i)).toBeInTheDocument()
   })
 
   it('persists Platform + Subscription rate edits to backend upsertRateCard API', async () => {
@@ -476,7 +519,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
       expect(screen.getByRole('heading', { name: /Platform \+ Subscription Commercial Model/i })).toBeInTheDocument()
     })
 
-    const platformFeeInput = screen.getByLabelText(/Tier 1 Annual Platform Fee/i)
+    const platformFeeInput = screen.getByLabelText(/DEV TA Premium Tier 1 Platform Fee/i)
     fireEvent.change(platformFeeInput, { target: { value: '150000' } })
 
     await waitFor(() => {

@@ -17,37 +17,52 @@ export function AddPackRateModal({
   families = [],
   activeDeployment = 'Shared Cloud',
   activePricing = 'PEPM',
+  activeCurrencySymbol = '$',
   existingPackRates = [],
 }) {
   const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
 
-  // Filter available packs:
-  // If targetFamilyId is provided, narrow down to packs in that family
+  // Filter available packs by selected family
   const familyPacks = useMemo(() => {
     if (targetFamilyId && targetFamilyId !== 'all') {
       return packs.filter(
         (p) =>
           String(p.familyId) === String(targetFamilyId) ||
-          String(p.product_family_id) === String(targetFamilyId),
+          String(p.product_family_id) === String(targetFamilyId) ||
+          (Array.isArray(p.familyIds) && p.familyIds.some((fid) => String(fid) === String(targetFamilyId))),
       )
     }
     return packs
   }, [packs, targetFamilyId])
 
+  // Exclude packs that already have a configured rate row for this deployment and pricing model
   const availablePacks = useMemo(() => {
     return familyPacks.filter(
       (p) =>
         !existingPackRates.some(
           (r) =>
-            (r.packId === p.id || r.packId === p.packId) &&
-            r.deploymentModel === activeDeployment &&
-            r.pricingModel === activePricing,
+            (String(r.packId) === String(p.id) || String(r.packId) === String(p.packId)) &&
+            (r.deploymentModel === activeDeployment ||
+              String(r.deploymentModel).toLowerCase() === String(activeDeployment).toLowerCase()) &&
+            (r.pricingModel === activePricing ||
+              String(r.pricingModel).toLowerCase() === String(activePricing).toLowerCase()),
         ),
     )
   }, [familyPacks, existingPackRates, activeDeployment, activePricing])
 
+  const isLicenseAMC =
+    (activeDeployment?.toLowerCase().includes('premise') || false) ||
+    String(activePricing).toLowerCase().includes('amc') ||
+    String(activePricing).toLowerCase().includes('license')
+  const isPlatformSub = String(activePricing).toLowerCase().includes('platform')
+  const isDualComponent = isLicenseAMC || isPlatformSub
+
+  const fixedFeeLabel = isLicenseAMC ? 'Capex License Fee' : 'Platform Fee'
+  const unitRateLabel = isLicenseAMC ? 'Annual Maintenance (AMC)' : isPlatformSub ? 'Monthly Subscription' : 'PEPM Rate'
+
   const [selectedPackId, setSelectedPackId] = useState('')
   const [tierRates, setTierRates] = useState({})
+  const [fixedTierRates, setFixedTierRates] = useState({})
   const [uom, setUom] = useState('Active Employees (with ESS)')
   const [error, setError] = useState('')
 
@@ -60,12 +75,16 @@ export function AddPackRateModal({
     setTierRates((prev) => ({ ...prev, [tierId]: value }))
   }
 
+  const handleFixedTierRateChange = (tierId, value) => {
+    setFixedTierRates((prev) => ({ ...prev, [tierId]: value }))
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     setError('')
 
     if (!effectivePackId) {
-      setError('Please select a pack from Pack Builder.')
+      setError('Please select a valid pack from Pack Builder.')
       return
     }
 
@@ -79,27 +98,54 @@ export function AddPackRateModal({
           return
         }
       }
+      if (isDualComponent) {
+        const fVal = fixedTierRates[tier.id]
+        if (fVal !== undefined && fVal !== '' && fVal !== null) {
+          const fNum = parseFloat(fVal)
+          if (isNaN(fNum) || fNum < 0) {
+            setError(`${fixedFeeLabel} for ${tier.name || tier.code} must be a valid non-negative number.`)
+            return
+          }
+        }
+      }
     }
 
     const t1 = tierRates[tiersToRender[0]?.id] ?? ''
     const t2 = tierRates[tiersToRender[1]?.id] ?? ''
     const t3 = tierRates[tiersToRender[2]?.id] ?? ''
 
+    const ft1 = fixedTierRates[tiersToRender[0]?.id] ?? ''
+    const ft2 = fixedTierRates[tiersToRender[1]?.id] ?? ''
+    const ft3 = fixedTierRates[tiersToRender[2]?.id] ?? ''
+
+    const resolvedFamilyId =
+      activePack?.familyId ||
+      activePack?.product_family_id ||
+      activePack?.familyIds?.[0] ||
+      (targetFamilyId && targetFamilyId !== 'all' ? targetFamilyId : null) ||
+      (families.length > 0 ? families[0].id : 'all')
+
     onSave({
       packId: activePack?.id || effectivePackId,
       packCode: activePack?.code || 'PACK-SKU',
       packName: activePack?.name || 'Commercial Pack',
-      familyId: activePack?.familyId || activePack?.product_family_id || targetFamilyId || 'fam-ta',
+      familyId: resolvedFamilyId,
+      familyIds: activePack?.familyIds || (resolvedFamilyId !== 'all' ? [resolvedFamilyId] : []),
       deploymentModel: activeDeployment,
       pricingModel: activePricing,
       unitOfMeasure: uom,
       tierRates,
+      fixedTierRates,
       tier1Rate: String(t1).trim() || '0',
       tier2Rate: String(t2).trim() || '0',
       tier3Rate: String(t3).trim() || '0',
+      fixed_tier1Rate: String(ft1).trim() || '0',
+      fixed_tier2Rate: String(ft2).trim() || '0',
+      fixed_tier3Rate: String(ft3).trim() || '0',
     })
 
     setTierRates({})
+    setFixedTierRates({})
     setError('')
     onClose()
   }
@@ -152,7 +198,25 @@ export function AddPackRateModal({
             <label htmlFor="pack-select" className="block text-xs font-semibold text-slate-700 mb-1">
               Select Pack (from Pack Builder) <span className="text-rose-500">*</span>
             </label>
-            {availablePacks.length > 0 ? (
+            {familyPacks.length === 0 ? (
+              <div className="p-4 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 space-y-1.5">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>No Saved Packs in Pack Builder</span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  No saved packs exist for {targetFamilyObj?.name || 'this product family'} in Page 2 — Pack Builder. Please build and save a pack first before configuring its rates.
+                </p>
+                <div className="pt-1">
+                  <a
+                    href="/packs"
+                    className="inline-flex items-center gap-1 font-semibold text-orange-600 hover:text-orange-700 underline text-xs"
+                  >
+                    Go to Pack Builder &rarr;
+                  </a>
+                </div>
+              </div>
+            ) : availablePacks.length > 0 ? (
               <select
                 id="pack-select"
                 value={effectivePackId}
@@ -170,14 +234,17 @@ export function AddPackRateModal({
                 })}
               </select>
             ) : (
-              <div className="p-3 text-xs rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
-                All existing packs already have rates configured for {activeDeployment} / {activePricing}.
+              <div className="p-4 text-xs rounded-lg bg-slate-50 text-slate-700 border border-slate-200 space-y-1">
+                <div className="font-semibold text-slate-900">All Packs Configured</div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  All {familyPacks.length} saved packs in {targetFamilyObj?.name || 'this family'} already have rates configured for {activeDeployment} / {activePricing}. You can edit their tier rates directly in the rate matrix table.
+                </p>
               </div>
             )}
           </div>
 
           {/* Active pack bundled items preview */}
-          {activePack?.items && activePack.items.length > 0 && (
+          {activePack?.items && activePack.items.length > 0 && availablePacks.length > 0 && (
             <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                 Configured Features in {activePack.name}:
@@ -206,44 +273,90 @@ export function AddPackRateModal({
 
           <div>
             <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
-              Unit of Measure
+              Unit of Measure {String(activePricing).toLowerCase().includes('pepm') && <span className="text-slate-400 font-normal">(Locked to Active Employees (with ESS) for PEPM)</span>}
             </label>
             <input
               id="uom-input"
               type="text"
-              value={uom}
+              value={String(activePricing).toLowerCase().includes('pepm') ? 'Active Employees (with ESS)' : uom}
               onChange={(e) => setUom(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              disabled={String(activePricing).toLowerCase().includes('pepm')}
+              readOnly={String(activePricing).toLowerCase().includes('pepm')}
+              className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
+                String(activePricing).toLowerCase().includes('pepm')
+                  ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed font-medium'
+                  : 'bg-white border-slate-300'
+              }`}
             />
           </div>
 
           {/* Dynamic Tiers Grid */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Configured Customer Tier Rates
+              Configured Customer Tier Rates ({activeCurrencySymbol})
             </label>
             <div className={`grid gap-3 ${tiersToRender.length <= 2 ? 'grid-cols-2' : tiersToRender.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
               {tiersToRender.map((tier) => (
-                <div key={tier.id}>
-                  <label
-                    htmlFor={`tier-input-${tier.id}`}
-                    className="block text-[11px] font-medium text-slate-600 mb-1 truncate"
+                <div key={tier.id} className="space-y-2">
+                  <span
+                    className="block text-[11px] font-bold text-slate-700 truncate"
                     title={tier.name || tier.code}
                   >
                     {tier.name && tier.name !== tier.code
                       ? `${tier.code} (${tier.name})`
                       : tier.code || tier.name}
-                  </label>
-                  <input
-                    id={`tier-input-${tier.id}`}
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={tierRates[tier.id] ?? ''}
-                    onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
-                    placeholder="Rate"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
-                  />
+                  </span>
+
+                  {isDualComponent && (
+                    <div>
+                      <label
+                        htmlFor={`fixed-input-${tier.id}`}
+                        className="block text-[10px] font-medium text-amber-700 mb-0.5"
+                      >
+                        {fixedFeeLabel}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-2 text-[10px] font-mono text-amber-600">
+                          {activeCurrencySymbol}
+                        </span>
+                        <input
+                          id={`fixed-input-${tier.id}`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={fixedTierRates[tier.id] ?? ''}
+                          onChange={(e) => handleFixedTierRateChange(tier.id, e.target.value)}
+                          placeholder="0.00"
+                          className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono bg-amber-50/20"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label
+                      htmlFor={`tier-input-${tier.id}`}
+                      className="block text-[10px] font-medium text-slate-600 mb-0.5"
+                    >
+                      {isDualComponent ? unitRateLabel : 'Rate'}
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-2 text-[10px] font-mono text-slate-400">
+                        {activeCurrencySymbol}
+                      </span>
+                      <input
+                        id={`tier-input-${tier.id}`}
+                        type="number"
+                        min="0"
+                        step="any"
+                        aria-label={`${tier.code || `Tier ${tier.id}`} (${tier.name || 'Tier'})`}
+                        value={tierRates[tier.id] ?? ''}
+                        onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
+                        placeholder="0.00"
+                        className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

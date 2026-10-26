@@ -30,6 +30,11 @@ export async function createCustomer(payload) {
   return res.data
 }
 
+export async function updateCustomer(customerId, payload) {
+  const res = await apiClient.patch(`/customers/${customerId}`, payload)
+  return res.data
+}
+
 // ============================================================================
 // Deal Management APIs
 // ============================================================================
@@ -208,12 +213,15 @@ export async function saveFullProposal({
     const match = existingCustomers.find(
       (c) => c.name.toLowerCase() === clientInfo.clientName.trim().toLowerCase()
     )
+    const primaryTierId = resolveNumericId(countryConfigs[0]?.pricingTierId, 1)
     if (match) {
       customerId = match.id
+      if (primaryTierId && match.customer_tier_id !== primaryTierId) {
+        await updateCustomer(customerId, { customer_tier_id: primaryTierId }).catch(() => {})
+      }
     } else {
       // Pick primary country ID for customer
       const primaryCountryId = resolveCountryId(countryConfigs[0]?.countryId)
-      const primaryTierId = resolveNumericId(countryConfigs[0]?.pricingTierId, 1)
       const createdCust = await createCustomer({
         code: `CUST-${Date.now().toString().slice(-6)}`,
         name: clientInfo.clientName.trim(),
@@ -285,20 +293,52 @@ export async function saveFullProposal({
       code: clientInfo.proposalCode || undefined,
     })
   } else {
-    // Create new proposal header (which creates initial draft version 1)
-    const proposalCode =
-      clientInfo.proposalCode ||
-      clientInfo.dealCode?.replace('DEAL', 'PROP') ||
-      `PROP-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`
+    // Determine proposal code
+    let proposalCode = clientInfo.proposalCode?.trim()
+    if (!proposalCode) {
+      const baseCode = clientInfo.dealCode
+        ? clientInfo.dealCode.replace('DEAL', 'PROP')
+        : 'PROP'
+      proposalCode = `${baseCode}-${Date.now().toString().slice(-4)}`
+    }
 
-    proposalRecord = await createProposal({
-      code: proposalCode,
-      deal_id: dealId,
-      customer_id: customerId,
-      currency_id: currencyId,
-      created_by_user_id: userId,
-      status: 'draft',
-    })
+    try {
+      proposalRecord = await createProposal({
+        code: proposalCode,
+        deal_id: dealId,
+        customer_id: customerId,
+        currency_id: currencyId,
+        created_by_user_id: userId,
+        status: 'draft',
+      })
+    } catch (createErr) {
+      if (createErr.response?.status === 409) {
+        // If code conflict occurs, try finding the existing proposal with that code or append unique suffix
+        const existingList = await listProposals({ search: proposalCode }).catch(() => [])
+        const exactMatch = existingList.find((p) => p.code === proposalCode)
+        if (exactMatch) {
+          proposalRecord = exactMatch
+          await updateProposal(exactMatch.id, {
+            deal_id: dealId,
+            customer_id: customerId,
+            currency_id: currencyId,
+          }).catch(() => {})
+        } else {
+          // Retry with guaranteed unique timestamp code
+          const uniqueCode = `PROP-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`
+          proposalRecord = await createProposal({
+            code: uniqueCode,
+            deal_id: dealId,
+            customer_id: customerId,
+            currency_id: currencyId,
+            created_by_user_id: userId,
+            status: 'draft',
+          })
+        }
+      } else {
+        throw createErr
+      }
+    }
   }
 
   const proposalId = proposalRecord.id
@@ -311,14 +351,20 @@ export async function saveFullProposal({
     const cfg = countryConfigs[i]
     const numericCountryId = resolveCountryId(cfg.countryId)
     if (!existingCountryIds.has(numericCountryId)) {
-      await addProposalCountry(proposalId, {
-        country_id: numericCountryId,
-        deployment_model_id: resolveNumericId(cfg.deploymentModelId, 1),
-        pricing_model_id: resolveNumericId(cfg.pricingModelId, 1),
-        user_headcount: Number(cfg.headcount) || 0,
-        is_primary_deployment: i === 0,
-      })
-      existingCountryIds.add(numericCountryId)
+      try {
+        await addProposalCountry(proposalId, {
+          country_id: numericCountryId,
+          deployment_model_id: resolveNumericId(cfg.deploymentModelId, 1),
+          pricing_model_id: resolveNumericId(cfg.pricingModelId, 1),
+          user_headcount: Number(cfg.headcount) || 0,
+          is_primary_deployment: i === 0,
+        })
+        existingCountryIds.add(numericCountryId)
+      } catch (countryErr) {
+        if (countryErr.response?.status !== 409) {
+          throw countryErr
+        }
+      }
     }
   }
 
@@ -342,14 +388,20 @@ export async function saveFullProposal({
       if (fam.selectedPackId) {
         const packVerId = resolveNumericId(fam.selectedPackId, 1)
         if (!existingPackVersionIds.has(packVerId)) {
-          await addProposalLineItem(proposalId, {
-            pack_version_id: packVerId,
-            feature_id: null,
-            uom_id: 1, // Default Employee UOM
-            quantity: Number(country.headcount) || 1,
-            discount_pct: null,
-          })
-          existingPackVersionIds.add(packVerId)
+          try {
+            await addProposalLineItem(proposalId, {
+              pack_version_id: packVerId,
+              feature_id: null,
+              uom_id: 1, // Default Employee UOM
+              quantity: Number(country.headcount) || 1,
+              discount_pct: null,
+            })
+            existingPackVersionIds.add(packVerId)
+          } catch (packErr) {
+            if (packErr.response?.status !== 409) {
+              throw packErr
+            }
+          }
         }
       }
 
@@ -358,14 +410,22 @@ export async function saveFullProposal({
         for (const featId of fam.selectedFeatureIds) {
           const numFeatId = resolveNumericId(featId, null)
           if (numFeatId && !existingFeatureIds.has(numFeatId)) {
-            await addProposalLineItem(proposalId, {
-              pack_version_id: null,
-              feature_id: numFeatId,
-              uom_id: 1,
-              quantity: Number(country.headcount) || 1,
-              discount_pct: null,
-            })
-            existingFeatureIds.add(numFeatId)
+            try {
+              const featureEmp =
+                Number(fam.featureHeadcounts?.[featId] ?? fam.headcount ?? country.headcount) || 1
+              await addProposalLineItem(proposalId, {
+                pack_version_id: null,
+                feature_id: numFeatId,
+                uom_id: 1,
+                quantity: featureEmp,
+                discount_pct: null,
+              })
+              existingFeatureIds.add(numFeatId)
+            } catch (featErr) {
+              if (featErr.response?.status !== 409) {
+                throw featErr
+              }
+            }
           }
         }
       }
@@ -381,14 +441,20 @@ export async function saveFullProposal({
     for (const srv of country.serviceLines || []) {
       const roleKey = srv.roleName.trim().toLowerCase()
       if (!existingServiceRoleNames.has(roleKey)) {
-        await addProposalServiceLine(proposalId, {
-          service_rate_id: srv.serviceRateId ? Number(srv.serviceRateId) : null,
-          role_name: srv.roleName.trim(),
-          days_or_hours: Number(srv.hoursOrDays) || 1,
-          rate_applied: 0, // Server resolves rate from master
-          discount_pct: null, // Individual service line discount not allowed
-        })
-        existingServiceRoleNames.add(roleKey)
+        try {
+          await addProposalServiceLine(proposalId, {
+            service_rate_id: srv.serviceRateId ? Number(srv.serviceRateId) : null,
+            role_name: srv.roleName.trim(),
+            days_or_hours: Number(srv.hoursOrDays) || 1,
+            rate_applied: 0, // Server resolves rate from master
+            discount_pct: null, // Individual service line discount not allowed
+          })
+          existingServiceRoleNames.add(roleKey)
+        } catch (srvErr) {
+          if (srvErr.response?.status !== 409) {
+            throw srvErr
+          }
+        }
       }
     }
   }
@@ -426,10 +492,13 @@ export async function requestProposalCalculation({
       activeProposalId = saveRes.proposalId
     }
 
+    const primaryTerm = Number(countryConfigs?.[0]?.contractTerm) || 12
+
     // Call the authoritative backend calculation engine
     const calculationResult = await calculateProposal(activeProposalId, {
       product_subscription_discounts: discounts.product_subscription_discounts || {},
       product_service_discounts: discounts.product_service_discounts || {},
+      contract_term_months: primaryTerm,
     })
 
     return {

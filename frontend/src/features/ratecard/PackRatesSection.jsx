@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Package, Plus, Trash2, Info } from 'lucide-react'
 
 const DEFAULT_TIERS = [
@@ -12,7 +13,8 @@ export function PackRatesSection({
   packs = [],
   pricingTiers = DEFAULT_TIERS,
   activeDeployment = 'Shared Cloud',
-  activeCurrencySymbol = '₹',
+  activePricingModel = null,
+  activeCurrencySymbol = '$',
   isVersionLocked = false,
   isDualComponent = false,
   onUpdateRate,
@@ -22,19 +24,56 @@ export function PackRatesSection({
   const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
   const familyName = family?.name || 'Product Family'
 
-  // Build summary line from the packs belonging to this family
+  // Filter to only packs that have actual available/entered rates
+  const configuredPackRates = useMemo(() => {
+    const hasVal = (v) => v !== undefined && v !== null && String(v).trim() !== '' && !isNaN(Number(v))
+    return packRates.filter((r) => {
+      if (!r) return false
+      return Boolean(
+        hasVal(r.tier1Rate) ||
+          hasVal(r.tier2Rate) ||
+          hasVal(r.tier3Rate) ||
+          hasVal(r.tier_1) ||
+          hasVal(r.tier_2) ||
+          hasVal(r.tier_3) ||
+          hasVal(r.fixed_tier1Rate) ||
+          hasVal(r.fixed_tier2Rate) ||
+          hasVal(r.fixed_tier3Rate) ||
+          hasVal(r.fixed_tier_1) ||
+          hasVal(r.fixed_tier_2) ||
+          hasVal(r.fixed_tier_3) ||
+          hasVal(r.unit_rate) ||
+          hasVal(r.fixed_fee) ||
+          (pricingTiers &&
+            pricingTiers.some(
+              (t) =>
+                hasVal(r[t.id]) ||
+                hasVal(r[`tier_${t.id}`]) ||
+                hasVal(r[`tier${t.id}Rate`]) ||
+                hasVal(r[`fixed_tier_${t.id}`]) ||
+                hasVal(r[`fixed_${t.id}Rate`]),
+            )),
+      )
+    })
+  }, [packRates, pricingTiers])
+
+  // Build summary line from the packs belonging to this family that are configured
   const packSummaryText =
-    packs.length > 0
-      ? packs
-          .map((p) => {
-            const featNames =
-              p.items && p.items.length > 0
-                ? p.items.map((it) => it.name || it.feature?.name).filter(Boolean).join(', ')
-                : 'Core Suite'
-            return `${p.name} (${p.code}) — ${featNames}`
-          })
+    configuredPackRates.length > 0
+      ? configuredPackRates
+          .map((p) => `${p.packName} (${p.packCode})`)
           .join(' • ')
-      : `No packs configured in Pack Builder for ${familyName}`
+      : `No packs configured for ${familyName}`
+
+  const isLicenseAMC =
+    (activeDeployment?.toLowerCase().includes('premise') || false) ||
+    (activePricingModel?.code || '').toLowerCase().includes('amc') ||
+    (activePricingModel?.name || '').toLowerCase().includes('amc') ||
+    (activePricingModel?.code || '').toLowerCase().includes('license') ||
+    (activePricingModel?.name || '').toLowerCase().includes('license')
+
+  const fixedFeeLabel = isLicenseAMC ? 'Capex License Fee' : 'Platform Fee'
+  const unitRateLabel = isLicenseAMC ? 'AMC Rate' : isDualComponent ? 'Subscription Rate' : 'PEPM'
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
@@ -50,7 +89,7 @@ export function PackRatesSection({
                 {familyName} — Pack Rates
               </h3>
               <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-medium bg-slate-100 text-slate-600">
-                {packRates.length} configured
+                {configuredPackRates.length} configured
               </span>
               {isVersionLocked && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
@@ -59,7 +98,7 @@ export function PackRatesSection({
               )}
             </div>
             <p className="text-[11px] text-slate-500">
-              Commercial multi-product bundles from Pack Builder • Recurring per employee per month
+              Commercial multi-product bundles from Pack Builder • {isDualComponent ? `${fixedFeeLabel} (Fixed) + ${unitRateLabel} (Unit)` : 'Recurring per employee per month'}
             </p>
           </div>
         </div>
@@ -82,19 +121,21 @@ export function PackRatesSection({
         <span className="font-mono text-[11px] text-slate-600">{packSummaryText}</span>
       </div>
 
-      {/* PEPM Formula Banner */}
+      {/* Formula Banner */}
       <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 text-[11px] text-sky-900 flex items-center gap-2">
         <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
         <div>
-          <span className="font-semibold text-sky-950">PEPM Formula: </span>
+          <span className="font-semibold text-sky-950">Pricing Structure: </span>
           <code className="bg-sky-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-sky-900">
-            Rate per Active Employee (with ESS) per month × headcount × term months = Full Contract Value
+            {isDualComponent
+              ? `Contract Value = ${fixedFeeLabel} (Fixed) + ${unitRateLabel} × Volume × Term`
+              : 'Rate per Active Employee (with ESS) per month × headcount × term months = Full Contract Value'}
           </code>
         </div>
       </div>
 
       {/* Table / List */}
-      {packRates.length > 0 ? (
+      {configuredPackRates.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -104,10 +145,10 @@ export function PackRatesSection({
                 {isDualComponent &&
                   tiersToRender.map((tier, idx) => (
                     <th
-                      key={`license-${tier.id}`}
+                      key={`fixed-${tier.id}`}
                       className="py-2.5 px-3 font-semibold text-right whitespace-nowrap min-w-[110px] bg-amber-50/70 text-amber-900 border-l border-amber-200/70"
                     >
-                      {tier.code || `Tier ${idx + 1}`} License Fee
+                      {tier.code || `Tier ${idx + 1}`} {fixedFeeLabel}
                     </th>
                   ))}
                 {tiersToRender.map((tier, idx) => (
@@ -118,7 +159,7 @@ export function PackRatesSection({
                     }`}
                   >
                     {isDualComponent
-                      ? `${tier.code || `Tier ${idx + 1}`} PEPM`
+                      ? `${tier.code || `Tier ${idx + 1}`} ${unitRateLabel}`
                       : tier.name && tier.name !== tier.code
                       ? `${tier.code || `Tier ${idx + 1}`} (${tier.name})`
                       : tier.code || tier.name || `Tier ${idx + 1}`}
@@ -130,7 +171,7 @@ export function PackRatesSection({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {packRates.map((rate) => {
+              {configuredPackRates.map((rate) => {
                 const packObj = packs.find(
                   (p) =>
                     p.id === rate.packId ||
@@ -200,7 +241,7 @@ export function PackRatesSection({
                       </span>
                     </td>
 
-                    {/* Dual Component: 1. One-time License Fee */}
+                    {/* Dual Component: 1. Fixed Fee (Platform / License) */}
                     {isDualComponent &&
                       tiersToRender.map((tier, idx) => {
                         const fixedKey = `fixed_tier_${tier.id}`
@@ -224,7 +265,7 @@ export function PackRatesSection({
                                 min="0"
                                 step="any"
                                 disabled={isVersionLocked}
-                                aria-label={`${rate.packName} ${tier.code || `Tier ${idx + 1}`} License Fee`}
+                                aria-label={`${rate.packName} ${tier.code || `Tier ${idx + 1}`} ${fixedFeeLabel}`}
                                 value={fixedVal}
                                 onChange={(e) =>
                                   onUpdateRate(rate.id, fixedKey, e.target.value)
@@ -237,7 +278,7 @@ export function PackRatesSection({
                         )
                       })}
 
-                    {/* Dynamic Tier Inputs (PEPM) */}
+                    {/* Dynamic Tier Inputs (Unit Rate / PEPM / AMC) */}
                     {tiersToRender.map((tier, idx) => {
                       const fieldKey =
                         tier.id === 'tier-1' || tier.id === 1
@@ -271,7 +312,7 @@ export function PackRatesSection({
                               min="0"
                               step="any"
                               disabled={isVersionLocked}
-                              aria-label={`${rate.packName} ${tier.code || `Tier ${idx + 1}`} Rate`}
+                              aria-label={`${rate.packName} ${tier.code || `Tier ${idx + 1}`} ${isDualComponent ? unitRateLabel : 'Rate'}`}
                               value={val}
                               onChange={(e) =>
                                 onUpdateRate(rate.id, fieldKey, e.target.value)

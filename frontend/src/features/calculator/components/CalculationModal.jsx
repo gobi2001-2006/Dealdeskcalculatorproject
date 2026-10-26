@@ -22,7 +22,25 @@ export function CalculationModal({
 
   const calcData = apiResult?.data || {}
   const snapshot = calcData.snapshot_payload || {}
-  const products = snapshot.products || []
+  const rawProducts = snapshot.products || []
+  const products = Array.isArray(rawProducts)
+    ? rawProducts
+    : typeof rawProducts === 'object'
+    ? Object.entries(rawProducts).map(([key, val]) => ({
+        product_name: val.product_name || key,
+        product_code: val.product_code || key,
+        reporting_currency_code: val.reporting_currency_code || calcData.reporting_currency_code || 'USD',
+        product_reporting_total: val.product_reporting_total || val.subscription_total_net || val.subscription_total_after_discount || 0,
+        native_currency_code: val.native_currency_code || calcData.reporting_currency_code || 'USD',
+        product_native_total: val.product_native_total || val.subscription_total_net || 0,
+        subscription_subtotal_before_discount: val.subscription_subtotal_before_discount || val.subscription_total_base || 0,
+        subscription_total_after_discount: val.subscription_total_after_discount || val.subscription_total_net || 0,
+        service_subtotal_before_discount: val.service_subtotal_before_discount || val.services_total_base || 0,
+        service_total_after_discount: val.service_total_after_discount || val.services_total_net || 0,
+        fx_rate_multiplier: val.fx_rate_multiplier || 1,
+        line_items: val.line_items || [],
+      }))
+    : []
 
   return (
     <div
@@ -102,11 +120,20 @@ export function CalculationModal({
                   </div>
                   <div className="text-2xl font-black font-mono tracking-tight mt-0.5">
                     {calcData.reporting_currency_code}{' '}
-                    {Number(calcData.total_proposal_reporting_currency).toLocaleString(undefined, {
+                    {Number(calcData.total_proposal_contract_reporting_currency ?? calcData.total_proposal_reporting_currency).toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
                   </div>
+                  {calcData.contract_term_months && calcData.contract_term_months !== 12 && (
+                    <div className="text-[11px] text-orange-200 font-mono mt-0.5">
+                      Full Contract ({calcData.contract_term_months} Mo) | Annual ARR: {calcData.reporting_currency_code}{' '}
+                      {Number(calcData.total_proposal_annual_reporting_currency ?? calcData.total_proposal_reporting_currency).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </div>
+                  )}
                   <div className="text-[11px] text-slate-300 mt-1 flex items-center gap-2">
                     <span>Audit Snapshot #{calcData.snapshot_id}</span>
                     <span>•</span>
@@ -211,13 +238,13 @@ export function CalculationModal({
                               <tbody className="divide-y divide-slate-100 bg-white">
                                 {prod.line_items.map((li, lIdx) => (
                                   <tr key={lIdx}>
-                                    <td className="py-1 px-2 font-mono">{li.target_name || `Line ${li.line_number}`}</td>
-                                    <td className="py-1 px-2 font-mono">{li.average_monthly_volume}</td>
-                                    <td className="py-1 px-2 text-right font-mono">{Number(li.rate_per_unit).toFixed(2)}</td>
-                                    <td className="py-1 px-2 text-right font-mono">{Number(li.annual_consumption_fee).toLocaleString()}</td>
-                                    <td className="py-1 px-2 text-right font-mono">{Number(li.platform_fee).toLocaleString()}</td>
+                                    <td className="py-1 px-2 font-mono">{li.target_name || li.item_name || `Line ${li.line_number || lIdx + 1}`}</td>
+                                    <td className="py-1 px-2 font-mono">{li.average_monthly_volume ?? li.quantity ?? '—'}</td>
+                                    <td className="py-1 px-2 text-right font-mono">{Number(li.rate_per_unit ?? li.base_unit_rate ?? 0).toFixed(2)}</td>
+                                    <td className="py-1 px-2 text-right font-mono">{Number(li.annual_consumption_fee ?? li.total_base ?? 0).toLocaleString()}</td>
+                                    <td className="py-1 px-2 text-right font-mono">{Number(li.platform_fee ?? 0).toLocaleString()}</td>
                                     <td className="py-1 px-2 text-right font-mono font-bold text-slate-900">
-                                      {Number(li.item_subscription_after_discount).toLocaleString()}
+                                      {Number(li.item_subscription_after_discount ?? li.total_base ?? 0).toLocaleString()}
                                     </td>
                                   </tr>
                                 ))}

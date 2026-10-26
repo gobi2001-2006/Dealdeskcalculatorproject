@@ -141,6 +141,15 @@ export async function getActiveRateCardVersion() {
   return res.data
 }
 
+/**
+ * Resolves the applicable commercial rate-card entry for the six pricing dimensions:
+ * POST /api/rates/resolve
+ */
+export async function resolveRateCard(payload) {
+  const res = await apiClient.post('/rates/resolve', payload)
+  return res.data
+}
+
 export async function createRateCardVersion(payload) {
   const res = await apiClient.post('/rates/versions', payload)
   return res.data

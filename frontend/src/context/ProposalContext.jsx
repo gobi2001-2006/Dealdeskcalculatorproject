@@ -19,7 +19,7 @@ export function ProposalProvider({ children, initialProposal = null }) {
   const [countryConfigs, setCountryConfigs] = useState(
     initialProposal?.countryConfigs !== undefined
       ? initialProposal.countryConfigs
-      : [createDefaultCountryConfig('c-in', 1)]
+      : [createDefaultCountryConfig('c-in', 1, false)]
   )
 
   // Focused country/section context for Page 5
@@ -44,6 +44,11 @@ export function ProposalProvider({ children, initialProposal = null }) {
   // Keyed by serviceLineId -> { type: 'percentage'|'fixed', value: string|number, reason: string }
   const [serviceDiscounts, setServiceDiscounts] = useState(
     initialProposal?.serviceDiscounts || {}
+  )
+
+  // Page 5/6: Calculation Snapshot state from backend pricing engine
+  const [calcApiResult, setCalcApiResult] = useState(
+    initialProposal?.calcApiResult || null
   )
 
   // Page 5: Approval policies (Demo settings - not enforced)
@@ -138,6 +143,8 @@ export function ProposalProvider({ children, initialProposal = null }) {
       serviceDiscounts,
       setServiceDiscounts,
       updateServiceDiscount,
+      calcApiResult,
+      setCalcApiResult,
       approvalPolicies,
     }),
     [
@@ -149,6 +156,7 @@ export function ProposalProvider({ children, initialProposal = null }) {
       lineItemDiscounts,
       overallDiscounts,
       serviceDiscounts,
+      calcApiResult,
       approvalPolicies,
       addCountry,
       updateCountry,
@@ -179,7 +187,7 @@ export function useProposal() {
       clientErrors: {},
       setClientErrors: () => {},
       updateClientInfo: () => {},
-      countryConfigs: [createDefaultCountryConfig('c-in', 1)],
+      countryConfigs: [createDefaultCountryConfig('c-in', 1, false)],
       setCountryConfigs: () => {},
       addCountry: () => {},
       updateCountry: () => {},
@@ -197,6 +205,8 @@ export function useProposal() {
       serviceDiscounts: {},
       setServiceDiscounts: () => {},
       updateServiceDiscount: () => {},
+      calcApiResult: null,
+      setCalcApiResult: () => {},
       approvalPolicies: {
         grossMarginFloor: '30.0',
         lineItemDiscountCeiling: '15.0',

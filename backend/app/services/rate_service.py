@@ -15,7 +15,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.rate_card import RateCardVersion, RateCard, ServiceRate
-from app.models.master_data import Country, Currency, CustomerTier, DeploymentModel, PricingModel, UnitOfMeasure
+from app.models.master_data import (
+    Country,
+    Currency,
+    CustomerTier,
+    DeploymentModel,
+    DeploymentPricingOption,
+    PricingModel,
+    UnitOfMeasure,
+)
 from app.models.catalogue import PackVersion, Feature
 from app.schemas.rate_card import (
     RateCardVersionCreate,
@@ -213,18 +221,41 @@ def upsert_rate_card(
         raise ProposalConflictError(f"Rate card version '{rcv.version_no}' is retired and locked against modifications")
 
     # Foreign key validations
-    if not db.get(Country, country_id):
-        raise ResourceNotFoundError(f"Country with id {country_id} not found")
-    if not db.get(DeploymentModel, deployment_model_id):
+    dep = db.get(DeploymentModel, deployment_model_id)
+    if not dep:
         raise ResourceNotFoundError(f"Deployment model with id {deployment_model_id} not found")
-    if not db.get(PricingModel, pricing_model_id):
+    pm = db.get(PricingModel, pricing_model_id)
+    if not pm:
         raise ResourceNotFoundError(f"Pricing model with id {pricing_model_id} not found")
-    if not db.get(CustomerTier, tier_id):
+    tier = db.get(CustomerTier, tier_id)
+    if not tier:
         raise ResourceNotFoundError(f"Customer tier with id {tier_id} not found")
-    if not db.get(UnitOfMeasure, uom_id):
+    uom = db.get(UnitOfMeasure, uom_id)
+    if not uom:
         raise ResourceNotFoundError(f"Unit of measure with id {uom_id} not found")
     if not db.get(Currency, currency_id):
         raise ResourceNotFoundError(f"Currency with id {currency_id} not found")
+
+    # Enforce valid deployment + pricing model combination
+    dpo = db.get(DeploymentPricingOption, (deployment_model_id, pricing_model_id))
+    if not dpo:
+        raise ProposalValidationError(
+            f"Invalid combination: deployment model '{dep.name}' (id={deployment_model_id}) does not permit "
+            f"pricing model '{pm.name}' (id={pricing_model_id})."
+        )
+
+    # Enforce PEPM Unit of Measure: must be 'employee' / 'Active Employees (with ESS)'
+    is_pepm = pm.code == "pepm" or "per employee" in pm.name.lower()
+    if is_pepm:
+        uom_name_lower = (uom.name or "").lower()
+        if pm.uom_locked_id and uom_id != pm.uom_locked_id:
+            raise ProposalValidationError(
+                f"PEPM pricing model strictly requires Unit of Measure ID {pm.uom_locked_id} ('Active Employees (with ESS)'), got {uom_id}"
+            )
+        elif uom.code != "employee" and "active employee" not in uom_name_lower:
+            raise ProposalValidationError(
+                f"PEPM pricing model strictly requires Unit of Measure 'Active Employees (with ESS)' (code 'employee'), got '{uom.name}'"
+            )
 
     if pack_version_id is not None and not db.get(PackVersion, pack_version_id):
         raise ResourceNotFoundError(f"Pack version with id {pack_version_id} not found")

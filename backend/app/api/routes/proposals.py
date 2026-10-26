@@ -387,6 +387,7 @@ def calculate_proposal_endpoint(
             product_service_discounts=payload.product_service_discounts or {},
             default_hours_per_day=payload.default_hours_per_day,
             user_id=payload.calculated_by_user_id,
+            contract_term_months=payload.contract_term_months,
         )
         return result
     except (PricingProposalNotFoundError, ProposalNotFoundError) as exc:

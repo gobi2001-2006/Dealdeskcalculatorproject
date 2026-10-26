@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
+import { getCurrencySymbol } from './rateCardFormatters'
 
 export function RateCardMasterPanels({
   countries = [],
@@ -42,6 +43,7 @@ export function RateCardMasterPanels({
   families = [],
   packRates = [],
   featureRates = [],
+  className = '',
 }) {
   // Accordion state
   const [openSections, setOpenSections] = useState({
@@ -260,7 +262,7 @@ export function RateCardMasterPanels({
   return (
     <aside
       aria-label="Master Data Management"
-      className="w-80 xl:w-96 bg-white border-l border-slate-200 flex flex-col justify-between shrink-0 select-none overflow-hidden"
+      className={`w-88 xl:w-96 bg-white border-l border-slate-200/90 flex flex-col justify-between shrink-0 select-none overflow-hidden h-full z-10 ${className}`}
     >
       {/* Top Header */}
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/50">
@@ -270,13 +272,13 @@ export function RateCardMasterPanels({
             MASTER DATA PANELS
           </h2>
         </div>
-        <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+        <span className="text-[10px] font-mono text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full font-semibold">
           7 Catalogs
         </span>
       </div>
 
-      {/* Accordion Panels Container */}
-      <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100">
+      {/* Accordion Panels Container - Smooth independent vertical scrolling with safe bottom padding */}
+      <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 pb-8">
         {/* A. Countries */}
         <section aria-labelledby="heading-countries">
           <button
@@ -356,11 +358,7 @@ export function RateCardMasterPanels({
                           </button>
                           <button
                             type="button"
-                            onClick={() => {
-                              if (window.confirm(`Are you sure you want to remove country "${c.name}"?`)) {
-                                onDeleteCountry(c.id)
-                              }
-                            }}
+                            onClick={() => onDeleteCountry && onDeleteCountry(c.id)}
                             className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
                             aria-label={`Delete ${c.name}`}
                           >

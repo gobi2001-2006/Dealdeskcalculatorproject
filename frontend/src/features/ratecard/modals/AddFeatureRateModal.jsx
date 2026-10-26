@@ -17,6 +17,7 @@ export function AddFeatureRateModal({
   families = [],
   activeDeployment = 'Shared Cloud',
   activePricing = 'PEPM',
+  activeCurrencySymbol = '$',
   existingFeatureRates = [],
 }) {
   const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
@@ -85,8 +86,17 @@ export function AddFeatureRateModal({
     const t2 = tierRates[tiersToRender[1]?.id] ?? ''
     const t3 = tierRates[tiersToRender[2]?.id] ?? ''
 
+    const resolvedFeatId =
+      activeFeature?.id != null
+        ? !isNaN(Number(activeFeature.id))
+          ? Number(activeFeature.id)
+          : activeFeature.id
+        : !isNaN(Number(effectiveFeatureId))
+        ? Number(effectiveFeatureId)
+        : effectiveFeatureId
+
     onSave({
-      featureId: activeFeature?.id ? Number(activeFeature.id) : Number(effectiveFeatureId),
+      featureId: resolvedFeatId,
       productId: activeFeature?.productId,
       productCode: activeFeature?.code || 'FEAT-SKU',
       featureName: activeFeature?.name || 'Feature Add-on',
@@ -192,21 +202,27 @@ export function AddFeatureRateModal({
 
           <div>
             <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
-              Unit of Measure
+              Unit of Measure {String(activePricing).toLowerCase().includes('pepm') && <span className="text-slate-400 font-normal">(Locked to Active Employees (with ESS) for PEPM)</span>}
             </label>
             <input
               id="uom-input"
               type="text"
-              value={uom}
+              value={String(activePricing).toLowerCase().includes('pepm') ? 'Active Employees (with ESS)' : uom}
               onChange={(e) => setUom(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              disabled={String(activePricing).toLowerCase().includes('pepm')}
+              readOnly={String(activePricing).toLowerCase().includes('pepm')}
+              className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
+                String(activePricing).toLowerCase().includes('pepm')
+                  ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed font-medium'
+                  : 'bg-white border-slate-300'
+              }`}
             />
           </div>
 
           {/* Dynamic Tiers Grid */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-              Configured Customer Tier Rates
+              Configured Customer Tier Rates ({activeCurrencySymbol})
             </label>
             <div className={`grid gap-3 ${tiersToRender.length <= 2 ? 'grid-cols-2' : tiersToRender.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
               {tiersToRender.map((tier) => (
@@ -220,16 +236,21 @@ export function AddFeatureRateModal({
                       ? `${tier.code} (${tier.name})`
                       : tier.code || tier.name}
                   </label>
-                  <input
-                    id={`feature-tier-input-${tier.id}`}
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={tierRates[tier.id] ?? ''}
-                    onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
-                    placeholder="Rate"
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-[10px] font-mono text-slate-400">
+                      {activeCurrencySymbol}
+                    </span>
+                    <input
+                      id={`feature-tier-input-${tier.id}`}
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={tierRates[tier.id] ?? ''}
+                      onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
+                      placeholder="0.00"
+                      className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                    />
+                  </div>
                 </div>
               ))}
             </div>

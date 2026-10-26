@@ -31,6 +31,24 @@ const ICON_MAP = {
   ShieldCheck,
 }
 
+// ---------------------------------------------------------------------------
+// Format a currency amount from the backend (already a float)
+// ---------------------------------------------------------------------------
+function fmtAmt(value, code = 'INR') {
+  if (value === null || value === undefined) return null
+  const num = Number(value)
+  if (isNaN(num)) return null
+  try {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: code,
+      maximumFractionDigits: 0,
+    }).format(num)
+  } catch {
+    return String(num)
+  }
+}
+
 export function ProposalFinancialTable({
   countryConfigs = [],
   clientInfo,
@@ -38,8 +56,30 @@ export function ProposalFinancialTable({
   overallDiscounts = {},
   serviceDiscounts = {},
   showDiscounts = false,
-  calculationResult = null,
+  snapshotPayload = null,
 }) {
+  const reportingCurrencyCode =
+    snapshotPayload?.reporting_currency_code ||
+    clientInfo?.reportingCurrency ||
+    'INR'
+
+  // Index subscription line items by pack_version_id, feature_id, and target_name for O(1) lookup
+  const lineItemByPackVersionId = {}
+  const lineItemByFeatureId = {}
+  const lineItemByTargetName = {}
+  ;(snapshotPayload?.all_subscription_line_items || []).forEach((li) => {
+    if (li.pack_version_id) lineItemByPackVersionId[li.pack_version_id] = li
+    if (li.feature_id) lineItemByFeatureId[li.feature_id] = li
+    if (li.target_name) lineItemByTargetName[li.target_name.trim().toLowerCase()] = li
+  })
+
+  // Index service lines by role_name (lowercased) for lookup
+  const serviceLineByRole = {}
+  ;(snapshotPayload?.all_service_lines || []).forEach((sl) => {
+    const key = (sl.role_name || '').trim().toLowerCase()
+    serviceLineByRole[key] = sl
+  })
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       <div className="overflow-x-auto">
@@ -50,24 +90,12 @@ export function ProposalFinancialTable({
           {/* Table Column Headers */}
           <thead className="bg-slate-100/90 text-[11px] font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200">
             <tr>
-              <th scope="col" className="py-3 px-4 min-w-[280px]">
-                Country / Product
-              </th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">
-                License Fee
-              </th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">
-                Rental / PEPM
-              </th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">
-                Service Fees
-              </th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">
-                Total
-              </th>
-              <th scope="col" className="py-3 px-3 text-right min-w-[120px]">
-                Gross Margin
-              </th>
+              <th scope="col" className="py-3 px-4 min-w-[280px]">Country / Product</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">License Fee</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">Rental / PEPM</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[130px]">Service Fees</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[150px]">Total</th>
+              <th scope="col" className="py-3 px-3 text-right min-w-[120px]">Gross Margin</th>
             </tr>
           </thead>
 
@@ -99,21 +127,30 @@ export function ProposalFinancialTable({
                       ? INITIAL_PACKS.find((p) => p.id === fam.selectedPackId)
                       : null
 
-                    const packKey =
-                      `${country.id}:${fam.id}:pack:${selectedPack?.id}`
-                    const packKeyAlt =
-                      `${country.id}:${fam.familyId}:pack:${selectedPack?.id}`
+                    const packKey = `${country.id}:${fam.id}:pack:${selectedPack?.id}`
+                    const packKeyAlt = `${country.id}:${fam.familyId}:pack:${selectedPack?.id}`
                     const packDiscount =
                       lineItemDiscounts[packKey] ||
                       lineItemDiscounts[packKeyAlt] ||
                       null
 
-                    // Selected à la carte features
+                    // Selected a la carte features
                     const alaCarteProducts = (fam.selectedFeatureIds || [])
-                      .map((featId) =>
-                        INITIAL_PRODUCTS.find((p) => p.id === featId)
-                      )
+                      .map((featId) => INITIAL_PRODUCTS.find((p) => p.id === featId))
                       .filter(Boolean)
+
+                    // Pack line item from backend snapshot
+                    const packNumId = fam.selectedPackId
+                      ? (typeof fam.selectedPackId === 'number'
+                          ? fam.selectedPackId
+                          : parseInt(String(fam.selectedPackId), 10))
+                      : null
+                    const packLi = (packNumId && !isNaN(packNumId) && lineItemByPackVersionId[packNumId]) ||
+                      (selectedPack && lineItemByTargetName[selectedPack.name?.trim().toLowerCase()]) ||
+                      null
+                    const packTotal = packLi
+                      ? fmtAmt(packLi.item_subscription_after_discount, reportingCurrencyCode)
+                      : null
 
                     return (
                       <Fragment key={fam.id}>
@@ -136,15 +173,12 @@ export function ProposalFinancialTable({
                                     </span>
                                   </div>
                                   <p className="text-[11px] text-slate-500 mt-0.5">
-                                    {famMaster?.name || 'Product Suite'} •{' '}
+                                    {famMaster?.name || 'Product Suite'} &bull;{' '}
                                     <span className="font-mono">
-                                      {Number(
-                                        fam.headcount || country.headcount || 0
-                                      ).toLocaleString()}
+                                      {Number(fam.headcount || country.headcount || 0).toLocaleString()}
                                     </span>{' '}
-                                    users × {country.contractTerm} mos
+                                    users &times; {country.contractTerm} mos
                                   </p>
-
                                   {/* Show Discounts detail for Pack */}
                                   {showDiscounts && packDiscount && packDiscount.value && (
                                     <div className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
@@ -159,7 +193,7 @@ export function ProposalFinancialTable({
                                       </span>
                                       {packDiscount.reason && (
                                         <span className="text-amber-700 italic border-l border-amber-200 pl-1.5">
-                                          "{packDiscount.reason}"
+                                          &quot;{packDiscount.reason}&quot;
                                         </span>
                                       )}
                                     </div>
@@ -167,38 +201,39 @@ export function ProposalFinancialTable({
                                 </div>
                               </div>
                             </td>
-
-                            {/* Financial Cells */}
+                            {/* Financial Cells - from backend snapshot */}
                             <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400">
-                              {country.pricingModelId === 'pm-platform'
-                                ? 'Pending backend calculation'
-                                : '—'}
+                              {country.pricingModelId === 'pm-platform' ? (packTotal || '—') : '—'}
                             </td>
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-500 italic">
-                              Pending backend calculation
+                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-600">
+                              {packTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
                             </td>
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400">
-                              —
+                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
+                            <td className="py-3 px-3 text-right font-mono text-xs font-semibold text-slate-700">
+                              {packTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
                             </td>
-                            <td className="py-3 px-3 text-right font-mono text-xs font-semibold text-slate-700 italic">
-                              Pending backend calculation
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400 italic">
-                              —
-                            </td>
+                            <td className="py-3 px-3 text-right font-mono text-[11px] text-slate-400 italic">—</td>
                           </tr>
                         )}
 
-                        {/* B. À la carte Feature Rows */}
+                        {/* B. A la carte Feature Rows */}
                         {alaCarteProducts.map((prod) => {
-                          const featKey =
-                            `${country.id}:${fam.id}:feature:${prod.id}`
-                          const featKeyAlt =
-                            `${country.id}:${fam.familyId}:feature:${prod.id}`
+                          const featKey = `${country.id}:${fam.id}:feature:${prod.id}`
+                          const featKeyAlt = `${country.id}:${fam.familyId}:feature:${prod.id}`
                           const featDiscount =
                             lineItemDiscounts[featKey] ||
                             lineItemDiscounts[featKeyAlt] ||
                             null
+
+                          const featNumId = prod.id
+                            ? (typeof prod.id === 'number' ? prod.id : parseInt(String(prod.id), 10))
+                            : null
+                          const li = (featNumId && !isNaN(featNumId) && lineItemByFeatureId[featNumId]) ||
+                            (prod && lineItemByTargetName[prod.name?.trim().toLowerCase()]) ||
+                            null
+                          const featTotal = li
+                            ? fmtAmt(li.item_subscription_after_discount, reportingCurrencyCode)
+                            : null
 
                           return (
                             <tr
@@ -213,20 +248,15 @@ export function ProposalFinancialTable({
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="font-semibold text-slate-900 text-xs flex items-center gap-1.5 flex-wrap">
-                                      <span>
-                                        {prod.solution || prod.subItem}
-                                      </span>
-                                      <span className="text-[10px] font-mono text-slate-500">
-                                        ({prod.code})
-                                      </span>
+                                      <span>{prod.solution || prod.subItem}</span>
+                                      <span className="text-[10px] font-mono text-slate-500">({prod.code})</span>
                                       <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-orange-100 text-orange-800">
                                         À la carte
                                       </span>
                                     </div>
                                     <p className="text-[10px] text-slate-400 mt-0.5">
-                                      {prod.subItem} • {country.currency}
+                                      {prod.subItem} &bull; {country.currency}
                                     </p>
-
                                     {/* Show Discounts detail for Feature */}
                                     {showDiscounts && featDiscount && featDiscount.value && (
                                       <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
@@ -241,7 +271,7 @@ export function ProposalFinancialTable({
                                         </span>
                                         {featDiscount.reason && (
                                           <span className="text-amber-700 italic border-l border-amber-200 pl-1">
-                                            "{featDiscount.reason}"
+                                            &quot;{featDiscount.reason}&quot;
                                           </span>
                                         )}
                                       </div>
@@ -249,23 +279,16 @@ export function ProposalFinancialTable({
                                   </div>
                                 </div>
                               </td>
-
-                              {/* Financial Cells */}
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">
-                                —
+                              {/* Financial Cells - from backend snapshot */}
+                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">
+                                {featTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
                               </td>
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-500 italic">
-                                Pending backend calculation
+                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
+                              <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-700">
+                                {featTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
                               </td>
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">
-                                —
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-700 italic">
-                                Pending backend calculation
-                              </td>
-                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400 italic">
-                                —
-                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400 italic">—</td>
                             </tr>
                           )
                         })}
@@ -276,6 +299,11 @@ export function ProposalFinancialTable({
                   {/* 3. Professional Service Lines */}
                   {(country.serviceLines || []).map((srv) => {
                     const srvDiscount = serviceDiscounts[srv.id] || null
+                    const roleKey = (srv.roleName || '').trim().toLowerCase()
+                    const sl = serviceLineByRole[roleKey]
+                    const srvTotal = sl
+                      ? fmtAmt(sl.service_line_total, sl.currency_code || reportingCurrencyCode)
+                      : null
 
                     return (
                       <tr
@@ -297,9 +325,8 @@ export function ProposalFinancialTable({
                               </div>
                               <p className="text-[10px] text-slate-500 mt-0.5">
                                 {srv.hoursOrDays} hours @ {country.currencySymbol}
-                                {srv.rateApplied}/hr • {srv.currency || country.currency}
+                                {srv.rateApplied}/hr &bull; {srv.currency || country.currency}
                               </p>
-
                               {/* Show Discounts detail for Service */}
                               {showDiscounts && (srvDiscount?.value || srv.discountPct > 0) && (
                                 <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
@@ -314,7 +341,7 @@ export function ProposalFinancialTable({
                                   </span>
                                   {srvDiscount?.reason && (
                                     <span className="text-amber-700 italic border-l border-amber-200 pl-1">
-                                      "{srvDiscount.reason}"
+                                      &quot;{srvDiscount.reason}&quot;
                                     </span>
                                   )}
                                 </div>
@@ -322,23 +349,16 @@ export function ProposalFinancialTable({
                             </div>
                           </div>
                         </td>
-
-                        {/* Financial Cells */}
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">
-                          —
+                        {/* Financial Cells - from backend snapshot */}
+                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">—</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-600">
+                          {srvTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400">
-                          —
+                        <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-700">
+                          {srvTotal || <span className="italic text-slate-400">Pending backend calculation</span>}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-500 italic">
-                          Pending backend calculation
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-xs font-semibold text-slate-700 italic">
-                          Pending backend calculation
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400 italic">
-                          —
-                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[11px] text-slate-400 italic">—</td>
                       </tr>
                     )
                   })}
@@ -357,7 +377,7 @@ export function ProposalFinancialTable({
                           </span>
                           {countryOverallDiscount.reason && (
                             <span className="text-[11px] text-amber-800 italic">
-                              Justification: "{countryOverallDiscount.reason}"
+                              Justification: &quot;{countryOverallDiscount.reason}&quot;
                             </span>
                           )}
                           <span className="text-[10px] text-amber-700 ml-auto italic">
@@ -371,8 +391,8 @@ export function ProposalFinancialTable({
                   {/* 5. Country Subtotal Row */}
                   <CountrySubtotalRow
                     countryConfig={country}
-                    reportingCurrency={clientInfo.reportingCurrency}
-                    calculationResult={calculationResult}
+                    reportingCurrencyCode={reportingCurrencyCode}
+                    snapshotPayload={snapshotPayload}
                   />
                 </Fragment>
               )
@@ -380,8 +400,8 @@ export function ProposalFinancialTable({
 
             {/* 6. Grand Total Consolidated Row */}
             <GrandTotalRow
-              reportingCurrency={clientInfo.reportingCurrency}
-              calculationResult={calculationResult}
+              reportingCurrencyCode={reportingCurrencyCode}
+              snapshotPayload={snapshotPayload}
             />
           </tbody>
         </table>

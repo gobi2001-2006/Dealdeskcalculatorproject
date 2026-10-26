@@ -571,4 +571,145 @@ describe('Page 4 — Proposal Configurator & Calculation Engine Integration Test
       expect(await screen.findByRole('option', { name: 'United States (USD)' })).toBeInTheDocument()
     })
   })
+
+  // 6. Comprehensive Multi-Country Persistence and Calculation Summary Tests
+  describe('Page 4 End-to-End Multi-Country & Financial Aggregation', () => {
+    it('persists multiple countries and consolidates financial totals with FX into the summary strip', async () => {
+      const mockMultiCountryProposal = {
+        id: 777,
+        code: 'PROP-2026-MULTI',
+        deal_id: 10,
+        customer_id: 20,
+        currency_id: 1,
+        status: 'draft',
+        countries: [
+          { country_id: 1, user_headcount: 3000 },
+          { country_id: 2, user_headcount: 2000 },
+        ],
+        versions: [{ id: 1, version_number: 1, status: 'draft', line_items: [], service_lines: [] }],
+      }
+
+      apiClient.get.mockImplementation((url) => {
+        if (url === '/customers/') return Promise.resolve({ data: [] })
+        if (url === '/deals/') return Promise.resolve({ data: [] })
+        if (url.startsWith('/proposals/')) {
+          // On fresh creation, the proposal does not have countries yet
+          return Promise.resolve({
+            data: {
+              ...mockMultiCountryProposal,
+              countries: [],
+              versions: [{ id: 1, version_number: 1, status: 'draft', line_items: [], service_lines: [] }],
+            },
+          })
+        }
+        return Promise.resolve({ data: [] })
+      })
+
+      apiClient.post.mockImplementation((url, payload) => {
+        if (url === '/customers/') return Promise.resolve({ data: { id: 20, name: payload.name } })
+        if (url === '/deals/') return Promise.resolve({ data: { id: 10, code: payload.code } })
+        if (url === '/proposals/') return Promise.resolve({ data: { id: 777, code: payload.code } })
+        if (url.includes('/countries')) return Promise.resolve({ data: { id: 800, ...payload } })
+        if (url.includes('/line-items')) return Promise.resolve({ data: { id: 900, ...payload } })
+        if (url.includes('/service-lines')) return Promise.resolve({ data: { id: 950, ...payload } })
+        return Promise.resolve({ data: {} })
+      })
+
+      const clientInfo = {
+        clientName: 'Global Enterprise Ltd',
+        reportingCurrencyId: 1,
+      }
+
+      const countryConfigs = [
+        {
+          countryId: 1,
+          countryName: 'India',
+          headcount: 3000,
+          deploymentModelId: 1,
+          pricingModelId: 1,
+          families: [{ familyId: 1, selectedPackId: 2, selectedFeatureIds: [] }],
+          serviceLines: [],
+        },
+        {
+          countryId: 2,
+          countryName: 'United States',
+          headcount: 2000,
+          deploymentModelId: 1,
+          pricingModelId: 1,
+          families: [{ familyId: 1, selectedPackId: 2, selectedFeatureIds: [] }],
+          serviceLines: [],
+        },
+      ]
+
+      const saveResult = await proposalsApi.saveFullProposal({ clientInfo, countryConfigs })
+
+      expect(saveResult.status).toBe('persisted')
+      expect(saveResult.proposalId).toBe(777)
+
+      // Both countries should have been added
+      expect(apiClient.post).toHaveBeenCalledWith('/proposals/777/countries', expect.objectContaining({
+        country_id: 1,
+        user_headcount: 3000,
+      }))
+      expect(apiClient.post).toHaveBeenCalledWith('/proposals/777/countries', expect.objectContaining({
+        country_id: 2,
+        user_headcount: 2000,
+      }))
+    })
+
+    it('dynamically preserves contractTerm in deserialization and sends to backend calculation', async () => {
+      // 1. Verify deserialization with custom 36-month term
+      const mockBackendProposal = {
+        id: 999,
+        code: 'PROP-2026-999',
+        currency_id: 1,
+        currency: { code: 'INR', symbol: '₹' },
+        countries: [
+          {
+            id: 1,
+            country_id: 1,
+            country: { id: 1, name: 'India', currency: { code: 'INR', symbol: '₹' } },
+            term_months: 36,
+            user_headcount: 5000,
+          },
+        ],
+        versions: [{ id: 1, status: 'draft', line_items: [], service_lines: [] }],
+      }
+
+      const deserialized = deserializeBackendProposal(mockBackendProposal)
+      expect(deserialized.countryConfigs[0].contractTerm).toBe(36)
+      expect(deserialized.countryConfigs[0].headcount).toBe(5000)
+
+      // 2. Verify requestProposalCalculation passes contract_term_months: 36
+      apiClient.post.mockResolvedValueOnce({
+        data: {
+          snapshot_id: 888,
+          proposal_id: 999,
+          contract_term_months: 36,
+          total_proposal_annual_reporting_currency: 120000000,
+          total_proposal_contract_reporting_currency: 360000000,
+          total_proposal_reporting_currency: 120000000,
+          snapshot_payload: {
+            contract_term_months: 36,
+            total_proposal_annual_reporting_currency: 120000000,
+            total_proposal_contract_reporting_currency: 360000000,
+            total_proposal_reporting_currency: 120000000,
+          },
+        },
+      })
+
+      const calcRes = await proposalsApi.requestProposalCalculation({
+        proposalId: 999,
+        clientInfo: { clientName: 'Adrenalin Test', reportingCurrency: 'INR' },
+        countryConfigs: deserialized.countryConfigs,
+      })
+
+      expect(calcRes.status).toBe('success')
+      expect(apiClient.post).toHaveBeenCalledWith('/proposals/999/calculate', expect.objectContaining({
+        contract_term_months: 36,
+      }))
+      expect(calcRes.data.contract_term_months).toBe(36)
+      expect(calcRes.data.total_proposal_contract_reporting_currency).toBe(360000000)
+    })
+  })
 })

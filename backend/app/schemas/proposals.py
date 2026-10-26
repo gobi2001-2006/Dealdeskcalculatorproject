@@ -1244,6 +1244,13 @@ class LineItemCalculationResult(BaseModel):
     item_discount_pct: float = Field(description="Item-level discount percentage (0–100)")
     item_discount_amount: float = Field(description="subscription_before_discount × discount_pct / 100")
     item_subscription_after_discount: float = Field(description="Subscription after applying item discount")
+    # Contract-Period Duration Fields (dynamic contract term)
+    contract_term_months: Optional[int] = Field(default=12, description="Contract term in months")
+    contract_consumption_fee: Optional[float] = Field(default=None, description="rate_per_unit × avg_monthly_volume × contract_term_months")
+    contract_platform_fee: Optional[float] = Field(default=None, description="platform_fee × (contract_term_months / 12)")
+    contract_subscription_before_discount: Optional[float] = Field(default=None, description="contract_platform_fee + contract_consumption_fee")
+    contract_discount_amount: Optional[float] = Field(default=None, description="Item discount amount on contract subscription")
+    contract_subscription_after_discount: Optional[float] = Field(default=None, description="Contract subscription after discount")
 
 
 class ServiceLineCalculationResult(BaseModel):
@@ -1299,6 +1306,14 @@ class ProductCalculationResult(BaseModel):
     line_items: list[LineItemCalculationResult] = Field(default_factory=list)
     service_lines: list[ServiceLineCalculationResult] = Field(default_factory=list)
 
+    # Contract Duration Figures
+    contract_term_months: Optional[int] = Field(default=12, description="Contract term in months")
+    contract_subscription_subtotal_before_discount: Optional[float] = None
+    contract_subscription_discount_amount: Optional[float] = None
+    contract_subscription_total_after_discount: Optional[float] = None
+    contract_product_native_total: Optional[float] = None
+    contract_product_reporting_total: Optional[float] = None
+
 
 class CalculationRequest(BaseModel):
     """Request payload to trigger a proposal pricing calculation.
@@ -1314,6 +1329,12 @@ class CalculationRequest(BaseModel):
         None,
         gt=0,
         description="Target a specific proposal version; defaults to the latest draft",
+    )
+    contract_term_months: Optional[int] = Field(
+        None,
+        gt=0,
+        le=120,
+        description="Contract term in months for full-contract period calculations (default 12)",
     )
     product_subscription_discounts: dict[str, Decimal] = Field(
         default_factory=dict,
@@ -1348,6 +1369,9 @@ class ProposalCalculationResponse(BaseModel):
     calculated_at: str
     reporting_currency_code: str
     total_proposal_reporting_currency: float
+    contract_term_months: Optional[int] = Field(default=12, description="Contract duration in months")
+    total_proposal_annual_reporting_currency: Optional[float] = Field(default=None, description="Annual consumption & ARR total in reporting currency")
+    total_proposal_contract_reporting_currency: Optional[float] = Field(default=None, description="Full-contract total in reporting currency across configured term")
     snapshot_payload: dict[str, Any]
 
 

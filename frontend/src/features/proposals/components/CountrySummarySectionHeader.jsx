@@ -2,25 +2,26 @@ import { Globe, Clock } from 'lucide-react'
 
 export function CountrySummarySectionHeader({ countryIndex, countryConfig }) {
   const deploymentLabel =
-    countryConfig.deploymentModelId === 'dep-shared'
-      ? 'Shared Cloud'
-      : countryConfig.deploymentModelId === 'dep-private'
+    countryConfig.deploymentModelName ||
+    (countryConfig.deploymentModelId === 'dep-private' || countryConfig.deploymentModelId === 2 || countryConfig.deploymentModelId === '2'
       ? 'Private Cloud'
-      : countryConfig.deploymentModelId === 'dep-onprem'
+      : countryConfig.deploymentModelId === 'dep-onprem' || countryConfig.deploymentModelId === 3 || countryConfig.deploymentModelId === '3'
       ? 'On-Premises'
-      : 'Shared Cloud'
+      : 'Shared Cloud')
 
   const pricingModelLabel =
-    countryConfig.pricingModelId === 'pm-platform'
+    countryConfig.pricingModelName ||
+    (countryConfig.pricingModelId === 'pm-platform' || countryConfig.pricingModelId === 2 || countryConfig.pricingModelId === '2'
       ? 'Platform Subscription'
-      : 'PEPM'
+      : 'PEPM')
 
   const tierLabel =
-    countryConfig.pricingTierId === 'tier-1'
+    countryConfig.pricingTierName ||
+    (countryConfig.pricingTierId === 'tier-1' || countryConfig.pricingTierId === 1 || countryConfig.pricingTierId === '1'
       ? 'Tier 1'
-      : countryConfig.pricingTierId === 'tier-2'
+      : countryConfig.pricingTierId === 'tier-2' || countryConfig.pricingTierId === 2 || countryConfig.pricingTierId === '2'
       ? 'Tier 2'
-      : 'Tier 3'
+      : 'Tier 3')
 
   return (
     <tr className="bg-[#0B1528] text-white border-t-2 border-orange-500">

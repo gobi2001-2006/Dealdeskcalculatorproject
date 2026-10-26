@@ -1,4 +1,4 @@
-import { useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   Server,
   CreditCard,
@@ -10,18 +10,27 @@ import {
   Clock,
   ShieldAlert,
   Database,
+  TableProperties,
+  Layers,
+  Wrench,
+  Percent,
+  Package,
+  Plus,
 } from 'lucide-react'
 import { PackRatesSection } from './PackRatesSection'
 import { FeatureRatesSection } from './FeatureRatesSection'
 import { PlatformSubscriptionSection } from './PlatformSubscriptionSection'
 import { ServiceRatesSection } from './ServiceRatesSection'
+import { RateCardRegistryTable } from './RateCardRegistryTable'
 import {
   DEPLOYMENT_MODELS,
   PRICING_MODELS,
   INITIAL_PRICING_TIERS,
 } from '../../data/rateCardData'
+import { getCurrencySymbol } from './rateCardFormatters'
 
 export function RateCardCenterEditor({
+  apiError = null,
   selectedDeployment,
   onChangeDeployment,
   deploymentModels = DEPLOYMENT_MODELS,
@@ -61,9 +70,23 @@ export function RateCardCenterEditor({
   onChangePlatformConfig,
   onResetPlatformDemo,
   isVersionLocked = false,
+  // Full Registry Table Data & Handlers
+  rawRateCards = [],
+  onUpdateRegistryRate,
+  onRefreshRegistry,
+  className = '',
 }) {
+  const [activeTab, setActiveTab] = useState('rate-matrix') // 'rate-matrix' | 'registry-table' | 'service-rates'
+
   const activeCountry =
-    countries.find((c) => c.id === selectedCountryId) || countries[0]
+    countries.find(
+      (c) =>
+        String(c.id) === String(selectedCountryId) ||
+        (c.code && String(c.code).toLowerCase() === String(selectedCountryId).toLowerCase()),
+    ) || countries[0]
+  const activeCurrencySymbol = useMemo(() => {
+    return getCurrencySymbol(activeCountry, '$')
+  }, [activeCountry])
   const activeFamily =
     selectedFamilyId !== 'all'
       ? families.find((f) => f.id === selectedFamilyId)
@@ -180,46 +203,342 @@ export function RateCardCenterEditor({
     availablePricingModels.length === 0
 
   // Filter PEPM rates by active family and country if selected
+  // Filter PEPM rates by active family and country if selected
   const filteredPackRates = packRates.filter((pr) => {
     const matchDeployment =
-      pr.deploymentModel === selectedDeployment ||
-      pr.deploymentModelId === activeDeploymentObj?.id ||
-      String(pr.deploymentModel).toLowerCase() === String(selectedDeployment).toLowerCase()
+      !pr.deploymentModelId ||
+      String(pr.deploymentModelId) === String(activeDeploymentObj?.id) ||
+      String(pr.deploymentModel || '').toLowerCase() === String(selectedDeployment || '').toLowerCase()
+
+    const prPricingLower = String(pr.pricingModel || '').toLowerCase()
+    const selPricingLower = String(selectedPricingModel || '').toLowerCase()
+    const activePricingCodeLower = String(activePricingModel?.code || '').toLowerCase()
+    const activePricingNameLower = String(activePricingModel?.name || '').toLowerCase()
+
     const matchPricing =
       pr.pricingModel === selectedPricingModel ||
       pr.pricingModelId === activePricingModel?.id ||
+      prPricingLower === selPricingLower ||
+      prPricingLower === activePricingCodeLower ||
+      prPricingLower === activePricingNameLower ||
       (isPEPM &&
-        (String(pr.pricingModel).toLowerCase() === 'pepm' ||
-          String(pr.pricingModel).toLowerCase().includes('per employee')))
+        (prPricingLower === 'pepm' ||
+          prPricingLower.includes('per employee'))) ||
+      (isPlatformSubscription &&
+        (prPricingLower.includes('platform') ||
+          prPricingLower.includes('subscription'))) ||
+      (isLicenseAMC &&
+        (prPricingLower.includes('license') ||
+          prPricingLower.includes('amc') ||
+          pr.pricingModelId === 3))
+
     const matchFamily =
-      selectedFamilyId === 'all' || pr.familyId === selectedFamilyId
+      selectedFamilyId === 'all' ||
+      pr.familyId === 'all' ||
+      !pr.familyId ||
+      String(pr.familyId) === String(selectedFamilyId) ||
+      (Array.isArray(pr.familyIds) && pr.familyIds.some((fid) => String(fid) === String(selectedFamilyId))) ||
+      packs.some(
+        (p) =>
+          (String(p.id) === String(pr.packId) || String(p.packId) === String(pr.packId)) &&
+          (selectedFamilyId === 'all' ||
+            String(p.familyId) === String(selectedFamilyId) ||
+            String(p.product_family_id) === String(selectedFamilyId) ||
+            (Array.isArray(p.familyIds) && p.familyIds.some((fid) => String(fid) === String(selectedFamilyId)))),
+      )
+
     const matchCountry =
-      !pr.countryId || String(pr.countryId) === String(selectedCountryId)
+      !pr.countryId ||
+      String(pr.countryId) === String(selectedCountryId) ||
+      (activeCountry?.id && String(pr.countryId) === String(activeCountry.id))
+
     return matchDeployment && matchPricing && matchFamily && matchCountry
   })
 
   const filteredFeatureRates = featureRates.filter((fr) => {
     const matchDeployment =
-      fr.deploymentModel === selectedDeployment ||
-      fr.deploymentModelId === activeDeploymentObj?.id ||
-      String(fr.deploymentModel).toLowerCase() === String(selectedDeployment).toLowerCase()
+      !fr.deploymentModelId ||
+      String(fr.deploymentModelId) === String(activeDeploymentObj?.id) ||
+      String(fr.deploymentModel || '').toLowerCase() === String(selectedDeployment || '').toLowerCase()
+
+    const frPricingLower = String(fr.pricingModel || '').toLowerCase()
+    const selPricingLower = String(selectedPricingModel || '').toLowerCase()
+    const activePricingCodeLower = String(activePricingModel?.code || '').toLowerCase()
+    const activePricingNameLower = String(activePricingModel?.name || '').toLowerCase()
+
     const matchPricing =
+      !fr.pricingModel ||
       fr.pricingModel === selectedPricingModel ||
       fr.pricingModelId === activePricingModel?.id ||
+      frPricingLower === selPricingLower ||
+      frPricingLower === activePricingCodeLower ||
+      frPricingLower === activePricingNameLower ||
       (isPEPM &&
-        (String(fr.pricingModel).toLowerCase() === 'pepm' ||
-          String(fr.pricingModel).toLowerCase().includes('per employee')))
+        (frPricingLower === 'pepm' ||
+          frPricingLower.includes('per employee') ||
+          fr.pricingModelId === 1)) ||
+      (isPlatformSubscription &&
+        (frPricingLower.includes('platform') ||
+          frPricingLower.includes('subscription') ||
+          fr.pricingModelId === 2)) ||
+      (isLicenseAMC &&
+        (frPricingLower.includes('license') ||
+          frPricingLower.includes('amc') ||
+          fr.pricingModelId === 3))
+
     const matchFamily =
-      selectedFamilyId === 'all' || fr.familyId === selectedFamilyId
+      selectedFamilyId === 'all' ||
+      fr.familyId === 'all' ||
+      !fr.familyId ||
+      String(fr.familyId) === String(selectedFamilyId) ||
+      features.some(
+        (f) =>
+          String(f.id) === String(fr.featureId) &&
+          (selectedFamilyId === 'all' ||
+            String(f.familyId) === String(selectedFamilyId) ||
+            String(f.product_family_id) === String(selectedFamilyId)),
+      )
+
     const matchCountry =
-      !fr.countryId || String(fr.countryId) === String(selectedCountryId)
+      !fr.countryId ||
+      String(fr.countryId) === String(selectedCountryId) ||
+      (activeCountry?.id && String(fr.countryId) === String(activeCountry.id))
+
     return matchDeployment && matchPricing && matchFamily && matchCountry
   })
 
+  // Helper to determine if a pack/feature rate record has entered/available pricing data
+  const hasConfiguredRate = (r) => {
+    if (!r) return false
+    const hasVal = (v) => v !== undefined && v !== null && String(v).trim() !== '' && !isNaN(Number(v))
+    return Boolean(
+      hasVal(r.tier1Rate) ||
+        hasVal(r.tier2Rate) ||
+        hasVal(r.tier3Rate) ||
+        hasVal(r.tier_1) ||
+        hasVal(r.tier_2) ||
+        hasVal(r.tier_3) ||
+        hasVal(r.fixed_tier1Rate) ||
+        hasVal(r.fixed_tier2Rate) ||
+        hasVal(r.fixed_tier3Rate) ||
+        hasVal(r.fixed_tier_1) ||
+        hasVal(r.fixed_tier_2) ||
+        hasVal(r.fixed_tier_3) ||
+        hasVal(r.unit_rate) ||
+        hasVal(r.fixed_fee) ||
+        (pricingTiers &&
+          pricingTiers.some(
+            (t) =>
+              hasVal(r[t.id]) ||
+              hasVal(r[`tier_${t.id}`]) ||
+              hasVal(r[`tier${t.id}Rate`]) ||
+              hasVal(r[`fixed_tier_${t.id}`]) ||
+              hasVal(r[`fixed_${t.id}Rate`]),
+          )),
+    )
+  }
+
+  // Render pack and feature cards only when they contain available entered data
+  const renderFamilySections = (dualComponentMode) => {
+    const renderedPackRateIds = new Set()
+
+    const rendered = familiesToRender
+      .map((family) => {
+        const famPacks = packs.filter(
+          (p) =>
+            family.id === 'all' ||
+            String(p.familyId) === String(family.id) ||
+            String(p.product_family_id) === String(family.id) ||
+            (Array.isArray(p.familyIds) && p.familyIds.some((fid) => String(fid) === String(family.id))),
+        )
+        const famPackRates = filteredPackRates.filter(
+          (pr) =>
+            family.id === 'all' ||
+            String(pr.familyId) === String(family.id) ||
+            (Array.isArray(pr.familyIds) && pr.familyIds.some((fid) => String(fid) === String(family.id))) ||
+            famPacks.some(
+              (p) =>
+                String(p.id) === String(pr.packId) ||
+                String(p.packId) === String(pr.packId),
+            ),
+        )
+        const famFeatures = features.filter(
+          (f) =>
+            family.id === 'all' ||
+            String(f.familyId) === String(family.id) ||
+            String(f.product_family_id) === String(family.id),
+        )
+        const famFeatureRates = filteredFeatureRates.filter(
+          (fr) =>
+            family.id === 'all' ||
+            String(fr.familyId) === String(family.id) ||
+            famFeatures.some((f) => String(f.id) === String(fr.featureId)),
+        )
+
+        const hasPacks = famPackRates.some(hasConfiguredRate)
+        const hasFeatures = famFeatureRates.some(hasConfiguredRate)
+
+        if (hasPacks) {
+          famPackRates.forEach((pr) => renderedPackRateIds.add(pr.id))
+        }
+
+        // When neither packs nor features have entered data for this family
+        if (!hasPacks && !hasFeatures) {
+          if (selectedFamilyId !== 'all') {
+            return (
+              <div
+                key={family.id}
+                className="bg-white border border-slate-200 rounded-xl p-6 text-center shadow-2xs space-y-3"
+              >
+                <div className="w-10 h-10 mx-auto rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900">{family.name}</h4>
+                  <p className="text-xs text-slate-500 mt-1">
+                    No rate cards configured yet for {family.name} under {selectedDeployment} ({activeCountry?.currency || 'INR'}).
+                  </p>
+                </div>
+                {!isVersionLocked && (
+                  <div className="flex items-center justify-center gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => onOpenAddPackRate(family.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Pack Rate</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenAddFeatureRate(family.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Feature Rate</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          }
+          // In 'all' families view, exclude unentered families entirely
+          return null
+        }
+
+        return (
+          <div key={family.id} className="space-y-6 pt-2 first:pt-0">
+            {hasPacks && (
+              <PackRatesSection
+                family={family}
+                packRates={famPackRates}
+                packs={famPacks}
+                pricingTiers={pricingTiers}
+                activeDeployment={selectedDeployment}
+                activePricingModel={activePricingModel}
+                activeCurrencySymbol={activeCurrencySymbol}
+                isVersionLocked={isVersionLocked}
+                isDualComponent={dualComponentMode}
+                onUpdateRate={onUpdatePackRate}
+                onRemoveRate={onRemovePackRate}
+                onOpenAddPackRate={() => onOpenAddPackRate(family.id)}
+              />
+            )}
+
+            {hasFeatures && (
+              <FeatureRatesSection
+                family={family}
+                featureRates={famFeatureRates}
+                features={famFeatures}
+                pricingTiers={pricingTiers}
+                activeDeployment={selectedDeployment}
+                activeCurrencySymbol={activeCurrencySymbol}
+                isVersionLocked={isVersionLocked}
+                isDualComponent={dualComponentMode}
+                apiError={apiError}
+                onUpdateRate={onUpdateFeatureRate}
+                onRemoveRate={onRemoveFeatureRate}
+                onOpenAddFeatureRate={() => onOpenAddFeatureRate(family.id)}
+              />
+            )}
+          </div>
+        )
+      })
+      .filter(Boolean)
+
+    // Render any remaining configured pack rates that were not grouped into rendered families
+    const unrenderedPackRates = filteredPackRates.filter(
+      (pr) => !renderedPackRateIds.has(pr.id) && hasConfiguredRate(pr),
+    )
+
+    const unrenderedSection =
+      unrenderedPackRates.length > 0 ? (
+        <div key="unassigned-packs" className="space-y-6 pt-2 first:pt-0">
+          <PackRatesSection
+            family={{ id: 'all', name: 'Multi-Product / Cross-Family Packs' }}
+            packRates={unrenderedPackRates}
+            packs={packs}
+            pricingTiers={pricingTiers}
+            activeDeployment={selectedDeployment}
+            activePricingModel={activePricingModel}
+            activeCurrencySymbol={activeCurrencySymbol}
+            isVersionLocked={isVersionLocked}
+            isDualComponent={dualComponentMode}
+            onUpdateRate={onUpdatePackRate}
+            onRemoveRate={onRemovePackRate}
+            onOpenAddPackRate={() => onOpenAddPackRate(null)}
+          />
+        </div>
+      ) : null
+
+    const allSections = [...rendered, unrenderedSection].filter(Boolean)
+
+    if (allSections.length === 0) {
+      return (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center shadow-2xs space-y-3">
+          <div className="w-12 h-12 mx-auto rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+            <Layers className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              No Available Rate Cards
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+              No pack or feature rates with available pricing data were found for {selectedDeployment} ({activeCountry?.currency || 'INR'}).
+            </p>
+          </div>
+          {!isVersionLocked && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => onOpenAddPackRate(selectedFamilyId !== 'all' ? selectedFamilyId : null)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Pack Rate</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenAddFeatureRate(selectedFamilyId !== 'all' ? selectedFamilyId : null)}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Feature Rate</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    return rendered
+  }
+
   return (
-    <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-6 space-y-5">
-      {/* Top Configuration Controls Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-4">
+    <div className={`flex-1 min-w-0 h-full overflow-y-auto p-4 sm:p-6 bg-slate-100/60 ${className}`}>
+      <div className="w-full max-w-7xl mx-auto space-y-5">
+        {/* Top Configuration Controls Card */}
+        <div className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-2xs space-y-4">
         {/* Row 1: Deployment & Pricing Model & Country & Version Dropdowns */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* 1. Deployment Model Dropdown */}
@@ -308,9 +627,9 @@ export function RateCardCenterEditor({
               </div>
               <span
                 className="px-2.5 py-2 text-xs font-mono font-bold rounded-lg bg-slate-100 text-slate-700 border border-slate-200 shrink-0"
-                title={`Active Currency Symbol: ${activeCountry?.symbol || activeCountry?.currency}`}
+                title={`Active Currency Symbol: ${activeCurrencySymbol}`}
               >
-                {activeCountry?.symbol || activeCountry?.currency}
+                {activeCurrencySymbol}
               </span>
             </div>
           </div>
@@ -371,14 +690,118 @@ export function RateCardCenterEditor({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-            <Info className="w-3 h-3 text-slate-400" aria-hidden="true" />
-            <span>Independent rate card state preserved across pricing & deployment models</span>
+          <div className="flex items-center gap-2">
+            {!isVersionLocked && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenAddPackRate(selectedFamilyId !== 'all' ? selectedFamilyId : null)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Pack</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenAddFeatureRate(selectedFamilyId !== 'all' ? selectedFamilyId : null)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>Add Feature</span>
+                </button>
+              </>
+            )}
+            <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400 pl-2 border-l border-slate-200">
+              <Info className="w-3 h-3 text-slate-400" aria-hidden="true" />
+              <span>Independent rate card state</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Row 3: Tabbed Navigation for Rate Card Center Views */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 overflow-x-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-lg text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setActiveTab('rate-matrix')}
+              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'rate-matrix'
+                  ? 'bg-white text-orange-600 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Rate Cards Matrix</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('registry-table')}
+              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'registry-table'
+                  ? 'bg-white text-orange-600 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TableProperties className="w-3.5 h-3.5" />
+              <span>Full Registry Table</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-100 text-orange-800 font-mono">
+                6 Dimensions
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('service-rates')}
+              className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'service-rates'
+                  ? 'bg-white text-orange-600 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              <span>Service Rates</span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-mono">
+                {serviceRates.length}
+              </span>
+            </button>
+          </div>
+
+          <div className="text-[11px] font-medium text-slate-500 whitespace-nowrap hidden sm:block">
+            View: <span className="font-semibold text-slate-700">{activeTab === 'rate-matrix' ? 'Commercial Matrix' : activeTab === 'registry-table' ? 'Complete 6-Dim Registry' : 'Professional Implementation Services'}</span>
           </div>
         </div>
       </div>
 
-      {/* Editor Content based on Selected Deployment and Pricing Model */}
+      {/* Conditional Rendering based on activeTab */}
+      {activeTab === 'registry-table' ? (
+        <RateCardRegistryTable
+          rawRateCards={rawRateCards}
+          activeVersion={activeVersion}
+          countries={countries}
+          deploymentModels={deploymentModels}
+          pricingModels={pricingModels}
+          pricingTiers={pricingTiers}
+          packs={packs}
+          features={features}
+          isVersionLocked={isVersionLocked}
+          onUpdateRate={onUpdateRegistryRate}
+          onRefresh={onRefreshRegistry}
+        />
+      ) : activeTab === 'service-rates' ? (
+        <ServiceRatesSection
+          serviceRates={serviceRates}
+          activeCountry={activeCountry}
+          activeCurrencySymbol={activeCurrencySymbol}
+          isVersionLocked={isVersionLocked}
+          onUpdateServiceRate={onUpdateServiceRate}
+          onDeleteServiceRate={onDeleteServiceRate}
+          onOpenAddServiceRate={onOpenAddServiceRate}
+        />
+      ) : (
+        <>
+          {/* Editor Content based on Selected Deployment and Pricing Model */}
+
       {isOnPremiseWithoutConfig ? (
         /* Section: On-Premise + License Fee + AMC configuration status */
         <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-5 shadow-2xs">
@@ -440,6 +863,20 @@ export function RateCardCenterEditor({
         </div>
       ) : isPEPM ? (
         <div className="space-y-8">
+          {filteredPackRates.length === 0 && filteredFeatureRates.length === 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 flex items-start gap-3 shadow-2xs">
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="space-y-1">
+                <div className="font-bold text-amber-950">
+                  Rate Card Not Configured:
+                </div>
+                <p className="text-xs text-amber-900">
+                  No saved rate card exists for {activeDeploymentObj?.name || selectedDeployment} + {activePricingModel?.name || selectedPricingModel} in {activeCountry?.name || 'Selected Country'}. Configure the rate card before calculating the proposal.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* PEPM Formula Banner */}
           <div className="bg-sky-50/70 border border-sky-200/80 rounded-xl p-3.5 text-xs text-sky-950 flex items-start gap-3">
             <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" aria-hidden="true" />
@@ -460,116 +897,63 @@ export function RateCardCenterEditor({
           <h2 className="sr-only">Pack Rates (PEPM)</h2>
           <h2 className="sr-only">À la Carte Feature Rates (PEPM)</h2>
 
-          {familiesToRender.map((family) => {
-            const famPacks = packs.filter(
-              (p) =>
-                family.id === 'all' ||
-                String(p.familyId) === String(family.id) ||
-                String(p.product_family_id) === String(family.id),
-            )
-            const famPackRates = filteredPackRates.filter(
-              (pr) =>
-                family.id === 'all' ||
-                String(pr.familyId) === String(family.id) ||
-                famPacks.some(
-                  (p) =>
-                    String(p.id) === String(pr.packId) ||
-                    String(p.packId) === String(pr.packId),
-                ),
-            )
-            const famFeatures = features.filter(
-              (f) =>
-                family.id === 'all' ||
-                String(f.familyId) === String(family.id) ||
-                String(f.product_family_id) === String(family.id),
-            )
-            const famFeatureRates = filteredFeatureRates.filter(
-              (fr) =>
-                family.id === 'all' ||
-                String(fr.familyId) === String(family.id) ||
-                famFeatures.some((f) => String(f.id) === String(fr.featureId)),
-            )
-
-            return (
-              <div key={family.id} className="space-y-6 pt-2 first:pt-0">
-                {/* Section A: Pack Rates */}
-                <PackRatesSection
-                  family={family}
-                  packRates={famPackRates}
-                  packs={famPacks}
-                  pricingTiers={pricingTiers}
-                  activeDeployment={selectedDeployment}
-                  activeCurrencySymbol={activeCountry?.symbol || activeCountry?.currency}
-                  isVersionLocked={isVersionLocked}
-                  isDualComponent={isDualComponent}
-                  onUpdateRate={onUpdatePackRate}
-                  onRemoveRate={onRemovePackRate}
-                  onOpenAddPackRate={() => onOpenAddPackRate(family.id)}
-                />
-
-                {/* Section B: À la carte Feature Rates */}
-                <FeatureRatesSection
-                  family={family}
-                  featureRates={famFeatureRates}
-                  features={famFeatures}
-                  pricingTiers={pricingTiers}
-                  activeDeployment={selectedDeployment}
-                  activeCurrencySymbol={activeCountry?.symbol || activeCountry?.currency}
-                  isVersionLocked={isVersionLocked}
-                  isDualComponent={isDualComponent}
-                  onUpdateRate={onUpdateFeatureRate}
-                  onRemoveRate={onRemoveFeatureRate}
-                  onOpenAddFeatureRate={() => onOpenAddFeatureRate(family.id)}
-                />
-              </div>
-            )
-          })}
+          {renderFamilySections(isDualComponent)}
         </div>
       ) : isPlatformSubscription ? (
-        /* Section 3: Platform + Subscription (Excel reference) */
-        <PlatformSubscriptionSection
-          platformConfig={platformConfig}
-          onChangeConfig={onChangePlatformConfig}
-          onResetToSpreadsheetDemo={onResetPlatformDemo}
-          activeCurrencySymbol={activeCountry?.symbol || activeCountry?.currency}
-          activeCurrencyCode={activeCountry?.currency}
-          isVersionLocked={isVersionLocked}
-          activeDeployment={selectedDeployment}
-          activeCountry={activeCountry}
-          selectedFamilyName={activeFamily ? activeFamily.name : 'All Product Families'}
-          pricingTiers={pricingTiers}
-        />
+        /* Section 3: Platform + Subscription with Pack & Feature Configuration */
+        <div className="space-y-8">
+          <PlatformSubscriptionSection
+            platformConfig={platformConfig}
+            onChangeConfig={onChangePlatformConfig}
+            onResetToSpreadsheetDemo={onResetPlatformDemo}
+            activeCurrencySymbol={activeCurrencySymbol}
+            activeCurrencyCode={activeCountry?.currency}
+            isVersionLocked={isVersionLocked}
+            activeDeployment={selectedDeployment}
+            activeCountry={activeCountry}
+            selectedFamilyName={activeFamily ? activeFamily.name : 'All Product Families'}
+            pricingTiers={pricingTiers}
+          />
+
+          <h2 className="sr-only">Pack Rates (Platform + Subscription)</h2>
+          {renderFamilySections(true)}
+        </div>
       ) : isLicenseAMC ? (
-        /* Section 4: License Fee + AMC Configuration UI */
-        <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-5 shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-              <Server className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900">
-                  {activePricingModel.name} Configuration
-                </h3>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  Combination 5: On-Premise + License Fee + AMC
-                </span>
+        /* Section 4: License Fee + AMC Configuration UI with Pack Configuration */
+        <div className="space-y-8">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                <Server className="w-5 h-5" aria-hidden="true" />
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Dual component: Perpetual / Term Capex License Fee + Recurring Annual Maintenance (AMC).
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {activePricingModel.name} Configuration
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Combination 5: On-Premise + License Fee + AMC
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Dual component: Perpetual / Term Capex License Fee + Recurring Annual Maintenance (AMC).
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2">
+              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-slate-600 shrink-0" aria-hidden="true" />
+                <span>Commercial Structure & Calculation Rules</span>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Capex License fee applies as a fixed component, while AMC is computed as annual maintenance. Proposal totals and multi-year payment schedules are evaluated in <strong>Page 4 — Proposal Configurator</strong>.
               </p>
             </div>
           </div>
 
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2">
-            <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-              <Info className="w-4 h-4 text-slate-600 shrink-0" aria-hidden="true" />
-              <span>Commercial Structure & Calculation Rules</span>
-            </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              License fee applies as a fixed capex component, while AMC is computed as an annual maintenance percentage or fixed recurring fee. Full contractual calculations and payment schedules are evaluated in <strong>Page 4 — Proposal Configurator</strong>.
-            </p>
-          </div>
+          <h2 className="sr-only">Pack Rates (License Fee + AMC)</h2>
+          {renderFamilySections(true)}
         </div>
       ) : (
         /* Section 4: Custom / New Pricing Model awaiting backend implementation */
@@ -596,12 +980,16 @@ export function RateCardCenterEditor({
       <ServiceRatesSection
         serviceRates={serviceRates}
         activeCountry={activeCountry}
-        activeCurrencySymbol={activeCountry?.symbol || activeCountry?.currency || '$'}
+        activeCurrencySymbol={activeCurrencySymbol}
         isVersionLocked={isVersionLocked}
         onUpdateServiceRate={onUpdateServiceRate}
         onDeleteServiceRate={onDeleteServiceRate}
         onOpenAddServiceRate={onOpenAddServiceRate}
       />
+        </>
+      )}
+      </div>
     </div>
   )
 }
+

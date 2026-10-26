@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import DOMAIN_ERRORS, http_error
 from app.db.session import get_db
 from app.models.master_data import Country, PricingModel, UnitOfMeasure
+from app.models.rate_card import RateCard
 from app.schemas.rate_card import (
     RateCardCreate,
     RateCardDetailResponse,
@@ -75,7 +76,7 @@ class RateCardResolveRequest(BaseModel):
     deployment_model_id: int = Field(..., gt=0)
     pricing_model_id: int = Field(..., gt=0)
     tier_id: int = Field(..., gt=0)
-    uom_id: int = Field(..., gt=0)
+    uom_id: Optional[int] = Field(None, gt=0, description="UOM ID; defaults to employee UOM or model-locked UOM")
     pack_version_id: Optional[int] = Field(None, gt=0)
     feature_id: Optional[int] = Field(None, gt=0)
 
@@ -158,17 +159,52 @@ class RateCardUpsertPayload(BaseModel):
 def resolve_rates(request: RateCardResolveRequest, db: Session = Depends(get_db)):
     try:
         version_id = resolve_active_rate_card_version(db, request.rate_card_version_id).id
-        rate_card = resolve_rate_card(
-            db,
-            rate_card_version_id=version_id,
-            country_id=request.country_id,
-            deployment_model_id=request.deployment_model_id,
-            pricing_model_id=request.pricing_model_id,
-            tier_id=request.tier_id,
-            uom_id=request.uom_id,
-            pack_version_id=request.pack_version_id,
-            feature_id=request.feature_id,
-        )
+
+        resolved_uom_id = request.uom_id
+        if not resolved_uom_id:
+            pm = db.get(PricingModel, request.pricing_model_id)
+            if pm and pm.uom_locked_id:
+                resolved_uom_id = pm.uom_locked_id
+            else:
+                emp_uom = db.execute(
+                    select(UnitOfMeasure).where(UnitOfMeasure.code == "employee")
+                ).scalars().first()
+                if emp_uom:
+                    resolved_uom_id = emp_uom.id
+                else:
+                    default_uom = db.execute(select(UnitOfMeasure).order_by(UnitOfMeasure.id)).scalars().first()
+                    resolved_uom_id = default_uom.id if default_uom else 1
+
+        try:
+            rate_card = resolve_rate_card(
+                db,
+                rate_card_version_id=version_id,
+                country_id=request.country_id,
+                deployment_model_id=request.deployment_model_id,
+                pricing_model_id=request.pricing_model_id,
+                tier_id=request.tier_id,
+                uom_id=resolved_uom_id,
+                pack_version_id=request.pack_version_id,
+                feature_id=request.feature_id,
+            )
+        except MissingRateCardMatchError:
+            # Fallback check: if rate was saved under another standard UOM (e.g. employee vs candidate)
+            stmt = select(RateCard).where(
+                RateCard.rate_card_version_id == version_id,
+                RateCard.country_id == request.country_id,
+                RateCard.deployment_model_id == request.deployment_model_id,
+                RateCard.pricing_model_id == request.pricing_model_id,
+                RateCard.tier_id == request.tier_id,
+            )
+            if request.pack_version_id is not None:
+                stmt = stmt.where(RateCard.pack_version_id == request.pack_version_id)
+            else:
+                stmt = stmt.where(RateCard.feature_id == request.feature_id)
+            fallback_matches = db.scalars(stmt).all()
+            if len(fallback_matches) == 1:
+                rate_card = fallback_matches[0]
+            else:
+                raise
     except DOMAIN_ERRORS as exc:
         raise http_error(exc) from exc
     except MissingRateCardMatchError as exc:
@@ -349,7 +385,13 @@ def upsert_rate_card_entry(payload: RateCardUpsertPayload, db: Session = Depends
         pm = db.get(PricingModel, payload.pricing_model_id)
         if pm and pm.uom_locked_id:
             uom_id = pm.uom_locked_id
-        else:
+        elif pm and (pm.code == "pepm" or "per employee" in pm.name.lower()):
+            emp_uom = db.execute(
+                select(UnitOfMeasure).where(UnitOfMeasure.code == "employee")
+            ).scalars().first()
+            if emp_uom:
+                uom_id = emp_uom.id
+        if not uom_id:
             default_uom = db.execute(select(UnitOfMeasure).order_by(UnitOfMeasure.id)).scalars().first()
             if not default_uom:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No unit of measure found in database")

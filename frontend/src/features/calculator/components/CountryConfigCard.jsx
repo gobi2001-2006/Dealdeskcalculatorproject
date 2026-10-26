@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Globe,
   Trash2,
   Layers,
   AlertCircle,
-  Building2,
 } from 'lucide-react'
 import {
   INITIAL_COUNTRIES,
@@ -16,6 +15,7 @@ import { INITIAL_PRODUCT_FAMILIES } from '../../../data/catalogueData'
 import { FamilyConfigCard } from './FamilyConfigCard'
 import { ServiceLinesSection } from './ServiceLinesSection'
 import { validateContractTerm } from '../calculatorData'
+import { getCurrencySymbol } from '../../ratecard/rateCardFormatters'
 
 function getCountryCurrencyCode(country) {
   if (!country) return 'USD'
@@ -28,15 +28,8 @@ function getCountryCurrencyCode(country) {
 }
 
 function getCountryCurrencySymbol(country, currencyCode = null) {
-  if (country?.currency && typeof country.currency === 'object' && country.currency.symbol) {
-    return country.currency.symbol
-  }
-  if (country?.symbol) return country.symbol
   const code = currencyCode || getCountryCurrencyCode(country)
-  if (code === 'INR') return '₹'
-  if (code === 'EUR') return '€'
-  if (code === 'GBP') return '£'
-  return '$'
+  return getCurrencySymbol(country, code) || getCurrencySymbol(code) || '$'
 }
 
 export function CountryConfigCard({
@@ -105,6 +98,86 @@ export function CountryConfigCard({
     pricingModelList.find((p) => String(p.id) === String(countryConfig.pricingModelId)) ||
     filteredPricingModels[0] ||
     pricingModelList[0] || { id: 1, name: 'PEPM' }
+
+  // Synchronize countryConfig properties to actual database master records when loaded
+  useEffect(() => {
+    if (!masters) return
+
+    let updates = null
+
+    // 1. Sync country ID and currency if loaded from DB
+    if (masters.countries?.length > 0) {
+      const matchedCountry = masters.countries.find((c) => String(c.id) === String(countryConfig.countryId))
+      if (!matchedCountry) {
+        // Try matching by name or iso_code or fallback to first
+        const byCode = masters.countries.find(
+          (c) =>
+            c.iso_code?.toLowerCase() === String(countryConfig.countryId).toLowerCase() ||
+            c.name?.toLowerCase() === (countryConfig.countryName || '').toLowerCase()
+        ) || masters.countries[0]
+        if (byCode) {
+          const cCode = getCountryCurrencyCode(byCode)
+          updates = {
+            ...(updates || {}),
+            countryId: Number(byCode.id),
+            countryName: byCode.name,
+            currency: cCode,
+            currencySymbol: getCountryCurrencySymbol(byCode, cCode),
+          }
+        }
+      } else {
+        const cCode = getCountryCurrencyCode(matchedCountry)
+        if (countryConfig.currency !== cCode || countryConfig.countryName !== matchedCountry.name) {
+          updates = {
+            ...(updates || {}),
+            countryName: matchedCountry.name,
+            currency: cCode,
+            currencySymbol: getCountryCurrencySymbol(matchedCountry, cCode),
+          }
+        }
+      }
+    }
+
+    // 2. Sync tier ID
+    if (masters.tiers?.length > 0) {
+      const matchedTier = masters.tiers.find((t) => String(t.id) === String(countryConfig.pricingTierId))
+      if (!matchedTier) {
+        updates = {
+          ...(updates || {}),
+          pricingTierId: Number(masters.tiers[0].id),
+        }
+      }
+    }
+
+    // 3. Sync deployment model ID
+    if (masters.deployments?.length > 0) {
+      const matchedDep = masters.deployments.find((d) => String(d.id) === String(countryConfig.deploymentModelId))
+      if (!matchedDep) {
+        updates = {
+          ...(updates || {}),
+          deploymentModelId: Number(masters.deployments[0].id),
+        }
+      }
+    }
+
+    // 4. Sync pricing model ID
+    if (masters.pricingModels?.length > 0) {
+      const matchedPm = masters.pricingModels.find((p) => String(p.id) === String(countryConfig.pricingModelId))
+      if (!matchedPm) {
+        updates = {
+          ...(updates || {}),
+          pricingModelId: Number(filteredPricingModels[0]?.id || masters.pricingModels[0].id),
+        }
+      }
+    }
+
+    if (updates) {
+      onUpdateCountry({
+        ...countryConfig,
+        ...updates,
+      })
+    }
+  }, [masters])
 
   // Handle country dropdown change
   const handleCountryChange = (countryId) => {
@@ -220,7 +293,7 @@ export function CountryConfigCard({
       {/* Dark Navy Country Header */}
       <header className="bg-[#0B1528] text-white px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 shadow-2xs font-bold text-sm">
+          <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 shadow-2xs shrink-0">
             <Globe className="w-4 h-4 text-orange-400" aria-hidden="true" />
           </div>
           <div>
@@ -234,19 +307,19 @@ export function CountryConfigCard({
             </div>
             {/* Header parameter badges */}
             <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-300 flex-wrap">
-              <span className="px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 font-medium">
+              <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
                 {tierMaster.name || tierMaster.code}
               </span>
-              <span>•</span>
-              <span className="px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 font-medium">
+              <span className="text-slate-600">•</span>
+              <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
                 {deploymentMaster.name}
               </span>
-              <span>•</span>
-              <span className="px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 font-medium text-orange-300">
+              <span className="text-slate-600">•</span>
+              <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-orange-300">
                 {pricingModelMaster.name}
               </span>
-              <span>•</span>
-              <span className="px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 font-medium">
+              <span className="text-slate-600">•</span>
+              <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
                 {countryConfig.contractTerm || '—'} Months
               </span>
             </div>
@@ -271,21 +344,23 @@ export function CountryConfigCard({
       </header>
 
       {/* Country Configuration Controls Row */}
-      <div className="p-5 border-b border-slate-100 bg-slate-50/40">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5">
+      <div className="p-5 border-b border-slate-100 bg-slate-50/50 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5 items-start">
           {/* Country Selector */}
           <div className="lg:col-span-3">
-            <label
-              htmlFor={`country-select-${countryConfig.id}`}
-              className="block text-xs font-semibold text-slate-700 mb-1"
-            >
-              Country / Jurisdiction <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label
+                htmlFor={`country-select-${countryConfig.id}`}
+                className="block text-xs font-semibold text-slate-700"
+              >
+                Country / Jurisdiction <span className="text-rose-500">*</span>
+              </label>
+            </div>
             <select
               id={`country-select-${countryConfig.id}`}
               value={countryConfig.countryId}
               onChange={(e) => handleCountryChange(e.target.value)}
-              className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               {countryList.map((c) => {
                 const currencyCode = getCountryCurrencyCode(c)
@@ -300,17 +375,19 @@ export function CountryConfigCard({
 
           {/* Pricing Tier Selector */}
           <div className="lg:col-span-2">
-            <label
-              htmlFor={`tier-select-${countryConfig.id}`}
-              className="block text-xs font-semibold text-slate-700 mb-1"
-            >
-              Pricing Tier <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label
+                htmlFor={`tier-select-${countryConfig.id}`}
+                className="block text-xs font-semibold text-slate-700"
+              >
+                Pricing Tier <span className="text-rose-500">*</span>
+              </label>
+            </div>
             <select
               id={`tier-select-${countryConfig.id}`}
               value={countryConfig.pricingTierId}
               onChange={(e) => handleTierChange(e.target.value)}
-              className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               {tierList.map((tier) => (
                 <option key={tier.id} value={tier.id}>
@@ -322,17 +399,19 @@ export function CountryConfigCard({
 
           {/* Deployment Model Selector */}
           <div className="lg:col-span-2">
-            <label
-              htmlFor={`deployment-select-${countryConfig.id}`}
-              className="block text-xs font-semibold text-slate-700 mb-1"
-            >
-              Deployment Model <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label
+                htmlFor={`deployment-select-${countryConfig.id}`}
+                className="block text-xs font-semibold text-slate-700"
+              >
+                Deployment Model <span className="text-rose-500">*</span>
+              </label>
+            </div>
             <select
               id={`deployment-select-${countryConfig.id}`}
               value={countryConfig.deploymentModelId}
               onChange={(e) => handleDeploymentChange(e.target.value)}
-              className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               {deploymentList.map((dep) => (
                 <option key={dep.id} value={dep.id}>
@@ -344,17 +423,19 @@ export function CountryConfigCard({
 
           {/* Pricing Model Selector */}
           <div className="lg:col-span-3">
-            <label
-              htmlFor={`pricing-model-select-${countryConfig.id}`}
-              className="block text-xs font-semibold text-slate-700 mb-1"
-            >
-              Pricing Model <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label
+                htmlFor={`pricing-model-select-${countryConfig.id}`}
+                className="block text-xs font-semibold text-slate-700"
+              >
+                Pricing Model <span className="text-rose-500">*</span>
+              </label>
+            </div>
             <select
               id={`pricing-model-select-${countryConfig.id}`}
               value={countryConfig.pricingModelId}
               onChange={(e) => handlePricingModelChange(e.target.value)}
-              className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               {filteredPricingModels.map((pm) => (
                 <option key={pm.id} value={pm.id}>
@@ -366,13 +447,14 @@ export function CountryConfigCard({
 
           {/* Contract Term (Months) Input */}
           <div className="lg:col-span-2">
-            <label
-              htmlFor={`term-input-${countryConfig.id}`}
-              className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between"
-            >
-              <span>Term (Mo)</span>
-              <span className="text-[10px] text-slate-400 font-normal">Months</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5 h-4">
+              <label
+                htmlFor={`term-input-${countryConfig.id}`}
+                className="block text-xs font-semibold text-slate-700"
+              >
+                Contract Term (Mo) <span className="text-rose-500">*</span>
+              </label>
+            </div>
             <input
               id={`term-input-${countryConfig.id}`}
               type="number"
@@ -380,7 +462,7 @@ export function CountryConfigCard({
               max="120"
               value={countryConfig.contractTerm}
               onChange={(e) => handleTermChange(e.target.value)}
-              className={`w-full px-2.5 py-2 text-xs rounded-lg border transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:ring-2 ${
+              className={`w-full h-10 px-3 text-xs rounded-lg border transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:ring-2 ${
                 termError
                   ? 'border-rose-400 focus:ring-rose-200'
                   : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
@@ -391,22 +473,60 @@ export function CountryConfigCard({
         </div>
 
         {termError && (
-          <p className="mt-2 text-[11px] text-rose-600 flex items-center gap-1 font-medium">
+          <p className="text-[11px] text-rose-600 flex items-center gap-1 font-medium">
             <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
             <span>{termError}</span>
           </p>
         )}
+
+        {/* Active Employees (with ESS) Quantity Input — Separate Horizontal Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs">
+          <div>
+            <label
+              htmlFor={`country-headcount-input-${countryConfig.id}`}
+              className="block text-xs font-bold text-slate-900"
+            >
+              Active Employees (with ESS) — Country Deployment Volume
+            </label>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Authoritative UOM employee count applied to PEPM subscription calculations across all families for {countryMaster.name}.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <input
+              id={`country-headcount-input-${countryConfig.id}`}
+              type="number"
+              min="1"
+              value={countryConfig.headcount || 5000}
+              onChange={(e) => {
+                const val = Number(e.target.value) || 0
+                onUpdateCountry({
+                  ...countryConfig,
+                  headcount: val,
+                  families: (countryConfig.families || []).map((f) => ({
+                    ...f,
+                    headcount: val,
+                  })),
+                })
+              }}
+              className="w-36 h-9 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 font-mono font-bold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-right shadow-2xs"
+            />
+            <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+              Users
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Product Families Section */}
       <div className="p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
           <div>
             <h4 className="text-xs font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
               <Layers className="w-4 h-4 text-orange-600" aria-hidden="true" />
               <span>Configured Product Families ({(countryConfig.families || []).length})</span>
             </h4>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-slate-500 mt-0.5">
               Each module family includes pack packaging configurations and standalone à la carte feature add-ons.
             </p>
           </div>
@@ -427,7 +547,7 @@ export function CountryConfigCard({
                   handleAddFamily(e.target.value)
                   e.target.value = ''
                 }}
-                className="px-2.5 py-1 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold focus:outline-none focus:border-orange-500 shadow-2xs"
+                className="h-8 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold focus:outline-none focus:border-orange-500 shadow-2xs hover:bg-slate-50 transition-colors"
               >
                 <option value="" disabled>
                   + Add Product Family...
@@ -444,14 +564,8 @@ export function CountryConfigCard({
 
         {/* Empty Families Fallback */}
         {(countryConfig.families || []).length === 0 ? (
-          <div className="p-6 rounded-lg bg-slate-50/60 border border-dashed border-slate-200 text-center space-y-2">
-            <Building2 className="w-6 h-6 text-slate-400 mx-auto" aria-hidden="true" />
-            <div className="text-xs font-semibold text-slate-700">
-              No Product Families Added Yet
-            </div>
-            <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-              Select an enterprise product family above to assign commercial software packs and standalone features for {countryMaster.name}.
-            </p>
+          <div className="py-6 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 text-center text-xs font-medium text-slate-500">
+            Add Product Family
           </div>
         ) : (
           <div className="space-y-4">
@@ -461,6 +575,13 @@ export function CountryConfigCard({
                 familyConfig={familyConfig}
                 countryPricingModel={pricingModelMaster.name}
                 countryHeadcount={countryConfig.headcount}
+                countryId={countryConfig.countryId}
+                pricingTierId={countryConfig.pricingTierId}
+                deploymentModelId={countryConfig.deploymentModelId}
+                pricingModelId={countryConfig.pricingModelId}
+                contractTerm={countryConfig.contractTerm || 36}
+                currencyCode={countryCurrencyCode}
+                currencySymbol={countryCurrencySymbol}
                 onUpdateFamily={handleUpdateFamily}
                 onRemoveFamily={() => handleRemoveFamily(familyConfig.id)}
                 families={familyList}

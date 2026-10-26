@@ -1,4 +1,5 @@
-import { Layers, Plus, Trash2, Info } from 'lucide-react'
+import { useMemo } from 'react'
+import { Layers, Plus, Trash2, Info, AlertCircle } from 'lucide-react'
 import { ProductTypeBadge } from '../catalogue/ProductTypeBadge'
 
 const DEFAULT_TIERS = [
@@ -13,9 +14,10 @@ export function FeatureRatesSection({
   features = [],
   pricingTiers = DEFAULT_TIERS,
   activeDeployment = 'Shared Cloud',
-  activeCurrencySymbol = '₹',
+  activeCurrencySymbol = '$',
   isVersionLocked = false,
   isDualComponent = false,
+  apiError = null,
   onUpdateRate,
   onRemoveRate,
   onOpenAddFeatureRate,
@@ -23,13 +25,129 @@ export function FeatureRatesSection({
   const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
   const familyName = family?.name || 'Product Family'
 
-  // Build catalogue summary from features belonging to this family
+  // Only include features that have available/entered rate data
+  const combinedFeatures = useMemo(() => {
+    const list = []
+    const handledFeatureIds = new Set()
+
+    const hasEnteredRate = (r) => {
+      if (!r) return false
+      const hasVal = (v) => v !== undefined && v !== null && String(v).trim() !== '' && Number(v) > 0
+      return Boolean(
+        hasVal(r.tier1Rate) ||
+          hasVal(r.tier2Rate) ||
+          hasVal(r.tier3Rate) ||
+          hasVal(r.tier_1) ||
+          hasVal(r.tier_2) ||
+          hasVal(r.tier_3) ||
+          hasVal(r.fixed_tier1Rate) ||
+          hasVal(r.fixed_tier2Rate) ||
+          hasVal(r.fixed_tier3Rate) ||
+          hasVal(r.fixed_tier_1) ||
+          hasVal(r.fixed_tier_2) ||
+          hasVal(r.fixed_tier_3) ||
+          hasVal(r.unit_rate) ||
+          hasVal(r.fixed_fee) ||
+          (pricingTiers &&
+            pricingTiers.some(
+              (t) =>
+                hasVal(r[t.id]) ||
+                hasVal(r[`tier_${t.id}`]) ||
+                hasVal(r[`tier${t.id}Rate`]) ||
+                hasVal(r[`fixed_tier_${t.id}`]) ||
+                hasVal(r[`fixed_${t.id}Rate`]),
+            )),
+      )
+    }
+
+    const seenFeatureIds = new Set()
+    const seenRowKeys = new Set()
+
+    const addFeatureRow = (item, rawFeatId) => {
+      const normalizedId = String(rawFeatId)
+      if (seenFeatureIds.has(normalizedId)) return
+      seenFeatureIds.add(normalizedId)
+
+      let rowKey = `feat-row-${normalizedId}`
+      if (seenRowKeys.has(rowKey)) {
+        rowKey = `feat-row-${normalizedId}-${seenRowKeys.size}`
+      }
+      seenRowKeys.add(rowKey)
+
+      list.push({
+        ...item,
+        rowKey,
+        id: item.id || `fr-feat-${normalizedId}`,
+        featureId: !isNaN(Number(normalizedId)) ? Number(normalizedId) : normalizedId,
+        isConfigured: true,
+      })
+    }
+
+    // 1. Catalogue features for this family that have saved entered rates
+    features.forEach((feat) => {
+      const savedRate = featureRates.find((r) => {
+        if (r.featureId != null && feat.id != null) {
+          return String(r.featureId) === String(feat.id)
+        }
+        if (r.id && (String(r.id) === `fr-feat-${feat.id}` || String(r.id).startsWith(`fr-feat-${feat.id}-`))) {
+          return true
+        }
+        if (typeof feat.id === 'string' && feat.id.startsWith('prod-') && r.productId === feat.id) {
+          return true
+        }
+        if (feat.code && r.productCode && feat.code === r.productCode) {
+          return true
+        }
+        return false
+      })
+
+      if (hasEnteredRate(savedRate)) {
+        addFeatureRow(
+          {
+            ...(savedRate || {}),
+            featureName: feat.name || savedRate?.featureName,
+            productCode: feat.code || savedRate?.productCode || `FEAT-${feat.id}`,
+            unitOfMeasure: feat.unitOfMeasure || savedRate?.unitOfMeasure || 'Active Employees (with ESS)',
+            classification: feat.classification || savedRate?.classification,
+            productType:
+              feat.productType ||
+              savedRate?.productType ||
+              (feat.classification === 'ai_enabled' ? 'AI Agent Module' : 'Adrenalin Native'),
+            deploymentModel: savedRate?.deploymentModel || activeDeployment,
+            countryId: savedRate?.countryId,
+          },
+          feat.id,
+        )
+      }
+    })
+
+    // 2. Any feature rates configured that might not be in features catalogue
+    featureRates.forEach((rate) => {
+      const rawFeatId =
+        rate.featureId != null
+          ? String(rate.featureId)
+          : rate.id && String(rate.id).startsWith('fr-feat-')
+          ? String(rate.id).replace('fr-feat-', '').split('-')[0]
+          : rate.id != null
+          ? String(rate.id).replace(/^(feat-row-|fr-feat-|fr-db-|fr-|feat-)/, '').split('-')[0]
+          : null
+      if (rawFeatId && hasEnteredRate(rate)) {
+        addFeatureRow(rate, rawFeatId)
+      }
+    })
+
+    return list
+  }, [features, featureRates, activeDeployment, pricingTiers])
+
+  const configuredCount = combinedFeatures.length
+
+  // Build catalogue summary line of available configured features
   const catalogueSummaryText =
-    features.length > 0
-      ? features
-          .map((f) => `${f.name}${f.code ? ` (${f.code})` : ''}`)
+    combinedFeatures.length > 0
+      ? combinedFeatures
+          .map((f) => `${f.featureName || f.name}${f.productCode ? ` (${f.productCode})` : ''}`)
           .join(', ')
-      : `No standalone L2/L3 features configured for ${familyName}`
+      : `No features configured for ${familyName}`
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
@@ -45,7 +163,7 @@ export function FeatureRatesSection({
                 {familyName} — À la Carte Feature Rates
               </h3>
               <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-medium bg-slate-100 text-slate-600">
-                {featureRates.length} configured
+                {configuredCount} configured
               </span>
               {isVersionLocked && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
@@ -88,8 +206,16 @@ export function FeatureRatesSection({
         </div>
       </div>
 
+      {/* API Error State */}
+      {apiError && (
+        <div className="px-5 py-3 bg-rose-50 border-b border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>Failed to load feature rates from database: {apiError}</span>
+        </div>
+      )}
+
       {/* Table / List */}
-      {featureRates.length > 0 ? (
+      {combinedFeatures.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -126,18 +252,21 @@ export function FeatureRatesSection({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {featureRates.map((rate) => {
-                const featObj = features.find((f) => f.id === rate.featureId)
+              {combinedFeatures.map((rate) => {
+                const featObj = features.find((f) => String(f.id) === String(rate.featureId))
                 const classification =
+                  rate.classification ||
                   featObj?.classification ||
                   (rate.productType?.includes('AI') ? 'ai_enabled' : 'native')
 
                 return (
-                  <tr key={rate.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={rate.rowKey || rate.id || rate.featureId} className="hover:bg-slate-50/70 transition-colors">
                     {/* Feature Details */}
                     <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-900">
-                        {rate.featureName}
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-900">
+                          {rate.featureName}
+                        </span>
                       </div>
 
                       {/* Feature UOM beneath name */}
@@ -177,6 +306,8 @@ export function FeatureRatesSection({
                           rate[fixedKey] ??
                           rate[`fixed_tier${idx + 1}Rate`] ??
                           rate[`fixed_${tier.id}Rate`] ??
+                          rate[`fixed_tier_${idx + 1}`] ??
+                          rate[`fixed_${idx + 1}Rate`] ??
                           ''
 
                         return (
@@ -196,7 +327,7 @@ export function FeatureRatesSection({
                                 aria-label={`${rate.featureName} ${tier.code || `Tier ${idx + 1}`} License Fee`}
                                 value={fixedVal}
                                 onChange={(e) =>
-                                  onUpdateRate(rate.id, fixedKey, e.target.value)
+                                  onUpdateRate(rate.featureId || rate.id, fixedKey, e.target.value)
                                 }
                                 placeholder="0.00"
                                 className="w-24 px-2 py-1 text-right font-mono text-xs border border-amber-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
@@ -220,6 +351,7 @@ export function FeatureRatesSection({
                         rate[fieldKey] ??
                         rate[`tier_${tier.id}`] ??
                         rate[`tier${idx + 1}Rate`] ??
+                        rate[`tier_${idx + 1}`] ??
                         rate[tier.id] ??
                         rate[`${tier.id}Rate`] ??
                         ''
@@ -243,8 +375,9 @@ export function FeatureRatesSection({
                               aria-label={`${rate.featureName} ${tier.code || `Tier ${idx + 1}`} Rate`}
                               value={val}
                               onChange={(e) =>
-                                onUpdateRate(rate.id, fieldKey, e.target.value)
+                                onUpdateRate(rate.featureId || rate.id, fieldKey, e.target.value)
                               }
+                              placeholder="0.00"
                               className="w-24 px-2 py-1 text-right font-mono text-xs border border-slate-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
                             />
                           </div>
@@ -254,10 +387,10 @@ export function FeatureRatesSection({
 
                     {/* Action */}
                     <td className="py-3 px-3 text-center">
-                      {!isVersionLocked && (
+                      {!isVersionLocked && rate.isConfigured && (
                         <button
                           type="button"
-                          onClick={() => onRemoveRate(rate.id)}
+                          onClick={() => onRemoveRate(rate.featureId || rate.id)}
                           className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                           title={`Remove rate for ${rate.featureName}`}
                           aria-label={`Remove ${rate.featureName} rate`}
@@ -273,18 +406,26 @@ export function FeatureRatesSection({
           </table>
         </div>
       ) : (
-        <div className="py-6 px-4 text-center">
-          <p className="text-xs text-slate-500">
-            No à la carte feature rates configured for {familyName} under {activeDeployment}.
+        /* Empty state: No catalogue features configured for this family */
+        <div className="py-8 px-4 text-center space-y-2">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+            <Layers className="w-5 h-5" />
+          </div>
+          <p className="text-xs font-semibold text-slate-700">
+            No catalogue features available for {familyName}
+          </p>
+          <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+            Standalone modules and AI agent copilot features can be registered in Page 1 — Product Catalogue.
           </p>
           {!isVersionLocked && (
-            <button
-              type="button"
-              onClick={onOpenAddFeatureRate}
-              className="mt-2 text-xs font-semibold text-orange-600 hover:text-orange-700 underline cursor-pointer"
-            >
-              + Add Feature
-            </button>
+            <div className="pt-1">
+              <a
+                href="/catalogue"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 underline cursor-pointer"
+              >
+                Go to Product Catalogue &rarr;
+              </a>
+            </div>
           )}
         </div>
       )}

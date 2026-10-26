@@ -1,5 +1,10 @@
 # Adrenalin Deal Desk — Database Schema (design v1)
 
+> **Superseded in part (2026-10-17):** this is the original design draft. The implemented schema (42 tables,
+> Alembic head `f6a7b8c9d0e1`) differs in places, for example `proposal_countries` hangs off the proposal rather than the
+> version. The SQLAlchemy models in `backend/app/models/` and the migrations are the source of truth.
+> See `docs/PHASE_E_REPORT.md`.
+
 Status: **proposal for review** — nothing here has been created in Neon yet.
 Sources: FSD (29 Sep 2026), design walkthrough (25 Sep), review meeting (30 Sep), PEPM / Platform+Subscription
 calculation sheets, deployment × pricing-model combinations sheet, prototype v22, pricing-model PDF.
@@ -7,7 +12,6 @@ calculation sheets, deployment × pricing-model combinations sheet, prototype v2
 ## 0. How this will be built (so schema and code never drift)
 
 - **SQLAlchemy models are the source of truth. Alembic migrations create the tables.** We do not hand-write DDL in the Neon
-  SQL Editor. If you want to read the SQL, run `alembic upgrade head --sql` and it prints exactly what would run.
 - Built in **waves** (section 4). One migration per wave, verified before the next.
 - Naming: tables `snake_case` plural; PK `id bigint generated always as identity`; business keys in a `code` column.
 

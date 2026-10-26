@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Globe, X } from 'lucide-react'
 import {
   INITIAL_COUNTRIES,
@@ -7,6 +7,7 @@ import {
   PRICING_MODELS,
 } from '../../../data/rateCardData'
 import { validateContractTerm } from '../calculatorData'
+import { getCurrencySymbol } from '../../ratecard/rateCardFormatters'
 
 function getCountryCurrencyCode(country) {
   if (!country) return 'USD'
@@ -19,15 +20,8 @@ function getCountryCurrencyCode(country) {
 }
 
 function getCountryCurrencySymbol(country, currencyCode = null) {
-  if (country?.currency && typeof country.currency === 'object' && country.currency.symbol) {
-    return country.currency.symbol
-  }
-  if (country?.symbol) return country.symbol
   const code = currencyCode || getCountryCurrencyCode(country)
-  if (code === 'INR') return '₹'
-  if (code === 'EUR') return '€'
-  if (code === 'GBP') return '£'
-  return '$'
+  return getCurrencySymbol(country, code) || getCurrencySymbol(code) || '$'
 }
 
 export function AddCountryModal({
@@ -78,6 +72,25 @@ export function AddCountryModal({
   const [selectedPricingModelId, setSelectedPricingModelId] = useState(initialPricingModelId)
   const [contractTerm, setContractTerm] = useState('36')
   const [termError, setTermError] = useState('')
+
+  // Sync state when modal opens or master lists change
+  useEffect(() => {
+    if (isOpen) {
+      if (defaultCountry && !availableCountries.some((c) => String(c.id) === String(selectedCountryId))) {
+        setSelectedCountryId(defaultCountry.id)
+      }
+      if (tierList.length > 0 && !tierList.some((t) => String(t.id) === String(selectedTierId))) {
+        setSelectedTierId(tierList[0].id)
+      }
+      if (deploymentList.length > 0 && !deploymentList.some((d) => String(d.id) === String(selectedDeploymentId))) {
+        const nextDepId = deploymentList[0].id
+        setSelectedDeploymentId(nextDepId)
+        const nextModels = getFilteredPricingModels(nextDepId)
+        setSelectedPricingModelId(nextModels[0]?.id || pricingModelList[0]?.id || 1)
+      }
+      setTermError('')
+    }
+  }, [isOpen, masters])
 
   const handleDeploymentChange = (newDepId) => {
     setSelectedDeploymentId(newDepId)

@@ -47,7 +47,7 @@ export const INITIAL_CLIENT_INFO = {
  * Creates a default country configuration for the proposal.
  * Fully compatible with existing Pages 5 and 6 and real backend IDs.
  */
-export function createDefaultCountryConfig(countryId = 'c-in', index = 1) {
+export function createDefaultCountryConfig(countryId = 'c-in', index = 1, includeDefaultFamily = true) {
   const countryMaster =
     INITIAL_COUNTRIES.find((c) => c.id === countryId || String(c.id) === String(countryId)) ||
     INITIAL_COUNTRIES[0]
@@ -69,15 +69,17 @@ export function createDefaultCountryConfig(countryId = 'c-in', index = 1) {
       monthlySubscriptionFee: '300',
       employeeCount: '10000',
     },
-    families: [
-      {
-        id: `fam-cfg-${Date.now()}-1`,
-        familyId: 'fam-ta',
-        headcount: 5000,
-        selectedPackId: 'pack-ta-growth',
-        selectedFeatureIds: [], // À la carte features not in pack
-      },
-    ],
+    families: includeDefaultFamily
+      ? [
+          {
+            id: `fam-cfg-${Date.now()}-1`,
+            familyId: 'fam-ta',
+            headcount: 5000,
+            selectedPackId: 'pack-ta-growth',
+            selectedFeatureIds: [], // À la carte features not in pack
+          },
+        ]
+      : [],
     serviceLines: [
       {
         id: `srv-cfg-${Date.now()}-1`,
@@ -148,7 +150,20 @@ export function validateServiceLine(service) {
  * Formats a Proposal into the FastAPI Pydantic schema structure
  * for audit snapshots, database persistence, and JSON preview.
  */
-export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
+export function serializeProposalToBackendSchema(clientInfo, countryConfigs, mastersOrPacks = null, productsList = null) {
+  let masterPacks = []
+  let masterProducts = []
+
+  if (Array.isArray(mastersOrPacks)) {
+    masterPacks = mastersOrPacks
+    if (Array.isArray(productsList)) {
+      masterProducts = productsList
+    }
+  } else if (mastersOrPacks && typeof mastersOrPacks === 'object') {
+    masterPacks = mastersOrPacks.packs || []
+    masterProducts = mastersOrPacks.features || mastersOrPacks.products || []
+  }
+
   const proposalCode =
     clientInfo.proposalCode ||
     clientInfo.dealCode ||
@@ -160,11 +175,19 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
 
   const serializedCountries = countryConfigs.map((country, cIdx) => {
     // Collect line items for packs and à la carte features
-    (country.families || []).forEach((fam) => {
+    ;(country.families || []).forEach((fam) => {
       if (fam.selectedPackId) {
-        const pack = INITIAL_PACKS.find(
-          (p) => p.id === fam.selectedPackId || p.versions?.some((v) => v.id === fam.selectedPackId)
-        )
+        const pack =
+          masterPacks.find(
+            (p) =>
+              p.id === fam.selectedPackId ||
+              p.latestVersionId === fam.selectedPackId ||
+              p.versions?.some((v) => v.id === fam.selectedPackId) ||
+              p.pack_versions?.some((v) => v.id === fam.selectedPackId)
+          ) ||
+          INITIAL_PACKS.find(
+            (p) => p.id === fam.selectedPackId || p.versions?.some((v) => v.id === fam.selectedPackId)
+          )
         lineItems.push({
           line_number: lineNumber++,
           country_id: country.countryId,
@@ -187,7 +210,14 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
       // Collect à la carte features
       if (fam.selectedFeatureIds && fam.selectedFeatureIds.length > 0) {
         fam.selectedFeatureIds.forEach((featId) => {
-          const product = INITIAL_PRODUCTS.find((p) => p.id === featId)
+          const product =
+            masterProducts.find(
+              (p) =>
+                p.id === featId ||
+                p.featureId === featId ||
+                p.feature_id === featId ||
+                String(p.id) === String(featId)
+            ) || INITIAL_PRODUCTS.find((p) => p.id === featId)
           lineItems.push({
             line_number: lineNumber++,
             country_id: country.countryId,
@@ -293,15 +323,54 @@ export function deserializeBackendProposal(backendProposal) {
     const packItems = lineItems.filter((li) => li.pack_version_id != null)
     const featureItems = lineItems.filter((li) => li.feature_id != null)
 
-    const families = [
-      {
-        id: `fam-cfg-${Date.now()}-${idx + 1}`,
-        familyId: 'fam-ta',
-        headcount: c.user_headcount || 1000,
-        selectedPackId: packItems[0]?.pack_version_id || 'pack-ta-growth',
-        selectedFeatureIds: featureItems.map((f) => f.feature_id),
-      },
-    ]
+    // Discover families associated with these lines
+    const familyMap = new Map()
+    packItems.forEach((pi) => {
+      const famId = pi.pack_version?.pack?.product_family_id || 1
+      if (!familyMap.has(famId)) {
+        familyMap.set(famId, {
+          familyId: famId,
+          selectedPackId: pi.pack_version_id,
+          selectedFeatureIds: [],
+        })
+      } else {
+        familyMap.get(famId).selectedPackId = pi.pack_version_id
+      }
+    })
+
+    featureItems.forEach((fi) => {
+      const famId = fi.feature?.product?.product_family_id || 1
+      if (!familyMap.has(famId)) {
+        familyMap.set(famId, {
+          familyId: famId,
+          selectedPackId: null,
+          selectedFeatureIds: [fi.feature_id],
+        })
+      } else {
+        const entry = familyMap.get(famId)
+        if (!entry.selectedFeatureIds.includes(fi.feature_id)) {
+          entry.selectedFeatureIds.push(fi.feature_id)
+        }
+      }
+    })
+
+    const families = familyMap.size > 0
+      ? Array.from(familyMap.values()).map((f, fIdx) => ({
+          id: `fam-cfg-${Date.now()}-${idx + 1}-${fIdx + 1}`,
+          familyId: f.familyId,
+          headcount: c.user_headcount || 1000,
+          selectedPackId: f.selectedPackId,
+          selectedFeatureIds: f.selectedFeatureIds,
+        }))
+      : [
+          {
+            id: `fam-cfg-${Date.now()}-${idx + 1}`,
+            familyId: 1,
+            headcount: c.user_headcount || 1000,
+            selectedPackId: null,
+            selectedFeatureIds: [],
+          },
+        ]
 
     const srvLines = serviceLines.map((sl, sIdx) => ({
       id: `srv-${sl.id || Date.now()}-${sIdx}`,
@@ -324,7 +393,7 @@ export function deserializeBackendProposal(backendProposal) {
       pricingTierId: backendProposal.customer?.customer_tier_id || 'tier-1',
       deploymentModelId: c.deployment_model_id || 'dep-shared',
       pricingModelId: c.pricing_model_id || 'pm-pepm',
-      contractTerm: 36,
+      contractTerm: Number(c.term_months || c.contract_term || backendProposal.contract_term_months) || 36,
       headcount: c.user_headcount || 1000,
       platformSubscriptionConfig: {
         annualPlatformFee: '100000',
@@ -332,24 +401,13 @@ export function deserializeBackendProposal(backendProposal) {
         employeeCount: String(c.user_headcount || 1000),
       },
       families,
-      serviceLines: srvLines.length > 0 ? srvLines : [
-        {
-          id: `srv-cfg-${Date.now()}-1`,
-          roleName: 'Enterprise Solution Architecture',
-          hourlyRateId: 'hr-1',
-          rateApplied: 220,
-          hoursOrDays: 40,
-          unit: 'Hours',
-          discountPct: 0,
-          currency: currencyCode,
-        },
-      ],
+      serviceLines: srvLines,
     }
   })
 
   return {
     clientInfo,
     countryConfigs:
-      countryConfigs.length > 0 ? countryConfigs : [createDefaultCountryConfig('c-in', 1)],
+      countryConfigs.length > 0 ? countryConfigs : [createDefaultCountryConfig('c-in', 1, false)],
   }
 }
