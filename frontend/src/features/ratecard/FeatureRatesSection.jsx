@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Layers, Plus, Trash2, Info, AlertCircle } from 'lucide-react'
 import { ProductTypeBadge } from '../catalogue/ProductTypeBadge'
+import { PlatformRatesTable } from './PlatformRatesTable'
 
 // Tier columns come only from saved customer tiers.
 const DEFAULT_TIERS = []
@@ -15,10 +16,18 @@ export function FeatureRatesSection({
   isVersionLocked = false,
   isDualComponent = false,
   apiError = null,
+  // Platform + Subscription layout: tier platform fees + one UOM + one subscription rate per feature
+  layout = 'default',
+  allowedUoms = [],
+  lockedUomId = null,
+  fixedFeeBasis = 'annual',
+  unitRateBasis = 'monthly',
+  onUpdatePlatformRate,
   onUpdateRate,
   onRemoveRate,
   onOpenAddFeatureRate,
 }) {
+  const isPlatformLayout = layout === 'platform' || layout === 'license'
   const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
   const familyName = family?.name || 'Product Family'
 
@@ -56,80 +65,25 @@ export function FeatureRatesSection({
       )
     }
 
-    const seenFeatureIds = new Set()
-    const seenRowKeys = new Set()
-
-    const addFeatureRow = (item, rawFeatId) => {
-      const normalizedId = String(rawFeatId)
-      if (seenFeatureIds.has(normalizedId)) return
-      seenFeatureIds.add(normalizedId)
-
-      let rowKey = `feat-row-${normalizedId}`
-      if (seenRowKeys.has(rowKey)) {
-        rowKey = `feat-row-${normalizedId}-${seenRowKeys.size}`
-      }
-      seenRowKeys.add(rowKey)
-
+    // One row per saved rate schedule: a feature may be priced under several units of measure.
+    const seenRowIds = new Set()
+    featureRates.forEach((rate) => {
+      if (!hasEnteredRate(rate) || seenRowIds.has(String(rate.id))) return
+      seenRowIds.add(String(rate.id))
+      const feat = features.find((f) => String(f.id) === String(rate.featureId))
       list.push({
-        ...item,
-        rowKey,
-        id: item.id || `fr-feat-${normalizedId}`,
-        featureId: !isNaN(Number(normalizedId)) ? Number(normalizedId) : normalizedId,
+        ...rate,
+        rowKey: String(rate.id),
+        featureName: feat?.name || rate.featureName,
+        productCode: feat?.code || rate.productCode,
+        classification: feat?.classification || rate.classification,
+        productType:
+          feat?.productType ||
+          rate.productType ||
+          ((feat?.classification || rate.classification) === 'ai_enabled' ? 'AI Agent Module' : 'Adrenalin Native'),
+        deploymentModel: rate.deploymentModel || activeDeployment,
         isConfigured: true,
       })
-    }
-
-    // 1. Catalogue features for this family that have saved entered rates
-    features.forEach((feat) => {
-      const savedRate = featureRates.find((r) => {
-        if (r.featureId != null && feat.id != null) {
-          return String(r.featureId) === String(feat.id)
-        }
-        if (r.id && (String(r.id) === `fr-feat-${feat.id}` || String(r.id).startsWith(`fr-feat-${feat.id}-`))) {
-          return true
-        }
-        if (typeof feat.id === 'string' && feat.id.startsWith('prod-') && r.productId === feat.id) {
-          return true
-        }
-        if (feat.code && r.productCode && feat.code === r.productCode) {
-          return true
-        }
-        return false
-      })
-
-      if (hasEnteredRate(savedRate)) {
-        addFeatureRow(
-          {
-            ...(savedRate || {}),
-            featureName: feat.name || savedRate?.featureName,
-            productCode: feat.code || savedRate?.productCode || `FEAT-${feat.id}`,
-            unitOfMeasure: feat.unitOfMeasure || savedRate?.unitOfMeasure || '',
-            classification: feat.classification || savedRate?.classification,
-            productType:
-              feat.productType ||
-              savedRate?.productType ||
-              (feat.classification === 'ai_enabled' ? 'AI Agent Module' : 'Adrenalin Native'),
-            deploymentModel: savedRate?.deploymentModel || activeDeployment,
-            countryId: savedRate?.countryId,
-          },
-          feat.id,
-        )
-      }
-    })
-
-    // 2. Any feature rates configured that might not be in features catalogue
-    featureRates.forEach((rate) => {
-      const rawFeatId =
-        rate.featureId != null
-          ? String(rate.featureId)
-          : rate.id && String(rate.id).startsWith('fr-feat-')
-          ? String(rate.id).replace('fr-feat-', '').split('-')[0]
-          : rate.id != null
-          ? String(rate.id).replace(/^(feat-row-|fr-feat-|fr-db-|fr-|feat-)/, '').split('-')[0]
-          : null
-      if (rawFeatId && hasEnteredRate(rate)) {
-        addFeatureRow(rate, rawFeatId)
-      }
     })
 
     return list
@@ -168,7 +122,12 @@ export function FeatureRatesSection({
               )}
             </div>
             <p className="text-[11px] text-slate-500">
-              Individual catalogue modules and AI copilot add-ons • Recurring per employee per month
+              Individual catalogue modules and AI copilot add-ons •{' '}
+              {layout === 'license'
+                ? 'Licence fee per user + AMC % by tier'
+                : isPlatformLayout
+                ? 'Platform fee by tier + Subscription rate per UOM'
+                : 'Recurring rate per unit, by tier'}
             </p>
           </div>
         </div>
@@ -195,9 +154,13 @@ export function FeatureRatesSection({
       <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 text-[11px] text-sky-900 flex items-center gap-2">
         <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
         <div>
-          <span className="font-semibold text-sky-950">PEPM Formula: </span>
+          <span className="font-semibold text-sky-950">Pricing Structure: </span>
           <code className="bg-sky-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-sky-900">
-            Rate per Active Employee (with ESS) per month × headcount × term months = Full Contract Value
+            {layout === 'license'
+              ? 'Contract Value = Licence Fee per User × Users + (Licence Total × AMC %) × Contract Years'
+              : isPlatformLayout
+              ? 'Contract Value = Tier Platform Fee × Contract Years + Subscription Rate × Volume × Billing Periods'
+              : 'Rate per unit × Quantity × Billing Periods = Full Contract Value'}
           </code>
         </div>
       </div>
@@ -211,7 +174,36 @@ export function FeatureRatesSection({
       )}
 
       {/* Table / List */}
-      {combinedFeatures.length > 0 ? (
+      {isPlatformLayout && combinedFeatures.length > 0 ? (
+        <PlatformRatesTable
+          nameHeader="Feature"
+          variant={layout === 'license' ? 'license' : 'platform'}
+          rows={combinedFeatures.map((rate) => ({
+            id: rate.id,
+            key: rate.rowKey || rate.id,
+            name: rate.featureName,
+            code: rate.productCode,
+            tierFees: Object.fromEntries(tiersToRender.map((t) => [t.id, rate[`fixed_tier_${t.id}`] ?? ''])),
+            tierRates: Object.fromEntries(tiersToRender.map((t) => [t.id, rate[`tier_${t.id}`] ?? ''])),
+            tierAmc: Object.fromEntries(tiersToRender.map((t) => [t.id, rate[`amc_tier_${t.id}`] ?? ''])),
+            perTierRates: rate.perTierRates ?? Boolean(rate.subscriptionRateMixed),
+            uomId: rate.uomId,
+            uomName: rate.unitOfMeasure,
+            uomMixed: rate.uomMixed,
+            subscriptionRate: rate.subscriptionRate ?? '',
+            subscriptionRateMixed: rate.subscriptionRateMixed,
+          }))}
+          pricingTiers={tiersToRender}
+          allowedUoms={allowedUoms}
+          lockedUomId={lockedUomId}
+          fixedFeeBasis={fixedFeeBasis}
+          unitRateBasis={unitRateBasis}
+          currencySymbol={activeCurrencySymbol}
+          isVersionLocked={isVersionLocked}
+          onChange={onUpdatePlatformRate}
+          onRemove={onRemoveRate}
+        />
+      ) : combinedFeatures.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -321,7 +313,7 @@ export function FeatureRatesSection({
                                 aria-label={`${rate.featureName} ${tier.code || `Tier ${idx + 1}`} License Fee`}
                                 value={fixedVal}
                                 onChange={(e) =>
-                                  onUpdateRate(rate.featureId || rate.id, fixedKey, e.target.value)
+                                  onUpdateRate(rate.id, fixedKey, e.target.value)
                                 }
                                 placeholder="0.00"
                                 className="w-24 px-2 py-1 text-right font-mono text-xs border border-amber-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
@@ -361,7 +353,7 @@ export function FeatureRatesSection({
                               aria-label={`${rate.featureName} ${tier.code || `Tier ${idx + 1}`} Rate`}
                               value={val}
                               onChange={(e) =>
-                                onUpdateRate(rate.featureId || rate.id, fieldKey, e.target.value)
+                                onUpdateRate(rate.id, fieldKey, e.target.value)
                               }
                               placeholder="0.00"
                               className="w-24 px-2 py-1 text-right font-mono text-xs border border-slate-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
@@ -376,7 +368,7 @@ export function FeatureRatesSection({
                       {!isVersionLocked && rate.isConfigured && (
                         <button
                           type="button"
-                          onClick={() => onRemoveRate(rate.featureId || rate.id)}
+                          onClick={() => onRemoveRate(rate.id)}
                           className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                           title={`Remove rate for ${rate.featureName}`}
                           aria-label={`Remove ${rate.featureName} rate`}

@@ -39,6 +39,7 @@ from app.models.master_data import (
     DeploymentPricingOption,
     FxRate,
     PricingModel,
+    PricingModelUom,
     UnitOfMeasure,
 )
 from app.models.rate_card import RateCard, RateCardVersion, ServiceRate
@@ -111,8 +112,15 @@ def seed(db: Session) -> SeedIds:
         {"rate": Decimal("0.01200000"), "rate_source": "DEV seed placeholder"},
     )
 
-    uom_candidate = _get_or_create(db, UnitOfMeasure, {"code": "candidate"}, {"name": "Candidate"})
-    uom_employee = _get_or_create(db, UnitOfMeasure, {"code": "employee"}, {"name": "Active Employee (with ESS)"})
+    uom_candidate = _get_or_create(db, UnitOfMeasure, {"code": "candidate"}, {"name": "Candidate Inflow", "category": "uom2"})
+    uom_employee = _get_or_create(db, UnitOfMeasure, {"code": "employee"}, {"name": "Active Employees (with ESS)", "category": "uom1"})
+    uom_non_ess = _get_or_create(db, UnitOfMeasure, {"code": "active_employees_non_ess"}, {"name": "Active Employees (non-ESS)", "category": "uom1"})
+    _get_or_create(db, UnitOfMeasure, {"code": "gb_data"}, {"name": "GB of Data", "category": "uom2"})
+    _get_or_create(db, UnitOfMeasure, {"code": "bgv"}, {"name": "BGV", "category": "uom2"})
+    _get_or_create(db, UnitOfMeasure, {"code": "interviews"}, {"name": "Interviews", "category": "uom2"})
+    _get_or_create(db, UnitOfMeasure, {"code": "navi_tokens"}, {"name": "Navi Tokens", "category": "uom2"})
+    _get_or_create(db, UnitOfMeasure, {"code": "payslips"}, {"name": "Payslips", "category": "uom2"})
+    _get_or_create(db, UnitOfMeasure, {"code": "api_calls"}, {"name": "API Calls", "category": "uom2"})
 
     shared = _get_or_create(db, DeploymentModel, {"code": "shared_cloud"}, {"name": "Shared Cloud"})
     private = _get_or_create(db, DeploymentModel, {"code": "private_cloud"}, {"name": "Private Cloud"})
@@ -120,8 +128,17 @@ def seed(db: Session) -> SeedIds:
 
     pepm = _get_or_create(
         db, PricingModel, {"code": "pepm"},
-        {"name": "Per Employee Per Month", "has_fixed_component": False, "has_unit_component": True},
+        {
+            "name": "Per Employee Per Month",
+            "has_fixed_component": False,
+            "has_unit_component": True,
+            "uom_locked_id": uom_employee.id,
+        },
     )
+    if pepm.uom_locked_id != uom_employee.id:
+        pepm.uom_locked_id = uom_employee.id
+        db.flush()
+
     platform_sub = _get_or_create(
         db, PricingModel, {"code": "platform_subscription"},
         {
@@ -136,9 +153,9 @@ def seed(db: Session) -> SeedIds:
         db, PricingModel, {"code": "license_amc"},
         {
             "name": "License Fee + AMC",
-            "has_fixed_component": True,
+            "has_fixed_component": False,
             "has_unit_component": True,
-            "fixed_fee_basis": "annual",
+            "unit_rate_basis": "one_time",
         },
     )
 
@@ -153,6 +170,15 @@ def seed(db: Session) -> SeedIds:
             db, DeploymentPricingOption,
             {"deployment_model_id": deployment.id, "pricing_model_id": pricing.id},
         )
+
+    # Allowed UOM mappings
+    _get_or_create(db, PricingModelUom, {"pricing_model_id": pepm.id, "uom_id": uom_employee.id}, {"is_default": True})
+    _get_or_create(db, PricingModelUom, {"pricing_model_id": pepm.id, "uom_id": uom_non_ess.id}, {"is_default": False})
+
+    _get_or_create(db, PricingModelUom, {"pricing_model_id": license_amc.id, "uom_id": uom_employee.id}, {"is_default": True})
+    _get_or_create(db, PricingModelUom, {"pricing_model_id": license_amc.id, "uom_id": uom_non_ess.id}, {"is_default": False})
+
+    # Platform + Subscription has no mapping rows: every active UOM is allowed (see migration c9d0e1f2a3b4).
 
     tier = _get_or_create(
         db, CustomerTier, {"name": "DEV Tier 1"},

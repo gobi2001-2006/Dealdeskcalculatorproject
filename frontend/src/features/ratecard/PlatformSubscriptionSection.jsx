@@ -2,15 +2,26 @@ import {
   Layers,
   Info,
 } from 'lucide-react'
+import { fixedFeeBasisLabel, unitRateBasisLabel } from './rateCardFormatters'
 
 export function PlatformSubscriptionSection({
-  activeCurrencySymbol = '$',
-  activeCurrencyCode = 'USD',
+  activeCurrencySymbol = '',
+  activeCurrencyCode = '',
   isVersionLocked = false,
   activeDeployment = 'Shared Cloud',
   activeCountry = null,
   selectedFamilyName = 'All Product Families',
+  pricingModelName = 'Platform + Subscription',
+  fixedFeeBasis = 'annual',
+  unitRateBasis = 'monthly',
+  tierCount = 0,
 }) {
+  const period = unitRateBasisLabel(unitRateBasis)
+  const platformTerm =
+    fixedFeeBasis === 'one_time' ? 'Tier Platform Fee (one-time)' : 'Tier Platform Fee × Contract Years'
+  const subscriptionTerm = period
+    ? `Subscription Rate × Volume per ${period} × ${period === 'month' ? 'Contract Months' : 'Contract Years'}`
+    : 'Subscription Rate × Volume × Billing Periods'
   return (
     <div className="space-y-4">
       {/* Top Banner */}
@@ -22,7 +33,7 @@ export function PlatformSubscriptionSection({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-900">
-                Platform + Subscription Commercial Model
+                {pricingModelName || 'Platform + Subscription'} Commercial Model
               </h2>
               {isVersionLocked && (
                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
@@ -31,7 +42,9 @@ export function PlatformSubscriptionSection({
               )}
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Enterprise tiered architecture: Fixed Annual Platform Access Fee + Per-Employee Monthly Subscription Fee.
+              Two independent components: a platform {fixedFeeBasisLabel(fixedFeeBasis)} for each customer tier
+              {tierCount > 0 ? ` (${tierCount} tiers)` : ''}, plus a subscription rate per unit of measure
+              {period ? ` per ${period}` : ''}.
             </p>
           </div>
         </div>
@@ -76,10 +89,10 @@ export function PlatformSubscriptionSection({
             Platform + Subscription Pricing Formula:
           </div>
           <div className="text-[11px] font-mono text-sky-900 bg-sky-100/70 px-2 py-1 rounded inline-block font-semibold">
-            Total Contract Value = (Annual Platform Access Fee + (Monthly PEPM Subscription × 12)) × Term Years
+            Total Contract Value = {platformTerm} + {subscriptionTerm}
           </div>
           <p className="text-[11px] text-sky-800 leading-relaxed">
-            Configure tier-specific Fixed Platform Fees and Monthly Subscription rates in the Pack and Feature rate matrices below. Commercial totals, employee commitment volumes, and discounting schedules are calculated in <strong>Page 4 — Proposal Configurator</strong>.
+            Set each tier&apos;s platform fee, the unit of measure and the subscription rate for every pack and feature below. The customer&apos;s tier picks the platform fee; the proposal quantity drives the subscription. Totals are calculated by the backend in <strong>Page 4 — Proposal Configurator</strong>.
           </p>
         </div>
       </div>

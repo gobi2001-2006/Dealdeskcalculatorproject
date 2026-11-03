@@ -38,6 +38,7 @@ from app.services.proposal_service import (
     ProposalConflictError,
     ProposalValidationError,
 )
+from app.services.master_service import validate_uom_for_pricing_model
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ def upsert_rate_card(
     floor_price: Optional[Decimal] = None,
     cost_fixed: Optional[Decimal] = None,
     cost_unit: Optional[Decimal] = None,
+    amc_percentage: Optional[Decimal] = None,
     pack_version_id: Optional[int] = None,
     feature_id: Optional[int] = None,
 ) -> RateCard:
@@ -244,18 +246,9 @@ def upsert_rate_card(
             f"pricing model '{pm.name}' (id={pricing_model_id})."
         )
 
-    # Enforce PEPM Unit of Measure: must be 'employee' / 'Active Employees (with ESS)'
-    is_pepm = pm.code == "pepm" or "per employee" in pm.name.lower()
-    if is_pepm:
-        uom_name_lower = (uom.name or "").lower()
-        if pm.uom_locked_id and uom_id != pm.uom_locked_id:
-            raise ProposalValidationError(
-                f"PEPM pricing model strictly requires Unit of Measure ID {pm.uom_locked_id} ('Active Employees (with ESS)'), got {uom_id}"
-            )
-        elif uom.code != "employee" and "active employee" not in uom_name_lower:
-            raise ProposalValidationError(
-                f"PEPM pricing model strictly requires Unit of Measure 'Active Employees (with ESS)' (code 'employee'), got '{uom.name}'"
-            )
+    # The UOM must be allowed by the pricing model (locked UOM, e.g. PEPM -> Active Employees (with ESS),
+    # or the pricing_model_uoms mapping). The rule lives in master data, not in code.
+    validate_uom_for_pricing_model(db, pm, uom)
 
     if pack_version_id is not None and not db.get(PackVersion, pack_version_id):
         raise ResourceNotFoundError(f"Pack version with id {pack_version_id} not found")
@@ -288,6 +281,8 @@ def upsert_rate_card(
             existing.cost_fixed = cost_fixed
         if cost_unit is not None:
             existing.cost_unit = cost_unit
+        if amc_percentage is not None:
+            existing.amc_percentage = amc_percentage
         rate_card = existing
     else:
         rate_card = RateCard(
@@ -305,6 +300,7 @@ def upsert_rate_card(
             floor_price=floor_price,
             cost_fixed=cost_fixed,
             cost_unit=cost_unit,
+            amc_percentage=amc_percentage,
         )
         db.add(rate_card)
 
@@ -332,6 +328,7 @@ def create_rate_card(db: Session, data: RateCardCreate) -> RateCard:
         floor_price=data.floor_price,
         cost_fixed=data.cost_fixed,
         cost_unit=data.cost_unit,
+        amc_percentage=data.amc_percentage,
         pack_version_id=data.pack_version_id,
         feature_id=data.feature_id,
     )
@@ -384,6 +381,7 @@ def delete_rate_cards_for_target(
     pricing_model_id: int,
     pack_version_id: Optional[int] = None,
     feature_id: Optional[int] = None,
+    uom_id: Optional[int] = None,
 ) -> int:
     rcv = db.get(RateCardVersion, rate_card_version_id)
     if not rcv:
@@ -403,6 +401,8 @@ def delete_rate_cards_for_target(
         stmt = stmt.where(RateCard.feature_id == feature_id)
     else:
         raise ProposalValidationError("Either pack_version_id or feature_id must be specified")
+    if uom_id is not None:
+        stmt = stmt.where(RateCard.uom_id == uom_id)
 
     items = list(db.execute(stmt).scalars().all())
     count = len(items)
@@ -415,6 +415,208 @@ def delete_rate_cards_for_target(
     except IntegrityError as exc:
         db.rollback()
         raise ProposalConflictError(f"Cannot delete rate cards: {exc.orig}") from exc
+
+
+def save_rate_card_target(
+    db: Session,
+    rate_card_version_id: int,
+    country_id: int,
+    deployment_model_id: int,
+    pricing_model_id: int,
+    uom_id: int,
+    tiers: List[dict],
+    unit_rate: Optional[Decimal] = None,
+    pack_version_id: Optional[int] = None,
+    feature_id: Optional[int] = None,
+    current_uom_id: Optional[int] = None,
+) -> List[RateCard]:
+    """Save every tier row of one pack/feature rate schedule (one UOM) in one transaction.
+
+    `tiers` is a list of {tier_id, fixed_fee?, unit_rate?, amc_percentage?}. A tier's unit rate falls
+    back to the shared `unit_rate` (one subscription rate for all tiers) when the tier gives none.
+    A tier is priced when it has its fixed fee (pricing models with a fixed component) or its unit
+    rate (models without one); an unpriced tier's row is removed. The schedule is identified by
+    `current_uom_id` (default `uom_id`); a different `uom_id` moves the schedule to that UOM.
+    Other UOM schedules of the same pack/feature are never touched.
+    """
+    if (pack_version_id is None) == (feature_id is None):
+        raise ProposalValidationError("Exactly one of pack_version_id or feature_id must be provided")
+    tier_ids = [t["tier_id"] for t in tiers]
+    if len(tier_ids) != len(set(tier_ids)):
+        raise ProposalValidationError("Each customer tier may appear only once")
+    for t in tiers:
+        for key in ("fixed_fee", "unit_rate", "amc_percentage"):
+            if t.get(key) is not None and t[key] < 0:
+                raise ProposalValidationError(f"{key} for tier id {t['tier_id']} must be non-negative")
+        if t.get("amc_percentage") is not None and t["amc_percentage"] > 100:
+            raise ProposalValidationError(f"AMC % for tier id {t['tier_id']} must be between 0 and 100")
+    if unit_rate is not None and unit_rate < 0:
+        raise ProposalValidationError("Unit rate must be non-negative")
+
+    rcv = db.get(RateCardVersion, rate_card_version_id)
+    if not rcv:
+        raise ResourceNotFoundError(f"Rate card version with id {rate_card_version_id} not found")
+    if rcv.status == "retired":
+        raise ProposalConflictError(f"Rate card version '{rcv.version_no}' is retired and locked against modifications")
+
+    country = db.get(Country, country_id)
+    if not country:
+        raise ResourceNotFoundError(f"Country with id {country_id} not found")
+    dep = db.get(DeploymentModel, deployment_model_id)
+    if not dep:
+        raise ResourceNotFoundError(f"Deployment model with id {deployment_model_id} not found")
+    pm = db.get(PricingModel, pricing_model_id)
+    if not pm:
+        raise ResourceNotFoundError(f"Pricing model with id {pricing_model_id} not found")
+    if not (pm.has_fixed_component or pm.has_unit_component):
+        raise ProposalValidationError(f"Pricing model '{pm.name}' has no fee component configured")
+    if not pm.has_fixed_component and any(t.get("fixed_fee") is not None for t in tiers):
+        raise ProposalValidationError(f"Pricing model '{pm.name}' has no fixed fee; remove the platform/fixed fee values")
+    if pm.unit_rate_basis != "one_time" and any(t.get("amc_percentage") is not None for t in tiers):
+        raise ProposalValidationError(
+            f"AMC % applies only to pricing models with a one-time unit rate; '{pm.name}' bills it {pm.unit_rate_basis}"
+        )
+    if not db.get(DeploymentPricingOption, (deployment_model_id, pricing_model_id)):
+        raise ProposalValidationError(
+            f"Invalid combination: deployment model '{dep.name}' does not permit pricing model '{pm.name}'."
+        )
+    uom = db.get(UnitOfMeasure, uom_id)
+    if not uom:
+        raise ResourceNotFoundError(f"Unit of measure with id {uom_id} not found")
+    validate_uom_for_pricing_model(db, pm, uom)
+    for t_id in tier_ids:
+        if not db.get(CustomerTier, t_id):
+            raise ResourceNotFoundError(f"Customer tier with id {t_id} not found")
+    if pack_version_id is not None and not db.get(PackVersion, pack_version_id):
+        raise ResourceNotFoundError(f"Pack version with id {pack_version_id} not found")
+    if feature_id is not None and not db.get(Feature, feature_id):
+        raise ResourceNotFoundError(f"Feature with id {feature_id} not found")
+    currency_id = country.currency_id
+    if not currency_id or not db.get(Currency, currency_id):
+        raise ProposalValidationError(f"Country '{country.name}' has no default currency")
+
+    def unit_for(t: dict) -> Optional[Decimal]:
+        return t.get("unit_rate") if t.get("unit_rate") is not None else unit_rate
+
+    def priced(t: dict) -> bool:
+        if pm.has_fixed_component:
+            return t.get("fixed_fee") is not None
+        return unit_for(t) is not None
+
+    if not any(priced(t) for t in tiers):
+        what = "platform (fixed) fee" if pm.has_fixed_component else "rate"
+        raise ProposalValidationError(f"Enter the {what} for at least one customer tier")
+
+    def schedule_query(for_uom: int):
+        stmt = select(RateCard).where(
+            RateCard.rate_card_version_id == rate_card_version_id,
+            RateCard.country_id == country_id,
+            RateCard.deployment_model_id == deployment_model_id,
+            RateCard.pricing_model_id == pricing_model_id,
+            RateCard.uom_id == for_uom,
+        )
+        if pack_version_id is not None:
+            return stmt.where(RateCard.pack_version_id == pack_version_id)
+        return stmt.where(RateCard.feature_id == feature_id)
+
+    source_uom = current_uom_id or uom_id
+    existing_by_tier = {r.tier_id: r for r in db.execute(schedule_query(source_uom)).scalars().all()}
+    if source_uom != uom_id and db.execute(schedule_query(uom_id)).scalars().first() is not None:
+        raise ProposalConflictError(
+            f"This item already has a rate schedule for unit of measure '{uom.name}'. "
+            "Edit that row instead, or remove it first."
+        )
+
+    by_tier = {t["tier_id"]: t for t in tiers}
+    for t_id, row in existing_by_tier.items():
+        t = by_tier.get(t_id)
+        if t is not None and not priced(t):
+            db.delete(row)
+            continue
+        if t is not None:
+            row.fixed_fee = t.get("fixed_fee")
+            row.unit_rate = unit_for(t)
+            row.amc_percentage = t.get("amc_percentage")
+        elif unit_rate is not None:
+            row.unit_rate = unit_rate
+        row.uom_id = uom_id
+        row.currency_id = currency_id
+
+    for t in tiers:
+        if t["tier_id"] in existing_by_tier or not priced(t):
+            continue
+        db.add(RateCard(
+            rate_card_version_id=rate_card_version_id,
+            country_id=country_id,
+            deployment_model_id=deployment_model_id,
+            pricing_model_id=pricing_model_id,
+            tier_id=t["tier_id"],
+            uom_id=uom_id,
+            pack_version_id=pack_version_id,
+            feature_id=feature_id,
+            currency_id=currency_id,
+            fixed_fee=t.get("fixed_fee"),
+            unit_rate=unit_for(t),
+            amc_percentage=t.get("amc_percentage"),
+        ))
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ProposalConflictError(f"Database constraint violation saving rate card: {exc.orig}") from exc
+
+    saved = db.execute(schedule_query(uom_id).order_by(RateCard.id)).scalars().all()
+    return [get_rate_card(db, r.id) for r in saved]
+
+
+def update_rate_cards_uom_for_target(
+    db: Session,
+    rate_card_version_id: int,
+    country_id: int,
+    deployment_model_id: int,
+    pricing_model_id: int,
+    uom_id: int,
+    pack_version_id: Optional[int] = None,
+    feature_id: Optional[int] = None,
+) -> int:
+    rcv = db.get(RateCardVersion, rate_card_version_id)
+    if not rcv:
+        raise ResourceNotFoundError(f"Rate card version with id {rate_card_version_id} not found")
+    if rcv.status == "retired":
+        raise ProposalConflictError(f"Cannot modify rate cards for retired rate card version '{rcv.version_no}'")
+    pm = db.get(PricingModel, pricing_model_id)
+    if not pm:
+        raise ResourceNotFoundError(f"Pricing model with id {pricing_model_id} not found")
+    uom = db.get(UnitOfMeasure, uom_id)
+    if not uom:
+        raise ResourceNotFoundError(f"Unit of measure with id {uom_id} not found")
+    validate_uom_for_pricing_model(db, pm, uom)
+
+    stmt = select(RateCard).where(
+        RateCard.rate_card_version_id == rate_card_version_id,
+        RateCard.country_id == country_id,
+        RateCard.deployment_model_id == deployment_model_id,
+        RateCard.pricing_model_id == pricing_model_id,
+    )
+    if pack_version_id is not None:
+        stmt = stmt.where(RateCard.pack_version_id == pack_version_id)
+    elif feature_id is not None:
+        stmt = stmt.where(RateCard.feature_id == feature_id)
+    else:
+        raise ProposalValidationError("Either pack_version_id or feature_id must be specified")
+
+    items = list(db.execute(stmt).scalars().all())
+    count = len(items)
+    for item in items:
+        item.uom_id = uom_id
+
+    try:
+        db.commit()
+        return count
+    except IntegrityError as exc:
+        db.rollback()
+        raise ProposalConflictError(f"Cannot update rate card UOM: {exc.orig}") from exc
 
 
 # =============================================================================

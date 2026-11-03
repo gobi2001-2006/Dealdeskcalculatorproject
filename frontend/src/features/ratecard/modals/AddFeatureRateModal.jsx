@@ -1,5 +1,7 @@
  import { useState, useMemo } from 'react'
 import { X, Layers, AlertCircle } from 'lucide-react'
+import { PlatformRateInputs } from './PlatformRateInputs'
+import { validatePlatformRateInputs } from '../rateCardFormatters'
 
 const DEFAULT_TIERS = []
 
@@ -12,7 +14,8 @@ export function AddFeatureRateModal({
   targetFamilyId = null,
   families = [],
   activeDeployment = 'Shared Cloud',
-  activePricing = 'PEPM',
+  activePricing = '',
+  layout = 'default',
   uoms = [],
   lockedUomId = null,
   activeCurrencySymbol = '$',
@@ -47,7 +50,13 @@ export function AddFeatureRateModal({
 
   const [selectedFeatureId, setSelectedFeatureId] = useState('')
   const [tierRates, setTierRates] = useState({})
+  const [fixedTierRates, setFixedTierRates] = useState({})
+  const [subscriptionRate, setSubscriptionRate] = useState('')
+  const [amcTierRates, setAmcTierRates] = useState({})
   const [uomId, setUomId] = useState('')
+  // The grid layout comes from the pricing model's components (master data), not from its name.
+  const isPlatformSubscription = layout === 'platform'
+  const isLicense = layout === 'license'
   const effectiveUomId = lockedUomId || uomId
   const [error, setError] = useState('')
 
@@ -67,6 +76,38 @@ export function AddFeatureRateModal({
     if (!effectiveFeatureId) {
       setError('Please select a feature from the Product Catalogue.')
       return
+    }
+
+    if (isPlatformSubscription) {
+      const platformError = validatePlatformRateInputs(tiersToRender, fixedTierRates, subscriptionRate)
+      if (platformError) {
+        setError(platformError)
+        return
+      }
+    }
+
+    if (isLicense) {
+      for (const tier of tiersToRender) {
+        const fee = tierRates[tier.id]
+        const amc = amcTierRates[tier.id]
+        const blank = (v) => v === undefined || v === null || String(v).trim() === ''
+        if (!blank(fee) && (isNaN(Number(fee)) || Number(fee) < 0)) {
+          setError(`Licence fee for ${tier.name || tier.code} must be a non-negative number.`)
+          return
+        }
+        if (!blank(amc) && (isNaN(Number(amc)) || Number(amc) < 0 || Number(amc) > 100)) {
+          setError(`AMC % for ${tier.name || tier.code} must be between 0 and 100.`)
+          return
+        }
+        if (!blank(fee) && blank(amc)) {
+          setError(`Enter the AMC % for ${tier.name || tier.code} (0 if no maintenance is charged).`)
+          return
+        }
+      }
+      if (!tiersToRender.some((t) => String(tierRates[t.id] ?? '').trim() !== '')) {
+        setError('Enter the licence fee for at least one customer tier.')
+        return
+      }
     }
 
     // Validate tier rates
@@ -114,12 +155,18 @@ export function AddFeatureRateModal({
       uomId: effectiveUomId ? Number(effectiveUomId) : null,
       unitOfMeasure: uoms.find((u) => String(u.id) === String(effectiveUomId))?.name || '',
       tierRates,
+      fixedTierRates: isPlatformSubscription ? fixedTierRates : undefined,
+      subscriptionRate: isPlatformSubscription ? String(subscriptionRate).trim() : undefined,
+      amcTierRates: isLicense ? amcTierRates : undefined,
       tier1Rate: String(t1).trim(),
       tier2Rate: String(t2).trim(),
       tier3Rate: String(t3).trim(),
     })
 
     setTierRates({})
+    setFixedTierRates({})
+    setSubscriptionRate('')
+    setAmcTierRates({})
     setError('')
     onClose()
   }
@@ -227,7 +274,29 @@ export function AddFeatureRateModal({
             </select>
           </div>
 
-          {/* Dynamic Tiers Grid */}
+          {isLicense ? (
+            <PlatformRateInputs
+              variant="license"
+              idPrefix="feature-licence"
+              tiers={tiersToRender}
+              unitTierRates={tierRates}
+              onChangeUnit={handleTierRateChange}
+              amcTierRates={amcTierRates}
+              onChangeAmc={(tierId, value) => setAmcTierRates((prev) => ({ ...prev, [tierId]: value }))}
+              currencySymbol={activeCurrencySymbol}
+            />
+          ) : isPlatformSubscription ? (
+            <PlatformRateInputs
+              idPrefix="feature-platform"
+              tiers={tiersToRender}
+              fixedTierRates={fixedTierRates}
+              onChangeFixed={(tierId, value) => setFixedTierRates((prev) => ({ ...prev, [tierId]: value }))}
+              subscriptionRate={subscriptionRate}
+              onChangeSubscription={setSubscriptionRate}
+              currencySymbol={activeCurrencySymbol}
+            />
+          ) : (
+          /* Dynamic Tiers Grid */
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Configured Customer Tier Rates ({activeCurrencySymbol})
@@ -263,6 +332,7 @@ export function AddFeatureRateModal({
               ))}
             </div>
           </div>
+          )}
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
             <button

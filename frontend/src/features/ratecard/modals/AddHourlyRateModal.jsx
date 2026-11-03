@@ -12,7 +12,7 @@ export function AddHourlyRateModal({ isOpen, onClose, onSave, countries = [] }) 
   if (!isOpen) return null
 
   const selectedCountry = countries.find((c) => c.name === selectedCountryName) || countries[0]
-  const currencyCode = selectedCountry?.currency || 'USD'
+  const currencyCode = selectedCountry?.currency || ''
 
   const handleSubmit = (e) => {
     e.preventDefault()

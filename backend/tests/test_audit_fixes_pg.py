@@ -154,13 +154,11 @@ def test_service_rate_from_another_country_is_rejected(pg_client, pg_seed_ids):
 
     pid = make_proposal(pg_client, ids, suffix="SRVC")["id"]  # priced in India
     assert add_pack_line(pg_client, ids, pid).status_code == 201
+    # Rejected when the line is added: a service line is costed with its own country's rate.
     line = pg_client.post(f"/api/proposals/{pid}/service-lines", json={
         "role_name": "US Architect", "days_or_hours": "2", "service_rate_id": us_rate.json()["id"]})
-    assert line.status_code == 201, line.text
-
-    resp = pg_client.post(f"/api/proposals/{pid}/calculate", json={})
-    assert resp.status_code == 422, resp.text
-    assert "country" in resp.json()["detail"].lower()
+    assert line.status_code == 400, line.text
+    assert "belongs to country_id" in line.json()["detail"]
     pg_client.delete(f"/api/rates/service-rates/{us_rate.json()['id']}")
 
 

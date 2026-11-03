@@ -107,8 +107,27 @@ export async function deletePricingModel(id) {
   await apiClient.delete(`/masters/pricing-models/${id}`)
 }
 
-export async function getUnitsOfMeasure() {
-  const res = await apiClient.get('/masters/units-of-measure')
+export async function getUnitsOfMeasure(params) {
+  const res = await apiClient.get('/masters/units-of-measure', { params })
+  return res.data
+}
+
+export async function createUnitOfMeasure(payload) {
+  const res = await apiClient.post('/masters/units-of-measure', payload)
+  return res.data
+}
+
+export async function updateUnitOfMeasure(id, payload) {
+  const res = await apiClient.patch(`/masters/units-of-measure/${id}`, payload)
+  return res.data
+}
+
+export async function deleteUnitOfMeasure(id) {
+  await apiClient.delete(`/masters/units-of-measure/${id}`)
+}
+
+export async function getAllowedUomsForPricingModel(pricingModelId) {
+  const res = await apiClient.get(`/masters/pricing-models/${pricingModelId}/allowed-uoms`)
   return res.data
 }
 
@@ -185,6 +204,21 @@ export async function getRateCards(params) {
   return res.data
 }
 
+/**
+ * Units of measure that have a saved rate schedule for a pack or feature under the given
+ * country / deployment / pricing model / tier, in the active rate card version.
+ * Used when an item is priced under more than one UOM (e.g. ESS and non-ESS) so the user can choose.
+ */
+export async function getRateScheduleUoms(dims) {
+  const version = await getActiveRateCardVersion()
+  const cards = await getRateCards({ ...dims, rate_card_version_id: version?.id })
+  const byId = new Map()
+  ;(Array.isArray(cards) ? cards : []).forEach((rc) => {
+    if (!byId.has(rc.uom_id)) byId.set(rc.uom_id, { id: rc.uom_id, name: rc.uom?.name || `UOM #${rc.uom_id}` })
+  })
+  return [...byId.values()]
+}
+
 export async function upsertRateCard(payload) {
   const res = await apiClient.post('/rates/rate-cards', payload)
   return res.data
@@ -201,4 +235,16 @@ export async function deleteRateCard(id) {
 
 export async function deleteRateCardGroup(params) {
   await apiClient.delete('/rates/rate-cards/group', { params })
+}
+
+export async function updateRateCardGroupUom(params) {
+  const res = await apiClient.patch('/rates/rate-cards/group-uom', null, { params })
+  return res.data
+}
+
+// Platform + Subscription: save every tier row of one pack or feature in one transaction
+// (a platform fee per tier, plus one UOM and one subscription rate for the item).
+export async function saveRateCardTarget(payload) {
+  const res = await apiClient.put('/rates/rate-cards/target', payload)
+  return res.data
 }

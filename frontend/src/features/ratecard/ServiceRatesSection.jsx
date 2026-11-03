@@ -196,7 +196,7 @@ export function ServiceRatesSection({
 
                     <td className="px-3 py-2.5 text-slate-600 font-medium">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-mono">
-                        {sr.country || activeCountry?.name} ({sr.currency || activeCountry?.currency || 'USD'})
+                        {sr.country || activeCountry?.name} ({sr.currency || activeCountry?.currency || '—'})
                       </span>
                     </td>
 

@@ -1,14 +1,15 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   Package,
   Trash2,
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react'
-import { resolveRateCard } from '../../../api/ratesApi'
+import { resolveRateCard, getRateScheduleUoms } from '../../../api/ratesApi'
 import { describeApiError } from '../../../api/proposalsApi'
 import { FeaturesTable } from './FeaturesTable'
 import { activePackVersion } from '../calculatorData'
+import { describeFixedFee, describeUnitRate, unitRatePeriod } from '../rateUnits'
 
 export function FamilyConfigCard({
   familyConfig,
@@ -18,6 +19,7 @@ export function FamilyConfigCard({
   deploymentModelId = null,
   pricingModelId = null,
   currencySymbol = '',
+  onPackUnitChange,
   onUpdateFamily,
   onRemoveFamily,
   families = [],
@@ -61,6 +63,9 @@ export function FamilyConfigCard({
     [selectedVersion],
   )
 
+  // Units of measure with a saved rate schedule for the selected pack (shown when there is more than one).
+  const [packUomOptions, setPackUomOptions] = useState([])
+
   const handlePackChange = (packVersionId) => {
     const nextPackFeatures = new Set()
     packs.forEach((p) =>
@@ -99,23 +104,18 @@ export function FamilyConfigCard({
     }
     const [packVersionId, cId, tId, dId, pmId] = dims
     setRateResolution({ status: 'loading', rate: null, message: 'Resolving rate card...' })
+    const scheduleDims = { country_id: cId, tier_id: tId, deployment_model_id: dId, pricing_model_id: pmId, pack_version_id: packVersionId }
+    getRateScheduleUoms(scheduleDims)
+      .then((opts) => !isCancelled && setPackUomOptions(Array.isArray(opts) ? opts : []))
+      .catch(() => !isCancelled && setPackUomOptions([]))
 
     resolveRateCard({
-      country_id: cId,
-      tier_id: tId,
-      deployment_model_id: dId,
-      pricing_model_id: pmId,
-      pack_version_id: packVersionId,
+      ...scheduleDims,
+      ...(familyConfig.packUomId ? { uom_id: Number(familyConfig.packUomId) } : {}),
     })
       .then((data) => {
         if (isCancelled) return
-        const parts = []
-        if (data.fixed_fee !== null && data.fixed_fee !== undefined) {
-          parts.push(`platform fee ${data.currency_code} ${Number(data.fixed_fee).toLocaleString()} / year`)
-        }
-        if (data.unit_rate !== null && data.unit_rate !== undefined) {
-          parts.push(`${data.currency_code} ${Number(data.unit_rate).toFixed(2)} / unit / month`)
-        }
+        const parts = [describeFixedFee(data), describeUnitRate(data)].filter(Boolean)
         setRateResolution({ status: 'resolved', rate: data, message: `Rate card #${data.rate_card_id}: ${parts.join(' + ')}` })
       })
       .catch((err) => {
@@ -131,7 +131,21 @@ export function FamilyConfigCard({
     return () => {
       isCancelled = true
     }
-  }, [familyConfig.selectedPackId, countryId, pricingTierId, deploymentModelId, pricingModelId])
+  }, [familyConfig.selectedPackId, familyConfig.packUomId, countryId, pricingTierId, deploymentModelId, pricingModelId])
+
+  // Tell the country card which unit the pack is priced in, so its volume input can be labelled.
+  const packUnitChangeRef = useRef(onPackUnitChange)
+  useEffect(() => {
+    packUnitChangeRef.current = onPackUnitChange
+  })
+  const resolvedRate = rateResolution.status === 'resolved' ? rateResolution.rate : null
+  const packUomName = resolvedRate?.uom_name || null
+  const packPeriod = unitRatePeriod(resolvedRate)
+  useEffect(() => {
+    const familyConfigId = familyConfig.id
+    packUnitChangeRef.current?.(familyConfigId, packUomName ? { uomName: packUomName, period: packPeriod } : null)
+    return () => packUnitChangeRef.current?.(familyConfigId, null)
+  }, [familyConfig.id, packUomName, packPeriod])
 
   const badgeClass = {
     missing: 'bg-amber-50 text-amber-900 border-amber-300',
@@ -203,6 +217,27 @@ export function FamilyConfigCard({
             <p className="mt-1 text-[11px] text-slate-500">No active pack versions are saved for this family.</p>
           )}
 
+          {familyConfig.selectedPackId && (packUomOptions.length > 1 || familyConfig.packUomId) && (
+            <div className="mt-2">
+              <label htmlFor={`pack-uom-${familyConfig.id}`} className="block text-[11px] font-semibold text-slate-700 mb-1">
+                Rate schedule (unit of measure)
+              </label>
+              <select
+                id={`pack-uom-${familyConfig.id}`}
+                value={familyConfig.packUomId || ''}
+                onChange={(e) => onUpdateFamily({ ...familyConfig, packUomId: e.target.value ? Number(e.target.value) : null })}
+                className="w-full h-9 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+              >
+                <option value="">-- Choose the unit of measure this pack is priced in --</option>
+                {packUomOptions.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {familyConfig.selectedPackId && rateResolution.status !== 'idle' && (
             <div className="mt-2">
               {rateResolution.status === 'loading' && (
@@ -230,7 +265,7 @@ export function FamilyConfigCard({
         <div className="md:col-span-4">
           <div className="flex items-center justify-between mb-1.5 h-4">
             <label htmlFor={`headcount-${familyConfig.id}`} className="block text-xs font-semibold text-slate-700">
-              Feature quantity (units / month)
+              Default feature quantity
             </label>
           </div>
           <input
@@ -247,7 +282,10 @@ export function FamilyConfigCard({
             className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
           />
           <p className="mt-1 text-[10px] text-slate-500">
-            The pack quantity is the country headcount; this default applies to standalone features.
+            {packUomName
+              ? `The pack quantity is the country volume (${packUomName}${packPeriod ? ` / ${packPeriod}` : ''}). `
+              : 'The pack quantity is the country volume. '}
+            This default applies to standalone features, each in its own rate card's unit.
           </p>
         </div>
       </div>
@@ -266,6 +304,13 @@ export function FamilyConfigCard({
         currencySymbol={currencySymbol}
         headcount={familyConfig.headcount ?? countryHeadcount}
         featureHeadcounts={familyConfig.featureHeadcounts || {}}
+        featureUomIds={familyConfig.featureUomIds || {}}
+        onUpdateFeatureUom={(featureId, uomId) => {
+          onUpdateFamily({
+            ...familyConfig,
+            featureUomIds: { ...(familyConfig.featureUomIds || {}), [featureId]: uomId },
+          })
+        }}
         onUpdateFeatureHeadcount={(featureId, count) => {
           onUpdateFamily({
             ...familyConfig,

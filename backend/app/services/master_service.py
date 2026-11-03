@@ -23,6 +23,7 @@ from app.models.master_data import (
     CustomerTier,
     DeploymentModel,
     PricingModel,
+    PricingModelUom,
     UnitOfMeasure,
     FxRate,
 )
@@ -38,6 +39,8 @@ from app.schemas.master_data import (
     DeploymentModelUpdate,
     PricingModelCreate,
     PricingModelUpdate,
+    UnitOfMeasureCreate,
+    UnitOfMeasureUpdate,
     FxRateCreate,
 )
 from app.services.proposal_service import (
@@ -488,6 +491,7 @@ def create_pricing_model(db: Session, data: PricingModelCreate) -> PricingModel:
         has_fixed_component=data.has_fixed_component,
         has_unit_component=data.has_unit_component,
         fixed_fee_basis=data.fixed_fee_basis,
+        unit_rate_basis=data.unit_rate_basis,
         uom_locked_id=data.uom_locked_id,
         status=data.status,
     )
@@ -525,7 +529,7 @@ def update_pricing_model(db: Session, model_id: int, data: PricingModelUpdate) -
             raise ProposalConflictError(f"Pricing model named '{name}' already exists")
         model.name = name
 
-    for field in ("description", "has_fixed_component", "has_unit_component", "fixed_fee_basis", "uom_locked_id", "status"):
+    for field in ("description", "has_fixed_component", "has_unit_component", "fixed_fee_basis", "unit_rate_basis", "uom_locked_id", "status"):
         if field in update_dict:
             setattr(model, field, update_dict[field])
 
@@ -644,3 +648,185 @@ def delete_fx_rate(db: Session, fx_rate_id: int) -> None:
     except IntegrityError as exc:
         db.rollback()
         raise ProposalConflictError(f"Cannot delete FX rate: {exc.orig}") from exc
+
+
+# =============================================================================
+# 7. Units of Measure
+# =============================================================================
+
+def list_units_of_measure(
+    db: Session,
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+) -> List[UnitOfMeasure]:
+    """Retrieve all units of measure, optionally filtered by status or category."""
+    stmt = select(UnitOfMeasure).order_by(UnitOfMeasure.category, UnitOfMeasure.name)
+    if status:
+        stmt = stmt.where(UnitOfMeasure.status == status)
+    if category:
+        stmt = stmt.where(UnitOfMeasure.category == category)
+    return db.execute(stmt).scalars().all()
+
+
+def get_unit_of_measure(db: Session, uom_id: int) -> Optional[UnitOfMeasure]:
+    """Retrieve a single unit of measure by ID."""
+    return db.get(UnitOfMeasure, uom_id)
+
+
+def get_unit_of_measure_by_code(db: Session, code: str) -> Optional[UnitOfMeasure]:
+    """Retrieve a unit of measure by unique code."""
+    stmt = select(UnitOfMeasure).where(UnitOfMeasure.code == code)
+    return db.execute(stmt).scalars().first()
+
+
+def create_unit_of_measure(db: Session, data: UnitOfMeasureCreate) -> UnitOfMeasure:
+    """Create a new unit of measure."""
+    existing_code = db.execute(
+        select(UnitOfMeasure.id).where(UnitOfMeasure.code == data.code)
+    ).first()
+    if existing_code:
+        raise ProposalConflictError(f"Unit of measure with code '{data.code}' already exists")
+
+    existing_name = db.execute(
+        select(UnitOfMeasure.id).where(func.lower(UnitOfMeasure.name) == data.name.strip().lower())
+    ).first()
+    if existing_name:
+        raise ProposalConflictError(f"Unit of measure with name '{data.name}' already exists")
+
+    uom = UnitOfMeasure(
+        code=data.code,
+        name=data.name,
+        category=getattr(data, "category", "uom2") or "uom2",
+        conversion_rule=data.conversion_rule,
+        status=data.status or "active",
+    )
+    db.add(uom)
+    try:
+        db.commit()
+        db.refresh(uom)
+        return uom
+    except IntegrityError as exc:
+        db.rollback()
+        raise ProposalConflictError(f"Database constraint violation creating UOM: {exc.orig}") from exc
+
+
+def update_unit_of_measure(db: Session, uom_id: int, data: UnitOfMeasureUpdate) -> UnitOfMeasure:
+    """Update an existing unit of measure."""
+    uom = db.get(UnitOfMeasure, uom_id)
+    if not uom:
+        raise ResourceNotFoundError(f"Unit of measure with id {uom_id} not found")
+
+    if data.code is not None and data.code != uom.code:
+        existing_code = db.execute(
+            select(UnitOfMeasure.id).where(UnitOfMeasure.code == data.code, UnitOfMeasure.id != uom_id)
+        ).first()
+        if existing_code:
+            raise ProposalConflictError(f"Unit of measure with code '{data.code}' already exists")
+        uom.code = data.code
+
+    if data.name is not None and data.name.strip().lower() != uom.name.strip().lower():
+        existing_name = db.execute(
+            select(UnitOfMeasure.id).where(
+                func.lower(UnitOfMeasure.name) == data.name.strip().lower(),
+                UnitOfMeasure.id != uom_id,
+            )
+        ).first()
+        if existing_name:
+            raise ProposalConflictError(f"Unit of measure with name '{data.name}' already exists")
+        uom.name = data.name
+
+    if data.category is not None:
+        uom.category = data.category
+    if data.conversion_rule is not None:
+        uom.conversion_rule = data.conversion_rule
+    if data.status is not None:
+        uom.status = data.status
+
+    try:
+        db.commit()
+        db.refresh(uom)
+        return uom
+    except IntegrityError as exc:
+        db.rollback()
+        raise ProposalConflictError(f"Database constraint violation updating UOM: {exc.orig}") from exc
+
+
+def delete_unit_of_measure(db: Session, uom_id: int) -> None:
+    """Retire or delete a unit of measure, checking for rate cards or pricing model dependencies."""
+    uom = db.get(UnitOfMeasure, uom_id)
+    if not uom:
+        raise ResourceNotFoundError(f"Unit of measure with id {uom_id} not found")
+
+    # Check dependencies in rate cards
+    rate_card_count = db.execute(
+        select(func.count(RateCard.id)).where(RateCard.uom_id == uom_id)
+    ).scalar_one()
+    if rate_card_count > 0:
+        raise ProposalConflictError(
+            f"Cannot delete unit of measure '{uom.name}': referenced by {rate_card_count} rate card entries. "
+            "Set status to 'retired' or 'inactive' instead."
+        )
+
+    # Check dependencies in pricing models
+    locked_count = db.execute(
+        select(func.count(PricingModel.id)).where(PricingModel.uom_locked_id == uom_id)
+    ).scalar_one()
+    if locked_count > 0:
+        raise ProposalConflictError(
+            f"Cannot delete unit of measure '{uom.name}': locked on {locked_count} pricing models."
+        )
+
+    try:
+        db.delete(uom)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ProposalConflictError(f"Cannot delete unit of measure: {exc.orig}") from exc
+
+
+def list_allowed_uoms_for_pricing_model(db: Session, pricing_model_id: int) -> List[UnitOfMeasure]:
+    """Units of measure a rate under this pricing model may be charged per.
+
+    Rules come only from master data:
+      1. The pricing model's locked UOM, if it has one (the only valid choice).
+      2. Otherwise the active UOMs mapped in pricing_model_uoms (defaults first).
+      3. Otherwise no restriction is configured: every active UOM.
+    """
+    pm = db.get(PricingModel, pricing_model_id)
+    if not pm:
+        raise ResourceNotFoundError(f"Pricing model with id {pricing_model_id} not found")
+
+    if pm.uom_locked_id:
+        locked_uom = db.get(UnitOfMeasure, pm.uom_locked_id)
+        return [locked_uom] if locked_uom else []
+
+    mapped_stmt = (
+        select(UnitOfMeasure)
+        .join(PricingModelUom, PricingModelUom.uom_id == UnitOfMeasure.id)
+        .where(PricingModelUom.pricing_model_id == pricing_model_id, UnitOfMeasure.status == "active")
+        .order_by(PricingModelUom.is_default.desc(), UnitOfMeasure.name)
+    )
+    has_mapping = db.execute(
+        select(func.count()).select_from(PricingModelUom).where(PricingModelUom.pricing_model_id == pricing_model_id)
+    ).scalar_one() > 0
+    if has_mapping:
+        return list(db.execute(mapped_stmt).scalars().all())
+
+    all_active = select(UnitOfMeasure).where(UnitOfMeasure.status == "active").order_by(UnitOfMeasure.name)
+    return list(db.execute(all_active).scalars().all())
+
+
+def validate_uom_for_pricing_model(db: Session, pricing_model: PricingModel, uom: UnitOfMeasure) -> None:
+    """Reject a UOM the pricing model does not allow (locked UOM or pricing_model_uoms mapping)."""
+    if pricing_model.uom_locked_id and uom.id != pricing_model.uom_locked_id:
+        locked = db.get(UnitOfMeasure, pricing_model.uom_locked_id)
+        locked_name = locked.name if locked else f"id {pricing_model.uom_locked_id}"
+        raise ProposalValidationError(
+            f"Pricing model '{pricing_model.name}' is locked to unit of measure '{locked_name}'; got '{uom.name}'."
+        )
+    allowed_ids = {u.id for u in list_allowed_uoms_for_pricing_model(db, pricing_model.id)}
+    if uom.id not in allowed_ids:
+        raise ProposalValidationError(
+            f"Unit of measure '{uom.name}' is not allowed for pricing model '{pricing_model.name}'"
+            + (" (it is not active)." if uom.status != "active" else ".")
+        )

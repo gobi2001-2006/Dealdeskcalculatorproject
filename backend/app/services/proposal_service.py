@@ -125,6 +125,37 @@ def _pack_feature_ids(db: Session, pack_version_id: int) -> set[int]:
     )
 
 
+def primary_country_block(proposal: "Proposal") -> Optional[ProposalCountry]:
+    """The proposal's primary country block (or the first one added). Same rule as the pricing engine."""
+    if not proposal.countries:
+        return None
+    for block in proposal.countries:
+        if block.is_primary_deployment:
+            return block
+    return min(proposal.countries, key=lambda c: c.id)
+
+
+def effective_country_block_id(proposal: "Proposal", proposal_country_id: Optional[int]) -> Optional[int]:
+    """A line without a country block is priced by the primary block."""
+    if proposal_country_id:
+        return proposal_country_id
+    primary = primary_country_block(proposal)
+    return primary.id if primary else None
+
+
+def _validate_country_block(db: Session, proposal_id: int, proposal_country_id: Optional[int]) -> Optional[ProposalCountry]:
+    if not proposal_country_id:
+        return None
+    block = db.get(ProposalCountry, proposal_country_id)
+    if not block:
+        raise ResourceNotFoundError(f"Proposal country block with id {proposal_country_id} not found")
+    if block.proposal_id != proposal_id:
+        raise ProposalValidationError(
+            f"Country block {proposal_country_id} does not belong to proposal {proposal_id}"
+        )
+    return block
+
+
 def assert_no_double_charging(
     db: Session,
     *,
@@ -132,16 +163,24 @@ def assert_no_double_charging(
     pack_version_id: Optional[int],
     feature_id: Optional[int],
     exclude_line_item_id: Optional[int] = None,
+    proposal: Optional["Proposal"] = None,
+    proposal_country_id: Optional[int] = None,
 ) -> None:
-    """Reject a line that would charge the same feature twice within one proposal version.
+    """Reject a line that would charge the same feature twice within one country of a proposal version.
 
-    Rules: a pack or feature may appear once; a standalone feature may not also be contained
-    in a pack line; two packs may not share a feature.
+    Rules (per country block): a pack or feature may appear once; a standalone feature may not also
+    be contained in a pack line; two packs may not share a feature. The same pack may be priced in
+    two different countries (each country has its own rate card and currency).
     """
     stmt = select(ProposalLineItem).where(ProposalLineItem.proposal_version_id == version_id)
     if exclude_line_item_id is not None:
         stmt = stmt.where(ProposalLineItem.id != exclude_line_item_id)
     existing = list(db.execute(stmt).scalars().all())
+    if proposal is not None:
+        target_block = effective_country_block_id(proposal, proposal_country_id)
+        existing = [
+            li for li in existing if effective_country_block_id(proposal, li.proposal_country_id) == target_block
+        ]
 
     existing_packs = {li.pack_version_id for li in existing if li.pack_version_id is not None}
     existing_features = {li.feature_id for li in existing if li.feature_id is not None}
@@ -152,7 +191,7 @@ def assert_no_double_charging(
 
     if pack_version_id is not None:
         if pack_version_id in existing_packs:
-            raise ProposalConflictError(f"Pack version {pack_version_id} is already on this proposal version")
+            raise ProposalConflictError(f"Pack version {pack_version_id} is already on this proposal version for this country")
         new_features = _pack_feature_ids(db, pack_version_id)
         clash_standalone = new_features & existing_features
         if clash_standalone:
@@ -168,7 +207,7 @@ def assert_no_double_charging(
             )
     if feature_id is not None:
         if feature_id in existing_features:
-            raise ProposalConflictError(f"Feature {feature_id} is already on this proposal version")
+            raise ProposalConflictError(f"Feature {feature_id} is already on this proposal version for this country")
         if feature_id in covered_by_packs:
             raise ProposalConflictError(
                 f"Feature {feature_id} is already included in pack version {covered_by_packs[feature_id]} "
@@ -647,11 +686,14 @@ def add_proposal_line_item(
         if data.discount_pct is not None and not (Decimal("0") <= data.discount_pct <= Decimal("100")):
             raise ProposalValidationError("Discount percentage must be between 0 and 100")
 
+        _validate_country_block(db, proposal_id, data.proposal_country_id)
         assert_no_double_charging(
             db,
             version_id=version.id,
             pack_version_id=data.pack_version_id,
             feature_id=data.feature_id,
+            proposal=proposal,
+            proposal_country_id=data.proposal_country_id,
         )
 
         # Line number assignment
@@ -675,6 +717,7 @@ def add_proposal_line_item(
 
         new_item = ProposalLineItem(
             proposal_version_id=version.id,
+            proposal_country_id=data.proposal_country_id,
             line_number=line_num,
             pack_version_id=data.pack_version_id,
             feature_id=data.feature_id,
@@ -791,13 +834,17 @@ def update_proposal_line_item(
             if not (Decimal("0") <= update_dict["discount_pct"] <= Decimal("100")):
                 raise ProposalValidationError("Discount percentage must be between 0 and 100")
 
-        if target_fields_set:
+        if "proposal_country_id" in update_dict:
+            _validate_country_block(db, proposal_id, update_dict["proposal_country_id"])
+        if target_fields_set or "proposal_country_id" in update_dict:
             assert_no_double_charging(
                 db,
                 version_id=version.id,
                 pack_version_id=update_dict.get("pack_version_id", item.pack_version_id),
                 feature_id=update_dict.get("feature_id", item.feature_id),
                 exclude_line_item_id=item.id,
+                proposal=proposal,
+                proposal_country_id=update_dict.get("proposal_country_id", item.proposal_country_id),
             )
 
         for field, value in update_dict.items():
@@ -890,12 +937,14 @@ def add_proposal_service_line(
             version_id=data.proposal_version_id,
         )
 
+        block = _validate_country_block(db, proposal_id, data.proposal_country_id)
         if data.service_rate_id is not None:
             sr = db.get(ServiceRate, data.service_rate_id)
             if not sr:
                 raise ResourceNotFoundError(
                     f"Service rate with id {data.service_rate_id} not found"
                 )
+            _assert_service_rate_country(proposal, block, sr)
 
         currency_id = data.currency_id if data.currency_id is not None else proposal.currency_id
         currency = db.get(Currency, currency_id)
@@ -918,6 +967,7 @@ def add_proposal_service_line(
 
         new_sl = ProposalServiceLine(
             proposal_version_id=version.id,
+            proposal_country_id=data.proposal_country_id,
             service_rate_id=data.service_rate_id,
             role_name=data.role_name,
             days_or_hours=data.days_or_hours,
@@ -946,6 +996,16 @@ def add_proposal_service_line(
 # Country blocks and service lines: update / delete
 # (same rules as line items: only a draft proposal and a draft version may change)
 # =============================================================================
+
+def _assert_service_rate_country(proposal: "Proposal", block: Optional[ProposalCountry], service_rate: ServiceRate) -> None:
+    """A service line is costed with its country's regional rate (PDF section 2)."""
+    target = block or primary_country_block(proposal)
+    if target is not None and service_rate.country_id != target.country_id:
+        raise ProposalValidationError(
+            f"Service rate {service_rate.id} ('{service_rate.role_name}') belongs to country_id={service_rate.country_id}, "
+            f"but this service line is priced for country_id={target.country_id}"
+        )
+
 
 def _require_draft_proposal(db: Session, proposal_id: int) -> Proposal:
     proposal = db.get(Proposal, proposal_id)
@@ -1044,10 +1104,19 @@ def delete_proposal_country(*, db: Session, proposal_id: int, proposal_country_i
     try:
         _require_draft_proposal(db, proposal_id)
         block = _get_country_block(db, proposal_id, proposal_country_id)
+        used = db.execute(
+            select(func.count()).select_from(ProposalLineItem).where(ProposalLineItem.proposal_country_id == block.id)
+        ).scalar_one() + db.execute(
+            select(func.count()).select_from(ProposalServiceLine).where(ProposalServiceLine.proposal_country_id == block.id)
+        ).scalar_one()
+        if used:
+            raise ProposalConflictError(
+                f"Country block {block.id} still has {used} line(s) priced in it; remove those lines first"
+            )
         db.delete(block)
         db.commit()
         return True
-    except (ProposalNotFoundError, ResourceNotFoundError, LifecycleStateError):
+    except (ProposalNotFoundError, ResourceNotFoundError, LifecycleStateError, ProposalConflictError):
         db.rollback()
         raise
     except IntegrityError as exc:
@@ -1091,9 +1160,18 @@ def update_proposal_service_line(
             raise ProposalValidationError("A service line cannot be moved to another proposal version")
         update_dict.pop("proposal_version_id", None)
 
+        if "proposal_country_id" in update_dict:
+            _validate_country_block(db, proposal_id, update_dict["proposal_country_id"])
         if update_dict.get("service_rate_id") is not None:
             if not db.get(ServiceRate, update_dict["service_rate_id"]):
                 raise ResourceNotFoundError(f"Service rate with id {update_dict['service_rate_id']} not found")
+        if "proposal_country_id" in update_dict or update_dict.get("service_rate_id") is not None:
+            proposal = db.get(Proposal, proposal_id)
+            block_id = update_dict.get("proposal_country_id", line.proposal_country_id)
+            rate_id = update_dict.get("service_rate_id", line.service_rate_id)
+            sr = db.get(ServiceRate, rate_id) if rate_id else None
+            if sr is not None:
+                _assert_service_rate_country(proposal, db.get(ProposalCountry, block_id) if block_id else None, sr)
         if "currency_id" in update_dict and not db.get(Currency, update_dict["currency_id"]):
             raise ResourceNotFoundError(f"Currency with id {update_dict['currency_id']} not found")
         if update_dict.get("discount_pct"):

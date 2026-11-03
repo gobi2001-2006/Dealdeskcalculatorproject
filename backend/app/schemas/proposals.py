@@ -639,6 +639,11 @@ class ProposalLineItemBase(BaseModel):
         gt=0,
         description="Proposal version ID referencing proposal_versions.id",
     )
+    proposal_country_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Country block (proposal_countries.id) that prices this line; omit for the primary country",
+    )
     line_number: int = Field(
         ...,
         ge=1,
@@ -751,6 +756,7 @@ class ProposalLineItemUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     proposal_version_id: Optional[int] = Field(None, gt=0)
+    proposal_country_id: Optional[int] = Field(None, gt=0)
     line_number: Optional[int] = Field(None, ge=1)
     pack_version_id: Optional[int] = Field(None, gt=0)
     feature_id: Optional[int] = Field(None, gt=0)
@@ -819,6 +825,11 @@ class ProposalServiceLineBase(BaseModel):
         ...,
         gt=0,
         description="Proposal version ID referencing proposal_versions.id",
+    )
+    proposal_country_id: Optional[int] = Field(
+        None,
+        gt=0,
+        description="Country block (proposal_countries.id) that prices this line; omit for the primary country",
     )
     service_rate_id: Optional[int] = Field(
         None,
@@ -895,6 +906,7 @@ class ProposalServiceLineUpdate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     proposal_version_id: Optional[int] = Field(None, gt=0)
+    proposal_country_id: Optional[int] = Field(None, gt=0)
     service_rate_id: Optional[int] = Field(None, gt=0)
     role_name: Optional[str] = Field(None, min_length=1, max_length=100)
     days_or_hours: Optional[Decimal] = Field(None, ge=Decimal("0"), decimal_places=4)

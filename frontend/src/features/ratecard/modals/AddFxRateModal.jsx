@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { X, ArrowRightLeft, AlertCircle } from 'lucide-react'
 
-export function AddFxRateModal({ isOpen, onClose, onSave, currencies = ['USD', 'EUR', 'INR', 'AED', 'SAR', 'MYR', 'PHP', 'KES', 'ZAR'] }) {
-  const [sourceCurrency, setSourceCurrency] = useState('USD')
-  const [targetCurrency, setTargetCurrency] = useState('INR')
+// Currencies come from the currency master (passed in by the page); there is no built-in list.
+export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
+  const [sourceCurrency, setSourceCurrency] = useState('')
+  const [targetCurrency, setTargetCurrency] = useState('')
   const [ratePerUnit, setRatePerUnit] = useState('')
   const [source, setSource] = useState('Corporate Treasury')
   const [effectiveDate, setEffectiveDate] = useState(
@@ -17,6 +18,10 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = ['USD', '
     e.preventDefault()
     setError('')
 
+    if (!sourceCurrency || !targetCurrency) {
+      setError('Select both currencies.')
+      return
+    }
     if (sourceCurrency === targetCurrency) {
       setError('Source currency and target currency must be distinct.')
       return
@@ -94,6 +99,7 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = ['USD', '
                 onChange={(e) => setSourceCurrency(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
+                <option value="">Select currency</option>
                 {currencies.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -111,6 +117,7 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = ['USD', '
                 onChange={(e) => setTargetCurrency(e.target.value)}
                 className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
+                <option value="">Select currency</option>
                 {currencies.map((c) => (
                   <option key={c} value={c}>
                     {c}

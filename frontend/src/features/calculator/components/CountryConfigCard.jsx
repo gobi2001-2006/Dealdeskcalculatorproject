@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Globe,
   Trash2,
@@ -9,6 +9,7 @@ import { FamilyConfigCard } from './FamilyConfigCard'
 import { ServiceLinesSection } from './ServiceLinesSection'
 import { validateContractTerm, countryCurrencyCode as getCountryCurrencyCode } from '../calculatorData'
 import { getCurrencySymbol } from '../../ratecard/rateCardFormatters'
+import { describeCountryVolume } from '../rateUnits'
 
 function getCountryCurrencySymbol(country, currencyCode = null) {
   const code = currencyCode || getCountryCurrencyCode(country)
@@ -157,6 +158,23 @@ export function CountryConfigCard({
       families: [...(countryConfig.families || []), newFamilyEntry],
     })
   }
+
+  // Unit of measure of each family's selected pack (reported by FamilyConfigCard from the rate card)
+  const [packUnits, setPackUnits] = useState({})
+  const handlePackUnitChange = useCallback((familyConfigId, unit) => {
+    setPackUnits((prev) => {
+      const same = unit === null ? !(familyConfigId in prev) : prev[familyConfigId]?.uomName === unit.uomName && prev[familyConfigId]?.period === unit.period
+      if (same) return prev
+      const next = { ...prev }
+      if (unit === null) delete next[familyConfigId]
+      else next[familyConfigId] = unit
+      return next
+    })
+  }, [])
+  const volumeLabel = describeCountryVolume(
+    (countryConfig.families || []).map((f) => packUnits[f.id]).filter(Boolean),
+    countryMaster.name,
+  )
 
   // Handle Update Family
   const handleUpdateFamily = (updatedFam) => {
@@ -410,17 +428,17 @@ export function CountryConfigCard({
           </p>
         )}
 
-        {/* Active Employees (with ESS) Quantity Input — Separate Horizontal Row */}
+        {/* Country deployment volume: the quantity of every selected pack, in the pack rate card's UOM */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs">
           <div>
             <label
               htmlFor={`country-headcount-input-${countryConfig.id}`}
               className="block text-xs font-bold text-slate-900"
             >
-              Active Employees (with ESS) — Country Deployment Volume
+              {volumeLabel.heading}
             </label>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Authoritative UOM employee count applied to PEPM subscription calculations across all families for {countryMaster.name}.
+            <p className={`text-[11px] mt-0.5 ${volumeLabel.mixed ? 'text-amber-700' : 'text-slate-500'}`}>
+              {volumeLabel.help}
             </p>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -443,7 +461,7 @@ export function CountryConfigCard({
               className="w-36 h-9 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 font-mono font-bold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-right shadow-2xs"
             />
             <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
-              Users
+              {volumeLabel.unit}
             </span>
           </div>
         </div>
@@ -512,6 +530,7 @@ export function CountryConfigCard({
                 contractTerm={countryConfig.contractTerm}
                 currencyCode={countryCurrencyCode}
                 currencySymbol={countryCurrencySymbol}
+                onPackUnitChange={handlePackUnitChange}
                 onUpdateFamily={handleUpdateFamily}
                 onRemoveFamily={() => handleRemoveFamily(familyConfig.id)}
                 families={familyList}

@@ -30,6 +30,7 @@ from pydantic import (
 
 MasterDataStatus = Literal["active", "inactive", "retired"]
 FixedFeeBasis = Literal["annual", "one_time"]
+UnitRateBasis = Literal["monthly", "annual", "one_time"]
 
 
 # =============================================================================
@@ -412,6 +413,10 @@ class UnitOfMeasureBase(BaseModel):
         max_length=100,
         description="Display name of unit of measure",
     )
+    category: str = Field(
+        default="uom2",
+        description="Category of unit of measure: 'uom1' (employee-level) or 'uom2' (product-specific)",
+    )
     conversion_rule: Optional[str] = Field(
         default=None,
         description="Formula or guidance for unit conversion/scaling",
@@ -420,6 +425,13 @@ class UnitOfMeasureBase(BaseModel):
         default="active",
         description="Lifecycle status: active | inactive | retired",
     )
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: str) -> str:
+        if v not in ("uom1", "uom2"):
+            raise ValueError("category must be 'uom1' or 'uom2'")
+        return v
 
 
 class UnitOfMeasureCreate(UnitOfMeasureBase):
@@ -435,8 +447,16 @@ class UnitOfMeasureUpdate(BaseModel):
 
     code: Optional[str] = Field(None, min_length=1, max_length=50)
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    category: Optional[str] = Field(None, description="Category: 'uom1' or 'uom2'")
     conversion_rule: Optional[str] = None
     status: Optional[MasterDataStatus] = None
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ("uom1", "uom2"):
+            raise ValueError("category must be 'uom1' or 'uom2'")
+        return v
 
     @field_validator("code", "name", "status", mode="before")
     @classmethod
@@ -493,6 +513,10 @@ class PricingModelBase(BaseModel):
         default=None,
         description="Fixed fee frequency: 'annual' | 'one_time'",
     )
+    unit_rate_basis: UnitRateBasis = Field(
+        default="monthly",
+        description="How the unit rate is billed: 'monthly' | 'annual' | 'one_time'",
+    )
     uom_locked_id: Optional[int] = Field(
         default=None,
         gt=0,
@@ -521,6 +545,7 @@ class PricingModelUpdate(BaseModel):
     has_fixed_component: Optional[bool] = None
     has_unit_component: Optional[bool] = None
     fixed_fee_basis: Optional[FixedFeeBasis] = None
+    unit_rate_basis: Optional[UnitRateBasis] = None
     uom_locked_id: Optional[int] = Field(None, gt=0)
     status: Optional[MasterDataStatus] = None
 
@@ -529,6 +554,7 @@ class PricingModelUpdate(BaseModel):
         "name",
         "has_fixed_component",
         "has_unit_component",
+        "unit_rate_basis",
         "status",
         mode="before",
     )
@@ -539,6 +565,18 @@ class PricingModelUpdate(BaseModel):
         return v
 
 
+class PricingModelUomResponse(BaseModel):
+    """API response schema for a pricing-model-to-UOM mapping."""
+
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
+
+    pricing_model_id: int
+    uom_id: int
+    is_default: bool
+    created_at: datetime
+    uom: Optional[UnitOfMeasureResponse] = None
+
+
 class PricingModelResponse(PricingModelBase):
     """API response schema for a pricing model."""
 
@@ -547,6 +585,8 @@ class PricingModelResponse(PricingModelBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    uom_locked: Optional[UnitOfMeasureResponse] = None
+    allowed_uoms: Optional[list[PricingModelUomResponse]] = None
 
 
 # =============================================================================

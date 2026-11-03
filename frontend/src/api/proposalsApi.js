@@ -174,9 +174,31 @@ export function getConfiguredUserId() {
   return id
 }
 
-/** Stable key for a subscription line: one pack version or one feature per proposal version. */
-export function lineTargetKey({ packVersionId = null, featureId = null }) {
-  return packVersionId ? `pack:${packVersionId}` : `feature:${featureId}`
+/**
+ * Stable key for a subscription line: one pack version or one feature per country of a proposal
+ * version. With a countryId the key is "<countryId>|pack:<id>"; without it, the legacy target key.
+ */
+export function lineTargetKey({ packVersionId = null, featureId = null, countryId = null }) {
+  const target = packVersionId ? `pack:${packVersionId}` : `feature:${featureId}`
+  return countryId ? `${countryId}|${target}` : target
+}
+
+/** The primary country block of a saved proposal (primary flag, otherwise the first one added). */
+export function primaryCountryBlock(countries) {
+  const blocks = countries || []
+  return blocks.find((b) => b.is_primary_deployment) || [...blocks].sort((a, b) => a.id - b.id)[0] || null
+}
+
+/**
+ * Country (countries.id) a saved line or service line is priced in: its own block, or the primary
+ * block when the line has none (lines saved before multi-region support). Calculation results carry
+ * `country_id` directly.
+ */
+export function lineCountryIdOf(line, countries) {
+  if (line?.country_id) return Number(line.country_id)
+  const block = line?.proposal_country_id ? (countries || []).find((b) => Number(b.id) === Number(line.proposal_country_id)) : null
+  const owner = block || primaryCountryBlock(countries)
+  return owner ? Number(owner.country_id) : null
 }
 
 /** Collect every subscription line the configuration asks for, keyed by target. */
@@ -187,20 +209,30 @@ export function buildDesiredLines(countryConfigs) {
     ;(country.families || []).forEach((fam) => {
       const familyQty = Number(fam.headcount ?? country.headcount)
       if (fam.selectedPackId) {
-        const key = lineTargetKey({ packVersionId: Number(fam.selectedPackId) })
+        const key = lineTargetKey({ packVersionId: Number(fam.selectedPackId), countryId: Number(country.countryId) })
         if (lines.has(key)) duplicates.push(key)
         lines.set(key, {
           key,
           packVersionId: Number(fam.selectedPackId),
           featureId: null,
+          countryId: Number(country.countryId),
           quantity: Number(country.headcount),
+          uomId: fam.packUomId ? Number(fam.packUomId) : null,
         })
       }
       ;(fam.selectedFeatureIds || []).forEach((featId) => {
-        const key = lineTargetKey({ featureId: Number(featId) })
+        const key = lineTargetKey({ featureId: Number(featId), countryId: Number(country.countryId) })
         if (lines.has(key)) duplicates.push(key)
         const qty = Number(fam.featureHeadcounts?.[featId] ?? familyQty)
-        lines.set(key, { key, packVersionId: null, featureId: Number(featId), quantity: qty })
+        const featureUom = fam.featureUomIds?.[featId]
+        lines.set(key, {
+          key,
+          packVersionId: null,
+          featureId: Number(featId),
+          countryId: Number(country.countryId),
+          quantity: qty,
+          uomId: featureUom ? Number(featureUom) : null,
+        })
       })
     })
   })
@@ -247,29 +279,30 @@ export function collectProposalErrors(clientInfo, countryConfigs) {
   const { duplicates } = buildDesiredLines(countryConfigs)
   if (duplicates.length > 0) {
     errors.push(
-      `The same pack/feature is selected more than once (${[...new Set(duplicates)].join(', ')}). ` +
-        'Line items are stored per proposal, not per country, so each pack or feature can appear only once.',
+      `The same pack/feature is selected more than once in one country (${[...new Set(duplicates)].join(', ')}). ` +
+        'Each pack or feature can appear once per country.',
     )
   }
   return errors
 }
 
 /**
- * Ask the backend which rate-card row (and therefore which unit of measure) prices a line.
- * Uses the primary country block, which is the block the backend engine prices with.
+ * Ask the backend which rate-card row (and therefore which unit of measure) prices a line,
+ * using the line's own country block (country, deployment model, pricing model) and the tier.
  */
-async function resolveLineUom(primary, line) {
+async function resolveLineUom(countryCfg, line) {
   try {
     const rate = await resolveRateCard({
-      country_id: Number(primary.countryId),
-      deployment_model_id: Number(primary.deploymentModelId),
-      pricing_model_id: Number(primary.pricingModelId),
-      tier_id: Number(primary.pricingTierId),
+      country_id: Number(countryCfg.countryId),
+      deployment_model_id: Number(countryCfg.deploymentModelId),
+      pricing_model_id: Number(countryCfg.pricingModelId),
+      tier_id: Number(countryCfg.pricingTierId),
       ...(line.packVersionId ? { pack_version_id: line.packVersionId } : { feature_id: line.featureId }),
+      ...(line.uomId ? { uom_id: line.uomId } : {}),
     })
     return { uomId: rate.uom_id, error: null }
   } catch (err) {
-    const what = line.packVersionId ? `pack version ${line.packVersionId}` : `feature ${line.featureId}`
+    const what = `${countryCfg.countryName || `country ${countryCfg.countryId}`}: ${line.packVersionId ? `pack version ${line.packVersionId}` : `feature ${line.featureId}`}`
     return { uomId: null, error: `${what}: ${describeApiError(err, 'rate card could not be resolved')}` }
   }
 }
@@ -300,17 +333,18 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
   const tierId = Number(primary.pricingTierId)
   const currencyId = Number(clientInfo.reportingCurrencyId)
 
-  // Resolve the unit of measure of every line from the rate card before writing anything.
+  // Resolve the unit of measure of every line from its own country's rate card before writing anything.
   const { lines: desiredLines } = buildDesiredLines(countryConfigs)
+  const configByCountry = new Map(countryConfigs.map((c) => [Number(c.countryId), c]))
   const uomErrors = []
   for (const line of desiredLines.values()) {
-    const { uomId, error } = await resolveLineUom(primary, line)
+    const { uomId, error } = await resolveLineUom(configByCountry.get(line.countryId), line)
     if (error) uomErrors.push(error)
     line.uomId = uomId
   }
   if (uomErrors.length > 0) {
     throw new ProposalInputError([
-      'Some selected packs/features have no usable rate card for the primary country, deployment model, pricing model and tier:',
+      'Some selected packs/features have no usable rate card for their country, deployment model, pricing model and tier:',
       ...uomErrors,
     ])
   }
@@ -400,7 +434,28 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
 
   let detail = await getProposal(proposalId)
 
-  // 4. Country blocks: delete removed, then clear stale primary flags, then update/create.
+  // 4. Existing lines, keyed by country + target (a line without a block belongs to the primary block).
+  const draftOf = (d) => (d.versions || []).filter((v) => v.status === 'draft').sort((a, b) => b.version_no - a.version_no)[0]
+  const draft = draftOf(detail)
+  const lineKey = (li) =>
+    lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id, countryId: lineCountryIdOf(li, detail.countries) })
+  const existingLines = new Map((draft?.line_items || []).map((li) => [lineKey(li), li]))
+
+  // Lines and service lines that are no longer wanted go first, so their country blocks can be removed.
+  for (const [key, li] of existingLines) {
+    if (!desiredLines.has(key)) {
+      await deleteProposalLineItem(proposalId, li.id)
+      existingLines.delete(key)
+    }
+  }
+  const wantedServiceIds = new Set(
+    countryConfigs.flatMap((c) => (c.serviceLines || []).map((srv) => Number(srv.backendId)).filter((id) => positiveId(id))),
+  )
+  for (const sl of draft?.service_lines || []) {
+    if (!wantedServiceIds.has(Number(sl.id))) await deleteProposalServiceLine(proposalId, sl.id)
+  }
+
+  // 5. Country blocks: delete removed, then clear stale primary flags, then update/create.
   const blocksByCountry = new Map((detail.countries || []).map((b) => [Number(b.country_id), b]))
   const wantedCountryIds = new Set(countryConfigs.map((c) => Number(c.countryId)))
   for (const block of detail.countries || []) {
@@ -425,7 +480,8 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
     }
     const block = blocksByCountry.get(Number(cfg.countryId))
     if (!block) {
-      await addProposalCountry(proposalId, { country_id: Number(cfg.countryId), ...wanted })
+      const created = await addProposalCountry(proposalId, { country_id: Number(cfg.countryId), ...wanted })
+      blocksByCountry.set(Number(cfg.countryId), created)
     } else {
       const changed = Object.keys(wanted).filter((k) => !sameNumber(block[k], wanted[k]))
       if (changed.length > 0) {
@@ -437,27 +493,25 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
       }
     }
   }
-
-  // 5. Subscription line items on the draft version.
-  const draft = (detail.versions || []).filter((v) => v.status === 'draft').sort((a, b) => b.version_no - a.version_no)[0]
-  const existingLines = new Map(
-    (draft?.line_items || []).map((li) => [
-      lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id }),
-      li,
-    ]),
-  )
-  for (const [key, li] of existingLines) {
-    if (!desiredLines.has(key)) await deleteProposalLineItem(proposalId, li.id)
+  const blockIdOf = (countryId) => {
+    const block = blocksByCountry.get(Number(countryId))
+    if (!block?.id) throw new Error(`Country ${countryId} has no saved country block`)
+    return Number(block.id)
   }
+
+  // 6. Subscription line items on the draft version, each tied to its country block.
   for (const [key, line] of desiredLines) {
     const current = existingLines.get(key)
+    const blockId = blockIdOf(line.countryId)
     if (current) {
       const patch = {}
       if (!sameNumber(current.quantity, line.quantity)) patch.quantity = line.quantity
       if (!sameNumber(current.uom_id, line.uomId)) patch.uom_id = line.uomId
+      if (!sameNumber(current.proposal_country_id, blockId)) patch.proposal_country_id = blockId
       if (Object.keys(patch).length > 0) await updateProposalLineItem(proposalId, current.id, patch)
     } else {
       await addProposalLineItem(proposalId, {
+        proposal_country_id: blockId,
         pack_version_id: line.packVersionId,
         feature_id: line.featureId,
         uom_id: line.uomId,
@@ -466,34 +520,32 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
     }
   }
 
-  // 6. Service lines (effort in man-days; the backend resolves the day rate).
-  const existingServices = new Map((draft?.service_lines || []).map((s) => [Number(s.id), s]))
-  const keptServiceIds = new Set()
+  // 7. Service lines (effort in man-days; the backend resolves the day rate of the line's country).
+  const existingServices = new Map((draft?.service_lines || []).map((sl) => [Number(sl.id), sl]))
   for (const country of countryConfigs) {
+    const blockId = blockIdOf(country.countryId)
     for (const srv of country.serviceLines || []) {
       const wanted = {
         role_name: srv.roleName.trim(),
         service_rate_id: Number(srv.serviceRateId),
         days_or_hours: Number(srv.hoursOrDays),
+        proposal_country_id: blockId,
       }
       const current = positiveId(srv.backendId) ? existingServices.get(Number(srv.backendId)) : null
       if (current) {
-        keptServiceIds.add(Number(current.id))
         const patch = {}
         if (current.role_name !== wanted.role_name) patch.role_name = wanted.role_name
         if (!sameNumber(current.service_rate_id, wanted.service_rate_id)) patch.service_rate_id = wanted.service_rate_id
         if (!sameNumber(current.days_or_hours, wanted.days_or_hours)) patch.days_or_hours = wanted.days_or_hours
+        if (!sameNumber(current.proposal_country_id, blockId)) patch.proposal_country_id = blockId
         if (Object.keys(patch).length > 0) await updateProposalServiceLine(proposalId, current.id, patch)
       } else {
         await addProposalServiceLine(proposalId, wanted)
       }
     }
   }
-  for (const [id] of existingServices) {
-    if (!keptServiceIds.has(id)) await deleteProposalServiceLine(proposalId, id)
-  }
 
-  // 7. Reload the persisted state.
+  // 8. Reload the persisted state.
   detail = await getProposal(proposalId)
   return {
     status: 'persisted',
@@ -567,9 +619,12 @@ export function discountsFromSnapshot(calcData) {
   const product_subscription_discounts = {}
   const product_service_discounts = {}
   ;(calcData?.snapshot_payload?.products || []).forEach((p) => {
-    if (!p.product_code) return
-    if (Number(p.subscription_discount_pct) > 0) product_subscription_discounts[p.product_code] = Number(p.subscription_discount_pct)
-    if (Number(p.service_discount_pct) > 0) product_service_discounts[p.product_code] = Number(p.service_discount_pct)
+    // Product-level discounts are keyed by product_key ("<code>@<country>" when a product is sold in
+    // more than one country); snapshots written before multi-region support only have product_code.
+    const key = p.product_key || p.product_code
+    if (!key) return
+    if (Number(p.subscription_discount_pct) > 0) product_subscription_discounts[key] = Number(p.subscription_discount_pct)
+    if (Number(p.service_discount_pct) > 0) product_service_discounts[key] = Number(p.service_discount_pct)
   })
   return { product_subscription_discounts, product_service_discounts }
 }

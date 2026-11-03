@@ -10,6 +10,7 @@ from app.models.master_data import (
     DeploymentPricingOption,
     FxRate,
     PricingModel,
+    PricingModelUom,
     UnitOfMeasure,
 )
 from app.models.catalogue import (
@@ -71,6 +72,7 @@ __all__ = [
     # Wave 1 — Supporting Master dimensions
     "UnitOfMeasure",
     "DeploymentPricingOption",
+    "PricingModelUom",
     # Wave 2 — Catalogue & Packs
     "ProductFamily",
     "Product",

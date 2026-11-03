@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Package, Plus, Trash2, Info } from 'lucide-react'
+import { PlatformRatesTable } from './PlatformRatesTable'
 
 // Tier columns come only from saved customer tiers.
 const DEFAULT_TIERS = []
@@ -14,10 +15,18 @@ export function PackRatesSection({
   activeCurrencySymbol = '$',
   isVersionLocked = false,
   isDualComponent = false,
+  // Platform + Subscription layout: tier platform fees + one UOM + one subscription rate per pack
+  layout = 'default',
+  allowedUoms = [],
+  lockedUomId = null,
+  fixedFeeBasis = 'annual',
+  unitRateBasis = 'monthly',
+  onUpdatePlatformRate,
   onUpdateRate,
   onRemoveRate,
   onOpenAddPackRate,
 }) {
+  const isPlatformLayout = layout === 'platform' || layout === 'license'
   const tiersToRender = pricingTiers.length > 0 ? pricingTiers : DEFAULT_TIERS
   const familyName = family?.name || 'Product Family'
 
@@ -62,15 +71,9 @@ export function PackRatesSection({
           .join(' • ')
       : `No packs configured for ${familyName}`
 
-  const isLicenseAMC =
-    (activeDeployment?.toLowerCase().includes('premise') || false) ||
-    (activePricingModel?.code || '').toLowerCase().includes('amc') ||
-    (activePricingModel?.name || '').toLowerCase().includes('amc') ||
-    (activePricingModel?.code || '').toLowerCase().includes('license') ||
-    (activePricingModel?.name || '').toLowerCase().includes('license')
-
-  const fixedFeeLabel = isLicenseAMC ? 'Capex License Fee' : 'Platform Fee'
-  const unitRateLabel = isLicenseAMC ? 'AMC Rate' : isDualComponent ? 'Subscription Rate' : 'PEPM'
+  // Labels for the per-tier grid (unit-rate pricing models); fixed + unit and licence models use PlatformRatesTable.
+  const fixedFeeLabel = 'Platform Fee'
+  const unitRateLabel = isDualComponent ? 'Subscription Rate' : activePricingModel?.name || 'Rate'
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
@@ -95,7 +98,14 @@ export function PackRatesSection({
               )}
             </div>
             <p className="text-[11px] text-slate-500">
-              Commercial multi-product bundles from Pack Builder • {isDualComponent ? `${fixedFeeLabel} (Fixed) + ${unitRateLabel} (Unit)` : 'Recurring per employee per month'}
+              Commercial multi-product bundles from Pack Builder •{' '}
+              {layout === 'license'
+                ? 'Licence fee per user + AMC % by tier'
+                : isPlatformLayout
+                ? 'Platform fee by tier + Subscription rate per UOM'
+                : isDualComponent
+                ? `${fixedFeeLabel} (Fixed) + ${unitRateLabel} (Unit)`
+                : 'Recurring rate per unit, by tier'}
             </p>
           </div>
         </div>
@@ -124,15 +134,53 @@ export function PackRatesSection({
         <div>
           <span className="font-semibold text-sky-950">Pricing Structure: </span>
           <code className="bg-sky-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-sky-900">
-            {isDualComponent
+            {layout === 'license'
+              ? 'Contract Value = Licence Fee per User × Users + (Licence Total × AMC %) × Contract Years'
+              : isPlatformLayout
+              ? 'Contract Value = Tier Platform Fee × Contract Years + Subscription Rate × Volume × Billing Periods'
+              : isDualComponent
               ? `Contract Value = ${fixedFeeLabel} (Fixed) + ${unitRateLabel} × Volume × Term`
-              : 'Rate per Active Employee (with ESS) per month × headcount × term months = Full Contract Value'}
+              : `Contract Value = ${unitRateLabel} per ${activePricingModel?.unitOfMeasure || 'unit'} × Quantity × Billing Periods`}
           </code>
         </div>
       </div>
 
       {/* Table / List */}
-      {configuredPackRates.length > 0 ? (
+      {isPlatformLayout && configuredPackRates.length > 0 ? (
+        <PlatformRatesTable
+          nameHeader="Pack"
+          variant={layout === 'license' ? 'license' : 'platform'}
+          rows={configuredPackRates.map((rate) => {
+            const packObj = packs.find(
+              (p) => p.id === rate.packId || p.packId === rate.packId || p.latestVersionId === rate.packVersionId,
+            )
+            return {
+              id: rate.id,
+              name: rate.packName,
+              code: rate.packCode,
+              items: packObj?.items || rate.items || [],
+              tierFees: Object.fromEntries(tiersToRender.map((t) => [t.id, rate[`fixed_tier_${t.id}`] ?? ''])),
+              tierRates: Object.fromEntries(tiersToRender.map((t) => [t.id, rate[`tier_${t.id}`] ?? ''])),
+              tierAmc: Object.fromEntries(tiersToRender.map((t) => [t.id, rate[`amc_tier_${t.id}`] ?? ''])),
+              perTierRates: rate.perTierRates ?? Boolean(rate.subscriptionRateMixed),
+              uomId: rate.uomId,
+              uomName: rate.unitOfMeasure,
+              uomMixed: rate.uomMixed,
+              subscriptionRate: rate.subscriptionRate ?? '',
+              subscriptionRateMixed: rate.subscriptionRateMixed,
+            }
+          })}
+          pricingTiers={tiersToRender}
+          allowedUoms={allowedUoms}
+          lockedUomId={lockedUomId}
+          fixedFeeBasis={fixedFeeBasis}
+          unitRateBasis={unitRateBasis}
+          currencySymbol={activeCurrencySymbol}
+          isVersionLocked={isVersionLocked}
+          onChange={onUpdatePlatformRate}
+          onRemove={onRemoveRate}
+        />
+      ) : configuredPackRates.length > 0 ? (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>

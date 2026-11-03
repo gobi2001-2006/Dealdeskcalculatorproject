@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
 import { X, Package, AlertCircle } from 'lucide-react'
+import { PlatformRateInputs } from './PlatformRateInputs'
+import { validatePlatformRateInputs } from '../rateCardFormatters'
 
 const DEFAULT_TIERS = []
 
@@ -12,7 +14,8 @@ export function AddPackRateModal({
   targetFamilyId = null,
   families = [],
   activeDeployment = 'Shared Cloud',
-  activePricing = 'PEPM',
+  activePricing = '',
+  layout = 'default',
   uoms = [],
   lockedUomId = null,
   activeCurrencySymbol = '$',
@@ -48,20 +51,19 @@ export function AddPackRateModal({
     )
   }, [familyPacks, existingPackRates, activeDeployment, activePricing])
 
-  const isLicenseAMC =
-    (activeDeployment?.toLowerCase().includes('premise') || false) ||
-    String(activePricing).toLowerCase().includes('amc') ||
-    String(activePricing).toLowerCase().includes('license')
-  const isPlatformSub = String(activePricing).toLowerCase().includes('platform')
-  const isDualComponent = isLicenseAMC || isPlatformSub
-
-  const fixedFeeLabel = isLicenseAMC ? 'Capex License Fee' : 'Platform Fee'
-  const unitRateLabel = isLicenseAMC ? 'Annual Maintenance (AMC)' : isPlatformSub ? 'Monthly Subscription' : 'PEPM Rate'
+  // The grid layout comes from the pricing model's components (master data), not from its name.
+  const isPlatformSubscription = layout === 'platform'
+  const isLicense = layout === 'license'
+  const isDualComponent = false
+  const fixedFeeLabel = 'Platform Fee'
+  const unitRateLabel = 'Rate'
 
   const [selectedPackId, setSelectedPackId] = useState('')
   const [tierRates, setTierRates] = useState({})
   const [fixedTierRates, setFixedTierRates] = useState({})
   const [uomId, setUomId] = useState('')
+  const [subscriptionRate, setSubscriptionRate] = useState('')
+  const [amcTierRates, setAmcTierRates] = useState({})
   const effectiveUomId = lockedUomId || uomId
   const [error, setError] = useState('')
 
@@ -85,6 +87,38 @@ export function AddPackRateModal({
     if (!effectivePackId) {
       setError('Please select a valid pack from Pack Builder.')
       return
+    }
+
+    if (isPlatformSubscription) {
+      const platformError = validatePlatformRateInputs(tiersToRender, fixedTierRates, subscriptionRate)
+      if (platformError) {
+        setError(platformError)
+        return
+      }
+    }
+
+    if (isLicense) {
+      for (const tier of tiersToRender) {
+        const fee = tierRates[tier.id]
+        const amc = amcTierRates[tier.id]
+        const blank = (v) => v === undefined || v === null || String(v).trim() === ''
+        if (!blank(fee) && (isNaN(Number(fee)) || Number(fee) < 0)) {
+          setError(`Licence fee for ${tier.name || tier.code} must be a non-negative number.`)
+          return
+        }
+        if (!blank(amc) && (isNaN(Number(amc)) || Number(amc) < 0 || Number(amc) > 100)) {
+          setError(`AMC % for ${tier.name || tier.code} must be between 0 and 100.`)
+          return
+        }
+        if (!blank(fee) && blank(amc)) {
+          setError(`Enter the AMC % for ${tier.name || tier.code} (0 if no maintenance is charged).`)
+          return
+        }
+      }
+      if (!tiersToRender.some((t) => String(tierRates[t.id] ?? '').trim() !== '')) {
+        setError('Enter the licence fee for at least one customer tier.')
+        return
+      }
     }
 
     // Validate tier rate inputs
@@ -141,6 +175,8 @@ export function AddPackRateModal({
       unitOfMeasure: uoms.find((u) => String(u.id) === String(effectiveUomId))?.name || '',
       tierRates,
       fixedTierRates,
+      subscriptionRate: isPlatformSubscription ? String(subscriptionRate).trim() : undefined,
+      amcTierRates: isLicense ? amcTierRates : undefined,
       tier1Rate: String(t1).trim(),
       tier2Rate: String(t2).trim(),
       tier3Rate: String(t3).trim(),
@@ -151,6 +187,8 @@ export function AddPackRateModal({
 
     setTierRates({})
     setFixedTierRates({})
+    setSubscriptionRate('')
+    setAmcTierRates({})
     setError('')
     onClose()
   }
@@ -298,7 +336,29 @@ export function AddPackRateModal({
             </select>
           </div>
 
-          {/* Dynamic Tiers Grid */}
+          {isLicense ? (
+            <PlatformRateInputs
+              variant="license"
+              idPrefix="pack-licence"
+              tiers={tiersToRender}
+              unitTierRates={tierRates}
+              onChangeUnit={handleTierRateChange}
+              amcTierRates={amcTierRates}
+              onChangeAmc={(tierId, value) => setAmcTierRates((prev) => ({ ...prev, [tierId]: value }))}
+              currencySymbol={activeCurrencySymbol}
+            />
+          ) : isPlatformSubscription ? (
+            <PlatformRateInputs
+              idPrefix="pack-platform"
+              tiers={tiersToRender}
+              fixedTierRates={fixedTierRates}
+              onChangeFixed={handleFixedTierRateChange}
+              subscriptionRate={subscriptionRate}
+              onChangeSubscription={setSubscriptionRate}
+              currencySymbol={activeCurrencySymbol}
+            />
+          ) : (
+          /* Dynamic Tiers Grid */
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1.5">
               Configured Customer Tier Rates ({activeCurrencySymbol})
@@ -369,6 +429,7 @@ export function AddPackRateModal({
               ))}
             </div>
           </div>
+          )}
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
             <button

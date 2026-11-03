@@ -218,14 +218,17 @@ def test_failed_calculation_writes_nothing(engine, db):
     assert db.query(CalculationSnapshot).count() == snapshots_before
 
 
-def test_multi_country_proposal_is_flagged_not_silently_priced(engine, db):
+def test_country_block_without_lines_is_flagged_and_unassigned_lines_stay_primary(engine, db):
     db.add(ProposalCountry(proposal_id=db._test_proposal.id, country_id=db._test_usa.id))
     db.flush()
     db.expire_all()
     result = engine.calculate_proposal(proposal_id=db._test_proposal.id)
-    warnings = result["snapshot_payload"]["warnings"]
-    assert any("NOT priced" in w for w in warnings)
-    assert result["snapshot_payload"]["pricing_context"]["country_id"] == db._test_india.id
+    payload = result["snapshot_payload"]
+    assert any("nothing is priced for that country" in w for w in payload["warnings"])
+    assert payload["pricing_context"]["country_id"] == db._test_india.id
+    # Lines with no country block are priced by the primary country (India, INR).
+    assert {li["country_id"] for li in payload["all_subscription_line_items"]} == {db._test_india.id}
+    assert len(payload["pricing_context"]["country_blocks"]) == 2
 
 
 def test_worked_example_values_survive_json_round_trip_exactly(engine, db):

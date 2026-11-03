@@ -87,7 +87,9 @@ def client():
     db.add(uom_pepm)
     db.flush()
 
-    pm_pepm = PricingModel(code="pepm", name="Per Employee Per Month", status="active", has_unit_component=True)
+    # PEPM is locked to Active Employees (with ESS) in master data (deployment combinations workbook).
+    pm_pepm = PricingModel(code="pepm", name="Per Employee Per Month", status="active", has_unit_component=True,
+                           uom_locked_id=uom_pepm.id)
     db.add(pm_pepm)
     db.flush()
 

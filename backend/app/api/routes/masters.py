@@ -41,7 +41,9 @@ from app.schemas.master_data import (
     CustomerTierUpdate,
     ContractTermResponse,
     DeploymentPricingOptionResponse,
+    UnitOfMeasureCreate,
     UnitOfMeasureResponse,
+    UnitOfMeasureUpdate,
     FxRateCreate,
     FxRateDetailResponse,
     FxRateResponse,
@@ -67,6 +69,12 @@ from app.services.master_service import (
     create_pricing_model as service_create_pricing_model,
     update_pricing_model as service_update_pricing_model,
     delete_pricing_model as service_delete_pricing_model,
+    list_units_of_measure as service_list_units_of_measure,
+    get_unit_of_measure as service_get_unit_of_measure,
+    create_unit_of_measure as service_create_unit_of_measure,
+    update_unit_of_measure as service_update_unit_of_measure,
+    delete_unit_of_measure as service_delete_unit_of_measure,
+    list_allowed_uoms_for_pricing_model as service_list_allowed_uoms_for_pricing_model,
     list_fx_rates as service_list_fx_rates,
     create_fx_rate as service_create_fx_rate,
     delete_fx_rate as service_delete_fx_rate,
@@ -300,6 +308,18 @@ def delete_pricing_model(model_id: int, db: Session = Depends(get_db)):
         raise http_error(exc) from exc
 
 
+@router.get(
+    "/pricing-models/{model_id}/allowed-uoms",
+    response_model=List[UnitOfMeasureResponse],
+    summary="Retrieve allowed units of measure for a pricing model",
+)
+def get_allowed_uoms_for_pricing_model(model_id: int, db: Session = Depends(get_db)):
+    try:
+        return service_list_allowed_uoms_for_pricing_model(db=db, pricing_model_id=model_id)
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
 # =============================================================================
 # 6. FX Exchange Rates
 # =============================================================================
@@ -347,9 +367,66 @@ def list_contract_terms(db: Session = Depends(get_db)):
 
 
 @router.get("/units-of-measure", response_model=List[UnitOfMeasureResponse], summary="List all units of measure")
-def list_units_of_measure(db: Session = Depends(get_db)):
-    stmt = select(UnitOfMeasure).order_by(UnitOfMeasure.id)
-    return db.execute(stmt).scalars().all()
+def list_units_of_measure(
+    status: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    return service_list_units_of_measure(db=db, status=status, category=category)
+
+
+@router.post(
+    "/units-of-measure",
+    response_model=UnitOfMeasureResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new unit of measure",
+)
+def create_unit_of_measure(payload: UnitOfMeasureCreate, db: Session = Depends(get_db)):
+    try:
+        return service_create_unit_of_measure(db=db, data=payload)
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.get(
+    "/units-of-measure/{uom_id}",
+    response_model=UnitOfMeasureResponse,
+    summary="Get unit of measure by ID",
+)
+def get_unit_of_measure(uom_id: int, db: Session = Depends(get_db)):
+    uom = service_get_unit_of_measure(db=db, uom_id=uom_id)
+    if not uom:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unit of measure with id {uom_id} not found",
+        )
+    return uom
+
+
+@router.patch(
+    "/units-of-measure/{uom_id}",
+    response_model=UnitOfMeasureResponse,
+    summary="Update an existing unit of measure",
+)
+def update_unit_of_measure(
+    uom_id: int, payload: UnitOfMeasureUpdate, db: Session = Depends(get_db)
+):
+    try:
+        return service_update_unit_of_measure(db=db, uom_id=uom_id, data=payload)
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.delete(
+    "/units-of-measure/{uom_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete or retire a unit of measure",
+)
+def delete_unit_of_measure(uom_id: int, db: Session = Depends(get_db)):
+    try:
+        service_delete_unit_of_measure(db=db, uom_id=uom_id)
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
 
 
 @router.get(

@@ -137,9 +137,9 @@ def audit_db():
     pm_license_amc = PricingModel(
         code="license_amc",
         name="License Fee + AMC",
-        has_fixed_component=True,
+        has_fixed_component=False,
         has_unit_component=True,
-        fixed_fee_basis="annual",
+        unit_rate_basis="one_time",  # licence fee per user, charged once (calculation explained.xlsx)
         status="active",
     )
     session.add_all([pm_pepm, pm_platform_sub, pm_license_amc])
@@ -828,7 +828,7 @@ class TestDeploymentPricingCombinations:
             (db.dep_shared, db.pm_platform_sub, Decimal("50000.00"), Decimal("15.00")),
             (db.dep_private, db.pm_pepm, Decimal("0.00"), Decimal("30.00")),
             (db.dep_private, db.pm_platform_sub, Decimal("100000.00"), Decimal("25.00")),
-            (db.dep_onprem, db.pm_license_amc, Decimal("250000.00"), Decimal("50.00")),
+            (db.dep_onprem, db.pm_license_amc, None, Decimal("50.00")),
         ]
 
         engine = PricingCalculationEngine(db)
@@ -845,6 +845,7 @@ class TestDeploymentPricingCombinations:
                 currency_id=db.usd.id,
                 fixed_fee=fixed_fee,
                 unit_rate=unit_rate,
+                amc_percentage=Decimal("0") if pm is db.pm_license_amc else None,
             )
             db.add(rc)
             db.flush()
@@ -860,7 +861,7 @@ class TestDeploymentPricingCombinations:
                 quantity=Decimal("1000.0000"),
                 list_unit_price=unit_rate,
                 net_unit_price=unit_rate,
-                extended_amount=quantize_currency(fixed_fee + (unit_rate * Decimal("1000") * Decimal("12"))),
+                extended_amount=quantize_currency((fixed_fee or Decimal("0")) + (unit_rate * Decimal("1000") * Decimal("12"))),
                 currency_id=db.usd.id,
                 discount_pct=Decimal("0.00"),
             )
@@ -868,8 +869,12 @@ class TestDeploymentPricingCombinations:
             db.commit()
 
             res = engine.calculate_proposal(proposal_id=prop.id, version_id=ver.id)
-            expected_consumption = unit_rate * Decimal("1000") * Decimal("12")
-            expected_total = fixed_fee + expected_consumption
+            if pm is db.pm_license_amc:
+                # License Fee + AMC: licence per user x users, AMC 0% on this rate.
+                expected_total = unit_rate * Decimal("1000")
+            else:
+                expected_consumption = unit_rate * Decimal("1000") * Decimal("12")
+                expected_total = fixed_fee + expected_consumption
             assert Decimal(str(res["total_proposal_reporting_currency"])) == expected_total
 
     def test_unpermitted_deployment_pricing_combination_rejected(self, audit_db):

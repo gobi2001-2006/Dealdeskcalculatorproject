@@ -69,7 +69,7 @@ def test_invalid_deployment_pricing_combination_rejected(test_data: Session):
 
 
 def test_pepm_uom_validation_rejects_incompatible_uom(test_data: Session):
-    """Ensure backend strictly requires Active Employees (with ESS) / employee for PEPM."""
+    """PEPM is locked to Active Employees (with ESS) through pricing_models.uom_locked_id (master data)."""
     db = test_data
     shared = db.dep_shared
     pepm = db.pm_pepm
@@ -95,7 +95,7 @@ def test_pepm_uom_validation_rejects_incompatible_uom(test_data: Session):
             feature_id=feat.id,
             unit_rate=Decimal("15.00"),
         )
-    assert "PEPM pricing model strictly requires Unit of Measure" in str(exc.value)
+    assert "is locked to unit of measure" in str(exc.value)
 
 
 def test_independent_tier_rates(test_data: Session):

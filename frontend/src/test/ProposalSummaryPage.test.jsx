@@ -128,6 +128,8 @@ describe('Page 6 — Proposal Summary', () => {
       'POST /rates/resolve': () => ({ uom_id: 13 }),
       'GET /customers/:id': () => ({ id: 700, customer_tier_id: 7 }),
       'PATCH /proposals/:id': (body) => ({ id: 900, ...body }),
+      'PATCH /proposals/:id/line-items/:lineId': (body) => body,
+      'PATCH /proposals/:id/service-lines/:lineId': (body) => body,
     }))
     renderPage()
     await screen.findByText('Standalone Add-on')
@@ -136,6 +138,9 @@ describe('Page 6 — Proposal Summary', () => {
     expect(await screen.findByText(/Proposal #900 saved/)).toBeInTheDocument()
     expect(api.calls.some((c) => c.method === 'POST' && c.path === '/proposals/')).toBe(false)
     expect(api.calls.some((c) => c.method === 'PATCH' && c.path === '/proposals/900')).toBe(true)
+    // Lines saved before multi-region support are attached to their (primary) country block.
+    expect(api.calls.filter((c) => c.method === 'PATCH' && c.path.startsWith('/proposals/900/line-items/'))
+      .every((c) => c.body.proposal_country_id === 600)).toBe(true)
   })
 
   it('keeps export and document generation visibly disabled (not implemented)', async () => {

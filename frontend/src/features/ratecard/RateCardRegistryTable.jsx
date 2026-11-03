@@ -40,7 +40,7 @@ export function RateCardRegistryTable({
         countries.find((c) => String(c.id) === String(rc.country_id)) || {
           name: `Country #${rc.country_id}`,
           iso_code: '',
-          currency: rc.currency?.code || 'USD',
+          currency: rc.currency?.code || '',
         }
 
       const depObj =
@@ -88,7 +88,7 @@ export function RateCardRegistryTable({
         ? packObj?.code || rc.pack_version?.pack?.code || `PACK-V${rc.pack_version_id}`
         : featObj?.code || rc.feature?.code || `FEAT-${rc.feature_id}`
 
-      const currencyCode = rc.currency?.code || countryObj.currency || 'USD'
+      const currencyCode = rc.currency?.code || countryObj.currency || ''
 
       return {
         id: rc.id,

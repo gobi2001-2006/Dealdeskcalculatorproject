@@ -52,7 +52,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models.catalogue import Feature, Pack, PackItem, PackVersion, Product, ProductFamily
 from app.models.governance import User
-from app.models.master_data import Country, Currency, CustomerTier, FxRate, UnitOfMeasure
+from app.models.master_data import Country, Currency, CustomerTier, FxRate, PricingModel, UnitOfMeasure
 from app.models.proposals import (
     CalculationSnapshot,
     Customer,
@@ -198,12 +198,20 @@ def db():
     session.add(feat_ta)
     session.flush()
 
+    # ---- Pricing model ---- (PDF: annual platform fee + monthly consumption)
+    pm_platform = PricingModel(
+        code="platform_subscription", name="Platform + Subscription", status="active",
+        has_fixed_component=True, has_unit_component=True, fixed_fee_basis="annual", unit_rate_basis="monthly",
+    )
+    session.add(pm_platform)
+    session.flush()
+
     # ---- Rate Card ---- (PDF: ₹3,80,000 fixed_fee; ₹80 unit_rate; India; per-employee)
     rc = RateCard(
         rate_card_version_id=rcv.id,
         country_id=india.id,
         deployment_model_id=1,   # Placeholder – no FK check in SQLite
-        pricing_model_id=1,
+        pricing_model_id=pm_platform.id,
         tier_id=tier.id,
         uom_id=uom.id,
         feature_id=feat_ta.id,

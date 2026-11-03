@@ -177,6 +177,10 @@ class RateCard(Base):
             "cost_unit IS NULL OR cost_unit >= 0",
             name="ck_rate_cards_cost_unit_non_negative",
         ),
+        CheckConstraint(
+            "amc_percentage IS NULL OR (amc_percentage >= 0 AND amc_percentage <= 100)",
+            name="ck_rate_cards_amc_percentage_range",
+        ),
         # Partial unique index for pack pricing
         Index(
             "uq_rate_cards_pack_dims",
@@ -290,6 +294,11 @@ class RateCard(Base):
         Numeric(18, 4),
         nullable=True,
         comment="Internal COGS unit cost per UOM",
+    )
+    amc_percentage: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(7, 4),
+        nullable=True,
+        comment="Annual Maintenance (AMC) percentage on license fee (0-100%)",
     )
 
     created_at: Mapped[datetime] = mapped_column(

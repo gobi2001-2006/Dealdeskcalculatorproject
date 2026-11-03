@@ -90,7 +90,7 @@ export function CalculationModal({
                 <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600">
                   <li>Ensure the proposal is saved and pinned to an active rate card version.</li>
                   <li>Verify that rate cards exist for the configured countries and pricing models.</li>
-                  <li>Ensure each country block has valid customer tier and employee volume.</li>
+                  <li>Ensure each country block has a valid customer tier and deployment volume.</li>
                 </ul>
               </div>
             </div>
@@ -148,6 +148,11 @@ export function CalculationModal({
                           <span className="ml-2 font-mono text-[11px] text-slate-500">
                             ({prod.product_code})
                           </span>
+                          {prod.country_name && (
+                            <span className="ml-2 px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200 text-[10px] font-semibold text-orange-800">
+                              {prod.country_name}
+                            </span>
+                          )}
                         </div>
                         <div className="text-right">
                           <div className="font-bold font-mono text-slate-900">
@@ -215,7 +220,10 @@ export function CalculationModal({
                                 {prod.line_items.map((li, lIdx) => (
                                   <tr key={lIdx}>
                                     <td className="py-1 px-2 font-mono">{li.target_name || li.item_name || `Line ${li.line_number || lIdx + 1}`}</td>
-                                    <td className="py-1 px-2 font-mono">{li.average_monthly_volume ?? li.quantity ?? '—'}</td>
+                                    <td className="py-1 px-2 font-mono">
+                                      {li.average_monthly_volume ?? li.quantity ?? '—'}
+                                      {li.uom_name && <span className="font-sans text-slate-500"> {li.uom_name}</span>}
+                                    </td>
                                     <td className="py-1 px-2 text-right font-mono">{Number(li.rate_per_unit ?? li.base_unit_rate ?? 0).toFixed(2)}</td>
                                     <td className="py-1 px-2 text-right font-mono">{Number(li.annual_consumption_fee ?? li.total_base ?? 0).toLocaleString()}</td>
                                     <td className="py-1 px-2 text-right font-mono">{Number(li.platform_fee ?? 0).toLocaleString()}</td>

@@ -100,6 +100,42 @@ describe('Page 4 — Proposal Configurator', () => {
     expect(screen.getByLabelText(/Contract Term/i)).toHaveValue(24)
   })
 
+  it('labels quantities with the rate card unit of measure and billing period, not employees', async () => {
+    installFakeApi(apiClient, masterRoutes({
+      'GET /proposals/:id': () => fx.savedProposal(),
+      'GET /proposals/:id/calculations/latest': () => fx.calculationResult(),
+      'POST /rates/resolve': (body) => ({
+        rate_card_id: 5, uom_id: 13, currency_code: 'INR',
+        uom_name: body.pack_version_id ? 'Interviews' : 'GB of Data',
+        fixed_fee_basis: 'annual', unit_rate_basis: 'monthly',
+        fixed_fee: body.pack_version_id ? '300000' : '50000', unit_rate: body.pack_version_id ? '85' : '10',
+      }),
+    }))
+    renderPage('/calculator?proposalId=900')
+
+    // The country volume is the pack quantity, labelled with the pack's unit
+    expect(await screen.findByLabelText('Interviews — Country Deployment Volume', {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByText('Interviews / month')).toBeInTheDocument()
+    expect(screen.queryByText(/Active Employees \(with ESS\)/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Users')).not.toBeInTheDocument()
+
+    // Pack and feature rates are described with their own unit and period
+    expect(await screen.findByText(/platform fee INR 300,000 \/ year \+ INR 85\.00 per Interviews \/ month/, {}, { timeout: 5000 })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: /À la carte features/i })
+    expect(await within(table).findByText('GB of Data / month', {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(within(table).getByText('INR 10.00 per GB of Data / month')).toBeInTheDocument()
+  })
+
+  it('keeps the volume label generic when the rate card gives no unit of measure', async () => {
+    installFakeApi(apiClient, masterRoutes({
+      'GET /proposals/:id': () => fx.savedProposal(),
+      'GET /proposals/:id/calculations/latest': () => fx.calculationResult(),
+    }))
+    renderPage('/calculator?proposalId=900')
+    // Without a uom_name from the backend the label stays generic instead of assuming employees.
+    expect(await screen.findByLabelText('Pack Quantity — Country Deployment Volume', {}, { timeout: 5000 })).toBeInTheDocument()
+  })
+
   it('offers only service rates of the selected country', async () => {
     installFakeApi(apiClient, masterRoutes({
       'GET /proposals/:id': () => fx.savedProposal(),
@@ -119,6 +155,9 @@ describe('Page 4 — Proposal Configurator', () => {
       'GET /proposals/:id/calculations/latest': () => fx.calculationResult(),
       'GET /customers/:id': () => ({ id: 700, customer_tier_id: 7 }),
       'PATCH /proposals/:id': (body) => ({ id: 900, ...body }),
+      // Lines saved before multi-region support are attached to their country block on save.
+      'PATCH /proposals/:id/line-items/:lineId': (body) => body,
+      'PATCH /proposals/:id/service-lines/:lineId': (body) => body,
       'POST /proposals/:id/calculate': () => fx.calculationResult({ snapshot_id: 78 }),
     }))
     renderPage('/calculator?proposalId=900')

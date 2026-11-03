@@ -125,15 +125,15 @@ describe('Proposal save workflow (saveFullProposal)', () => {
     })
     // Lines: the UoM comes from the resolved rate card (13), never a hardcoded 1.
     expect(byPath('POST', '/proposals/900/line-items')).toEqual([
-      { pack_version_id: 42, feature_id: null, uom_id: 13, quantity: 250 },
-      { pack_version_id: null, feature_id: 32, uom_id: 13, quantity: 100 },
+      { proposal_country_id: 600, pack_version_id: 42, feature_id: null, uom_id: 13, quantity: 250 },
+      { proposal_country_id: 600, pack_version_id: null, feature_id: 32, uom_id: 13, quantity: 100 },
     ])
     // The rate is resolved for the primary block without a uom_id (the rate card supplies it).
     const resolveBodies = api.calls.filter((c) => c.path === '/rates/resolve').map((c) => c.body)
     expect(resolveBodies[0]).toEqual({ country_id: 1, deployment_model_id: 11, pricing_model_id: 12, tier_id: 7, pack_version_id: 42 })
     // Services: effort in man-days, no client-supplied rate or discount.
     expect(byPath('POST', '/proposals/900/service-lines')).toEqual([
-      { role_name: 'Implementation Consultant', service_rate_id: 50, days_or_hours: 12 },
+      { role_name: 'Implementation Consultant', service_rate_id: 50, days_or_hours: 12, proposal_country_id: 600 },
     ])
   })
 
@@ -146,6 +146,50 @@ describe('Proposal save workflow (saveFullProposal)', () => {
     })
     await expect(saveFullProposal(newProposalState())).rejects.toThrow(/feature 32: No saved rate card/)
     expect(api.writes()).toEqual([])
+  })
+
+  it('saves a multi-region proposal: each country resolves its own rate card and owns its lines', async () => {
+    const api = newProposalBackend({
+      'POST /proposals/:id/countries': (body) => ({ id: body.country_id === 1 ? 600 : 601, ...body }),
+    })
+    const state = newProposalState()
+    state.countryConfigs.push({
+      ...state.countryConfigs[0],
+      id: 'cfg-2',
+      countryId: 2,
+      countryName: 'United States',
+      deploymentModelId: 21,
+      pricingModelId: 22,
+      headcount: 1000,
+      families: [{ id: 'fam-2', familyId: 10, headcount: 1000, selectedPackId: 42, selectedFeatureIds: [], featureHeadcounts: {} }],
+      serviceLines: [{ id: 'srv-2', roleName: 'US Consultant', serviceRateId: 51, hoursOrDays: 2 }],
+    })
+    // The same pack in two countries is allowed (it is priced once per country).
+    expect(collectProposalErrors(state.clientInfo, state.countryConfigs)).toEqual([])
+
+    await saveFullProposal(state)
+
+    const resolves = api.calls.filter((c) => c.path === '/rates/resolve').map((c) => c.body)
+    expect(resolves).toEqual(expect.arrayContaining([
+      expect.objectContaining({ country_id: 1, deployment_model_id: 11, pricing_model_id: 12, pack_version_id: 42 }),
+      expect.objectContaining({ country_id: 2, deployment_model_id: 21, pricing_model_id: 22, pack_version_id: 42 }),
+    ]))
+    const lines = api.calls.filter((c) => c.method === 'POST' && c.path === '/proposals/900/line-items').map((c) => c.body)
+    expect(lines).toEqual(expect.arrayContaining([
+      { proposal_country_id: 600, pack_version_id: 42, feature_id: null, uom_id: 13, quantity: 250 },
+      { proposal_country_id: 601, pack_version_id: 42, feature_id: null, uom_id: 13, quantity: 1000 },
+    ]))
+    const services = api.calls.filter((c) => c.method === 'POST' && c.path === '/proposals/900/service-lines').map((c) => c.body)
+    expect(services).toEqual([
+      { role_name: 'Implementation Consultant', service_rate_id: 50, days_or_hours: 12, proposal_country_id: 600 },
+      { role_name: 'US Consultant', service_rate_id: 51, days_or_hours: 2, proposal_country_id: 601 },
+    ])
+  })
+
+  it('still rejects the same pack twice in one country', () => {
+    const state = newProposalState()
+    state.countryConfigs[0].families.push({ id: 'fam-x', familyId: 11, headcount: 1, selectedPackId: 42, selectedFeatureIds: [], featureHeadcounts: {} })
+    expect(collectProposalErrors(state.clientInfo, state.countryConfigs).join(' ')).toMatch(/more than once in one country/)
   })
 
   it('synchronises an existing proposal: updates changed values and removes what was deselected', async () => {
@@ -175,8 +219,9 @@ describe('Proposal save workflow (saveFullProposal)', () => {
     expect(writes).toEqual(expect.arrayContaining([
       ['PATCH', '/proposals/900/countries/600', { user_headcount: 300 }],
       ['DELETE', '/proposals/900/line-items/1002', undefined],
-      ['PATCH', '/proposals/900/line-items/1001', { quantity: 300 }],
-      ['PATCH', '/proposals/900/service-lines/2001', { days_or_hours: 10 }],
+      // Lines saved before multi-region support are attached to their (primary) country block.
+      ['PATCH', '/proposals/900/line-items/1001', { quantity: 300, proposal_country_id: 600 }],
+      ['PATCH', '/proposals/900/service-lines/2001', { days_or_hours: 10, proposal_country_id: 600 }],
     ]))
     // Nothing is created twice and the customer tier is unchanged.
     expect(writes.filter(([m, p]) => m === 'POST' && p.startsWith('/proposals/'))).toEqual([])
@@ -260,7 +305,7 @@ describe('Reloading a saved proposal (deserializeBackendProposal)', () => {
     expect(cfg.families).toHaveLength(1)
     expect(cfg.families[0]).toMatchObject({ familyId: 10, selectedPackId: 42, selectedFeatureIds: [32], featureHeadcounts: { 32: 100 } })
     expect(cfg.serviceLines[0]).toMatchObject({ backendId: 2001, serviceRateId: 50, hoursOrDays: 12 })
-    expect(lineDiscountsByTarget).toEqual({ 'feature:32': 10 })
+    expect(lineDiscountsByTarget).toEqual({ '1|feature:32': 10 }) // country 1 + feature 32
   })
 
   it('leaves the contract term empty when no calculation exists (no invented 36 months)', () => {

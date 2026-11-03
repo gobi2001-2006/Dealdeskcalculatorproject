@@ -9,12 +9,12 @@ export function ProposalSummaryFooter({ countryConfigs = [], clientInfo }) {
     {
       term: 'Subscription (annual)',
       description:
-        'Platform fee + (rate per unit × average monthly volume × 12), after line discounts and the overall subscription discount.',
+        'Platform fee + (rate per unit × volume per billing period × billing periods in a year: 12 for monthly rates, 1 for annual), after line discounts and the overall subscription discount. The unit of measure and billing period come from the rate card. A one-time licence fee per user is charged once, with its AMC % charged every year.',
     },
     {
       term: 'Subscription (contract term)',
       description:
-        'Platform fee pro-rated by term/12 plus consumption for every month of the term. This full-term rule is the current implementation and still needs business sign-off.',
+        'Platform fee × contract years (charged once if the pricing model marks it one-time) plus the subscription for every billing period in the term. This full-term rule is the current implementation and still needs business sign-off.',
     },
     {
       term: 'Service Fees',

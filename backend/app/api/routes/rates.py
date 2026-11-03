@@ -50,6 +50,8 @@ from app.services.rate_service import (
     update_rate_card as service_update_rate_card,
     delete_rate_card as service_delete_rate_card,
     delete_rate_cards_for_target as service_delete_rate_cards_for_target,
+    update_rate_cards_uom_for_target as service_update_rate_cards_uom_for_target,
+    save_rate_card_target as service_save_rate_card_target,
     list_service_rates as service_list_service_rates,
     get_service_rate as service_get_service_rate,
     create_service_rate as service_create_service_rate,
@@ -113,6 +115,14 @@ class RateCardResolveResponse(BaseModel):
     fixed_fee: Optional[Decimal] = None
     unit_rate: Optional[Decimal] = None
     floor_price: Optional[Decimal] = None
+    amc_percentage: Optional[Decimal] = None
+    uom_name: Optional[str] = None
+    uom_code: Optional[str] = None
+    uom_category: Optional[str] = None
+    pricing_model_code: Optional[str] = None
+    pricing_model_name: Optional[str] = None
+    fixed_fee_basis: Optional[str] = None
+    unit_rate_basis: Optional[str] = None
 
 
 class ServiceRateCreatePayload(BaseModel):
@@ -148,6 +158,37 @@ class RateCardUpsertPayload(BaseModel):
     floor_price: Optional[Decimal] = Field(None, ge=Decimal("0"))
     cost_fixed: Optional[Decimal] = Field(None, ge=Decimal("0"))
     cost_unit: Optional[Decimal] = Field(None, ge=Decimal("0"))
+    amc_percentage: Optional[Decimal] = Field(None, ge=Decimal("0"), le=Decimal("100"))
+
+
+class TierFeeEntry(BaseModel):
+    tier_id: int = Field(..., gt=0)
+    fixed_fee: Optional[Decimal] = Field(None, ge=Decimal("0"))
+    unit_rate: Optional[Decimal] = Field(None, ge=Decimal("0"), description="Overrides the shared unit_rate for this tier")
+    amc_percentage: Optional[Decimal] = Field(None, ge=Decimal("0"), le=Decimal("100"))
+
+
+class RateCardTargetSavePayload(BaseModel):
+    """One pack or feature row: a fixed fee per tier plus one shared UOM and unit rate."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    rate_card_version_id: Optional[int] = Field(None, gt=0)
+    country_id: int = Field(..., gt=0)
+    deployment_model_id: int = Field(..., gt=0)
+    pricing_model_id: int = Field(..., gt=0)
+    pack_version_id: Optional[int] = Field(None, gt=0)
+    feature_id: Optional[int] = Field(None, gt=0)
+    uom_id: int = Field(..., gt=0)
+    current_uom_id: Optional[int] = Field(None, gt=0, description="UOM of the schedule being edited, when changing its UOM")
+    unit_rate: Optional[Decimal] = Field(None, ge=Decimal("0"), description="One unit rate for every tier")
+    tier_fees: List[TierFeeEntry] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def exactly_one_target(self):
+        if (self.pack_version_id is None) == (self.feature_id is None):
+            raise ValueError("Exactly one of pack_version_id or feature_id must be provided")
+        return self
 
 
 # =============================================================================
@@ -239,6 +280,14 @@ def resolve_rates(request: RateCardResolveRequest, db: Session = Depends(get_db)
         fixed_fee=rate_card.fixed_fee,
         unit_rate=rate_card.unit_rate,
         floor_price=rate_card.floor_price,
+        amc_percentage=rate_card.amc_percentage,
+        uom_name=rate_card.uom.name if rate_card.uom else None,
+        uom_code=rate_card.uom.code if rate_card.uom else None,
+        uom_category=rate_card.uom.category if rate_card.uom and hasattr(rate_card.uom, "category") else None,
+        pricing_model_code=rate_card.pricing_model.code if rate_card.pricing_model else None,
+        pricing_model_name=rate_card.pricing_model.name if rate_card.pricing_model else None,
+        fixed_fee_basis=rate_card.pricing_model.fixed_fee_basis if rate_card.pricing_model else None,
+        unit_rate_basis=rate_card.pricing_model.unit_rate_basis if rate_card.pricing_model else None,
     )
 
 
@@ -395,12 +444,6 @@ def upsert_rate_card_entry(payload: RateCardUpsertPayload, db: Session = Depends
         pm = db.get(PricingModel, payload.pricing_model_id)
         if pm and pm.uom_locked_id:
             uom_id = pm.uom_locked_id
-        elif pm and (pm.code == "pepm" or "per employee" in pm.name.lower()):
-            emp_uom = db.execute(
-                select(UnitOfMeasure).where(UnitOfMeasure.code == "employee")
-            ).scalars().first()
-            if emp_uom:
-                uom_id = emp_uom.id
         if not uom_id:
             # Never fall back to an arbitrary unit: the UoM is a pricing dimension.
             raise HTTPException(
@@ -426,6 +469,7 @@ def upsert_rate_card_entry(payload: RateCardUpsertPayload, db: Session = Depends
             floor_price=payload.floor_price,
             cost_fixed=payload.cost_fixed,
             cost_unit=payload.cost_unit,
+            amc_percentage=payload.amc_percentage,
             pack_version_id=payload.pack_version_id,
             feature_id=payload.feature_id,
         )
@@ -441,6 +485,7 @@ def delete_rate_cards_group(
     pricing_model_id: int = Query(...),
     pack_version_id: Optional[int] = Query(None),
     feature_id: Optional[int] = Query(None),
+    uom_id: Optional[int] = Query(None, description="Only delete this UOM schedule"),
     db: Session = Depends(get_db),
 ):
     version_id = rate_card_version_id
@@ -459,7 +504,72 @@ def delete_rate_cards_group(
             pricing_model_id=pricing_model_id,
             pack_version_id=pack_version_id,
             feature_id=feature_id,
+            uom_id=uom_id,
         )
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.put(
+    "/rate-cards/target",
+    response_model=List[RateCardDetailResponse],
+    summary="Save all tier rows of one pack or feature (tier fixed fees + shared UOM and unit rate)",
+)
+def save_rate_card_target(payload: RateCardTargetSavePayload, db: Session = Depends(get_db)):
+    version_id = payload.rate_card_version_id
+    if not version_id:
+        active_v = service_get_active_rate_card_version(db=db)
+        if not active_v:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active rate card version found")
+        version_id = active_v.id
+    try:
+        return service_save_rate_card_target(
+            db=db,
+            rate_card_version_id=version_id,
+            country_id=payload.country_id,
+            deployment_model_id=payload.deployment_model_id,
+            pricing_model_id=payload.pricing_model_id,
+            uom_id=payload.uom_id,
+            tiers=[t.model_dump() for t in payload.tier_fees],
+            unit_rate=payload.unit_rate,
+            pack_version_id=payload.pack_version_id,
+            feature_id=payload.feature_id,
+            current_uom_id=payload.current_uom_id,
+        )
+    except DOMAIN_ERRORS as exc:
+        raise http_error(exc) from exc
+
+
+@router.patch("/rate-cards/group-uom", status_code=status.HTTP_200_OK, summary="Update UOM for a target across tiers")
+def update_rate_cards_group_uom(
+    rate_card_version_id: Optional[int] = Query(None),
+    country_id: int = Query(...),
+    deployment_model_id: int = Query(...),
+    pricing_model_id: int = Query(...),
+    uom_id: int = Query(...),
+    pack_version_id: Optional[int] = Query(None),
+    feature_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    version_id = rate_card_version_id
+    if not version_id:
+        active_v = service_get_active_rate_card_version(db=db)
+        if not active_v:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No active rate card version found")
+        version_id = active_v.id
+
+    try:
+        count = service_update_rate_cards_uom_for_target(
+            db=db,
+            rate_card_version_id=version_id,
+            country_id=country_id,
+            deployment_model_id=deployment_model_id,
+            pricing_model_id=pricing_model_id,
+            uom_id=uom_id,
+            pack_version_id=pack_version_id,
+            feature_id=feature_id,
+        )
+        return {"updated_count": count}
     except DOMAIN_ERRORS as exc:
         raise http_error(exc) from exc
 

@@ -122,6 +122,13 @@ TWO_PLACES = Decimal("0.01")
 FOUR_PLACES = Decimal("0.0001")
 
 
+# Billing periods in one year for a unit rate quoted per period (pricing_models.unit_rate_basis).
+BILLING_PERIODS_PER_YEAR: Dict[str, Decimal] = {
+    "monthly": Decimal("12"),
+    "annual": Decimal("1"),
+}
+
+
 def quantize_currency(value: Decimal) -> Decimal:
     """Round to 2 decimal places for financial reporting."""
     return value.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
@@ -252,106 +259,148 @@ class PricingCalculationEngine:
                 "the tier is a mandatory rate-card dimension and cannot be ignored"
             )
 
-        # Resolve the priced country block (country + deployment model + pricing model).
+        # Country blocks (country + deployment model + pricing model). Every line and service line is
+        # priced by its own block (PDF section 3: each product in its own region's rates and currency);
+        # a line without a block belongs to the primary block.
         primary_block = self._resolve_primary_country_block(proposal)
         if primary_block is None:
             raise MissingConfigurationError(
                 f"Proposal {proposal.code} has no country; add a proposal country before calculating"
             )
+        blocks_by_id = {b.id: b for b in proposal.countries}
+        primary_first = sorted(proposal.countries, key=lambda b: (b.id != primary_block.id, b.id))
+        block_order = {b.id: idx for idx, b in enumerate(primary_first)}
+
+        def block_for(proposal_country_id: Optional[int], what: str) -> ProposalCountry:
+            block = primary_block if proposal_country_id is None else blocks_by_id.get(proposal_country_id)
+            if block is None:
+                raise MissingConfigurationError(
+                    f"{what} references country block {proposal_country_id}, which is not on proposal {proposal.code}"
+                )
+            return block
+
+        def block_fields(block: ProposalCountry) -> Dict[str, Any]:
+            return {
+                "proposal_country_id": block.id,
+                "country_id": block.country_id,
+                "country_name": block.country.name if block.country else None,
+                "country_iso": block.country.iso_code if block.country else None,
+                "deployment_model_id": block.deployment_model_id,
+                "pricing_model_id": block.pricing_model_id,
+                "is_primary_country": block.id == primary_block.id,
+            }
+
         country_id = primary_block.country_id
         deployment_model_id = primary_block.deployment_model_id
         pricing_model_id = primary_block.pricing_model_id
         warnings: List[str] = []
-        other_countries = [c.country_id for c in proposal.countries if c.id != primary_block.id]
-        if other_countries:
-            warnings.append(
-                "Line items are not country-specific: all lines were priced against the primary country "
-                f"(country_id={country_id}). Countries {sorted(other_countries)} were NOT priced separately."
-            )
 
         reporting_currency = proposal.currency
         reporting_currency_id = proposal.currency_id
 
-        # 3. Calculate Subscription Line Items
+        # 3. Calculate Subscription Line Items, grouped by (country block, product)
         line_item_results = []
-        # Group items by product code / name
-        product_items_map: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        product_meta_map: Dict[str, Dict[str, Any]] = {}
+        product_items_map: Dict[Tuple[int, str], List[Dict[str, Any]]] = defaultdict(list)
+        product_meta_map: Dict[Tuple[int, str], Dict[str, Any]] = {}
 
         for item in version.line_items:
+            block = block_for(item.proposal_country_id, f"Line {item.line_number}")
             item_result = self._calculate_subscription_item(
                 item=item,
                 rate_card_version_id=rate_card_version_id,
-                default_country_id=country_id,
+                default_country_id=block.country_id,
                 default_tier_id=customer_tier_id,
-                deployment_model_id=deployment_model_id,
-                pricing_model_id=pricing_model_id,
+                deployment_model_id=block.deployment_model_id,
+                pricing_model_id=block.pricing_model_id,
                 persist_amounts=(version.status == "draft"),
                 contract_term_months=contract_term_months,
             )
+            item_result.update(block_fields(block))
             line_item_results.append(item_result)
 
-            prod_key = item_result["product_code"] or "DEFAULT_PRODUCT"
+            prod_key = (block.id, item_result["product_code"] or "DEFAULT_PRODUCT")
             product_items_map[prod_key].append(item_result)
             if prod_key not in product_meta_map:
                 product_meta_map[prod_key] = {
                     "product_id": item_result["product_id"],
                     "product_name": item_result["product_name"],
-                    "product_code": prod_key,
+                    "product_code": prod_key[1],
                     "native_currency_id": item_result["currency_id"],
                     "native_currency_code": item_result["currency_code"],
+                    **block_fields(block),
                 }
 
-        # 4. Calculate Service Lines
+        # 4. Calculate Service Lines (each with its own country's regional rate)
         service_line_results = []
-        product_services_map: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        product_services_map: Dict[Tuple[int, str], List[Dict[str, Any]]] = defaultdict(list)
 
         for s_line in version.service_lines:
+            block = block_for(s_line.proposal_country_id, f"Service line '{s_line.role_name}'")
             s_result = self._calculate_service_line(
                 service_line=s_line,
-                default_country_id=country_id,
+                default_country_id=block.country_id,
                 default_hours_per_day=default_hours_per_day,
                 persist_amounts=(version.status == "draft"),
             )
+            s_result.update(block_fields(block))
             service_line_results.append(s_result)
 
-            # Map service line to product if possible, otherwise associate with first product or GENERAL
-            target_prod = s_result.get("product_code")
-            if not target_prod:
-                if product_items_map:
-                    target_prod = next(iter(product_items_map.keys()))
-                else:
-                    target_prod = "SERVICES"
-                    if target_prod not in product_meta_map:
-                        product_meta_map[target_prod] = {
-                            "product_id": None,
-                            "product_name": "Professional Services",
-                            "product_code": target_prod,
-                            "native_currency_id": s_result["currency_id"],
-                            "native_currency_code": s_result["currency_code"],
-                        }
-            s_result["attached_product_code"] = target_prod
+            # Attach the service line to a product of its own country: its product if known,
+            # otherwise the country's first product, otherwise a services-only entry for the country.
+            block_products = sorted(k for k in product_items_map if k[0] == block.id)
+            explicit = (block.id, s_result["product_code"]) if s_result.get("product_code") else None
+            if explicit and explicit in product_items_map:
+                target_prod = explicit
+            elif block_products:
+                target_prod = block_products[0]
+                if len(block_products) > 1:
+                    warnings.append(
+                        f"Service lines in {block_fields(block)['country_name']} are not linked to a product; "
+                        f"they were attached to product '{target_prod[1]}'."
+                    )
+            else:
+                target_prod = (block.id, "SERVICES")
+                if target_prod not in product_meta_map:
+                    product_meta_map[target_prod] = {
+                        "product_id": None,
+                        "product_name": "Professional Services",
+                        "product_code": "SERVICES",
+                        "native_currency_id": s_result["currency_id"],
+                        "native_currency_code": s_result["currency_code"],
+                        **block_fields(block),
+                    }
+            s_result["attached_product_code"] = target_prod[1]
             product_services_map[target_prod].append(s_result)
-
-        if service_line_results and len(product_items_map) > 1:
-            warnings.append(
-                "Service lines are not linked to a product; all service lines were attached to "
-                f"product '{next(iter(product_items_map.keys()))}'."
-            )
+        used_blocks = {k[0] for k in product_meta_map}
+        for b in primary_first:
+            if b.id not in used_blocks:
+                warnings.append(
+                    f"{b.country.name if b.country else b.country_id} has no packs, features or services on this "
+                    "proposal; nothing is priced for that country."
+                )
+        warnings = list(dict.fromkeys(warnings))
 
         # 5. Consolidate by Product
         all_product_keys = set(product_items_map.keys()).union(set(product_services_map.keys()))
-        if not all_product_keys and not line_item_results and not service_line_results:
-            # Empty proposal handling
-            all_product_keys = set()
+        # Public product key (used for product-level discounts): the product code, or
+        # "<code>@<country ISO>" when the same product is priced in more than one country.
+        code_blocks: Dict[str, set] = defaultdict(set)
+        for blk_id, code in all_product_keys:
+            code_blocks[code].add(blk_id)
+        public_key = {
+            (blk_id, code): code if len(code_blocks[code]) == 1
+            else f"{code}@{(product_meta_map[(blk_id, code)].get('country_iso') or blk_id)}"
+            for blk_id, code in all_product_keys
+        }
+        public_keys = set(public_key.values())
 
         product_discounts = product_discounts or {}
         product_service_discounts = product_service_discounts or {}
-        unknown_keys = (set(product_discounts) | set(product_service_discounts)) - all_product_keys
+        unknown_keys = (set(product_discounts) | set(product_service_discounts)) - public_keys
         if unknown_keys:
             raise InvalidDiscountError(
                 f"Discount supplied for product code(s) not on this proposal: {sorted(unknown_keys)}. "
-                f"Valid product codes: {sorted(all_product_keys)}"
+                f"Valid product codes: {sorted(public_keys)}"
             )
 
         product_results = []
@@ -363,7 +412,8 @@ class PricingCalculationEngine:
         total_services_reporting = Decimal("0.00")
         term_dec =Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
 
-        for prod_key in sorted(all_product_keys):
+        for prod_key in sorted(all_product_keys, key=lambda k: (block_order.get(k[0], 0), k[1])):
+            pub_key = public_key[prod_key]
             p_items = product_items_map.get(prod_key, [])
             p_services = product_services_map.get(prod_key, [])
             meta = product_meta_map.get(prod_key, {})
@@ -373,10 +423,10 @@ class PricingCalculationEngine:
                 (item["_dec_item_subscription_after_discount"] for item in p_items),
                 Decimal("0.00"),
             )
-            sub_discount_pct = Decimal(str(product_discounts.get(prod_key, Decimal("0.00"))))
+            sub_discount_pct = Decimal(str(product_discounts.get(pub_key, Decimal("0.00"))))
             if sub_discount_pct < 0 or sub_discount_pct > 100:
                 raise InvalidDiscountError(
-                    f"Product subscription discount % for {prod_key} must be between 0 and 100, got {sub_discount_pct}"
+                    f"Product subscription discount % for {pub_key} must be between 0 and 100, got {sub_discount_pct}"
                 )
             sub_discount_amt = quantize_currency(sub_subtotal_before_discount * (sub_discount_pct / Decimal("100.00")))
             sub_total_after_discount = sub_subtotal_before_discount - sub_discount_amt
@@ -397,10 +447,10 @@ class PricingCalculationEngine:
                 Decimal("0.00"),
             )
             # One overall service discount per product (PDF section 4); never per service line.
-            serv_discount_pct = Decimal(str(product_service_discounts.get(prod_key, Decimal("0.00"))))
+            serv_discount_pct = Decimal(str(product_service_discounts.get(pub_key, Decimal("0.00"))))
             if serv_discount_pct < 0 or serv_discount_pct > 100:
                 raise InvalidDiscountError(
-                    f"Product service discount % for {prod_key} must be between 0 and 100, got {serv_discount_pct}"
+                    f"Product service discount % for {pub_key} must be between 0 and 100, got {serv_discount_pct}"
                 )
             serv_discount_amt = quantize_currency(serv_subtotal_before_discount * (serv_discount_pct / Decimal("100.00")))
             serv_total_after_discount = serv_subtotal_before_discount - serv_discount_amt
@@ -411,7 +461,7 @@ class PricingCalculationEngine:
 
             # Native Currency - every amount in a product total must share one currency.
             native_curr_id = meta.get("native_currency_id") or reporting_currency_id
-            native_curr_code = meta.get("native_currency_code") or (reporting_currency.code if reporting_currency else "USD")
+            native_curr_code = meta.get("native_currency_code") or (reporting_currency.code if reporting_currency else str(reporting_currency_id))
             mixed = {
                 (r["currency_id"], r["currency_code"])
                 for r in (*p_items, *p_services)
@@ -419,7 +469,7 @@ class PricingCalculationEngine:
             }
             if mixed:
                 raise CurrencyMismatchError(
-                    f"Product '{prod_key}' mixes currencies: expected {native_curr_code} but found "
+                    f"Product '{pub_key}' mixes currencies: expected {native_curr_code} but found "
                     f"{sorted(code for _, code in mixed)}. Rate-card and service-rate currencies must match."
                 )
 
@@ -441,7 +491,15 @@ class PricingCalculationEngine:
             product_results.append({
                 "product_id": meta.get("product_id"),
                 "product_name": meta.get("product_name"),
-                "product_code": prod_key,
+                "product_code": prod_key[1],
+                "product_key": pub_key,
+                "proposal_country_id": meta.get("proposal_country_id"),
+                "country_id": meta.get("country_id"),
+                "country_name": meta.get("country_name"),
+                "country_iso": meta.get("country_iso"),
+                "deployment_model_id": meta.get("deployment_model_id"),
+                "pricing_model_id": meta.get("pricing_model_id"),
+                "is_primary_country": meta.get("is_primary_country"),
                 "native_currency_id": native_curr_id,
                 "native_currency_code": native_curr_code,
                 "contract_term_months": int(term_dec),
@@ -465,7 +523,7 @@ class PricingCalculationEngine:
                 "fx_rate_source": fx["source"],
                 "fx_inverted": fx["inverted"],
                 "reporting_currency_id": reporting_currency_id,
-                "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
+                "reporting_currency_code": reporting_currency.code if reporting_currency else str(reporting_currency_id),
                 "product_reporting_total": float(product_reporting_total),
                 "contract_product_reporting_total": float(contract_product_reporting_total),
                 "subscription_reporting_total": float(subscription_reporting_total),
@@ -505,12 +563,15 @@ class PricingCalculationEngine:
             "rate_card_version_id": rate_card_version_id,
             "calculated_at": datetime.now(timezone.utc).isoformat(),
             "reporting_currency_id": reporting_currency_id,
-            "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
+            "reporting_currency_code": reporting_currency.code if reporting_currency else str(reporting_currency_id),
             "contract_term_months": int(term_dec),
             "pricing_context": {
                 "country_id": country_id,
                 "deployment_model_id": deployment_model_id,
                 "pricing_model_id": pricing_model_id,
+                "country_blocks": [
+                    {k: v for k, v in block_fields(b).items()} for b in primary_first
+                ],
                 "customer_tier_id": customer_tier_id,
                 "contract_term_months": int(term_dec),
                 "fx_convention": "1 unit of from_currency = rate units of to_currency",
@@ -543,7 +604,7 @@ class PricingCalculationEngine:
             "proposal_version_id": version.id,
             "version_no": version.version_no,
             "calculated_at": snapshot.calculated_at.isoformat() if snapshot.calculated_at else datetime.now(timezone.utc).isoformat(),
-            "reporting_currency_code": reporting_currency.code if reporting_currency else "USD",
+            "reporting_currency_code": reporting_currency.code if reporting_currency else str(reporting_currency_id),
             "total_proposal_reporting_currency": float(total_proposal_reporting),
             "contract_term_months": int(term_dec),
             "total_proposal_annual_reporting_currency": float(total_proposal_annual_reporting),
@@ -577,10 +638,14 @@ class PricingCalculationEngine:
             ),
             "lines": sorted(
                 [li.id, li.pack_version_id, li.feature_id, li.uom_id, dec(li.quantity), dec(li.discount_pct)]
+                # The country block is added only when set, so fingerprints of single-country proposals
+                # saved before multi-region support are unchanged (no false "stale" flags).
+                + ([li.proposal_country_id] if li.proposal_country_id else [])
                 for li in version.line_items
             ),
             "services": sorted(
                 [sl.id, sl.service_rate_id, sl.role_name, dec(sl.days_or_hours), dec(sl.discount_pct)]
+                + ([sl.proposal_country_id] if sl.proposal_country_id else [])
                 for sl in version.service_lines
             ),
         }
@@ -602,7 +667,7 @@ class PricingCalculationEngine:
                 f"No calculation snapshot found for proposal {proposal_id} (version {version.version_no})"
             )
 
-        reporting_curr_code = snapshot.snapshot_payload.get("reporting_currency_code", "USD")
+        reporting_curr_code = snapshot.snapshot_payload.get("reporting_currency_code")
         total_reporting = snapshot.snapshot_payload.get("total_proposal_reporting_currency", 0.0)
         stored_fp = snapshot.snapshot_payload.get("inputs_fingerprint")
         # None = unknown (snapshot written before fingerprints existed).
@@ -715,34 +780,79 @@ class PricingCalculationEngine:
                 "Configure the rate card before calculating the proposal."
             )
 
-        platform_fee = rate_card.fixed_fee or Decimal("0.00")
-        rate_per_unit = rate_card.unit_rate or Decimal("0.00")
         currency_id = rate_card.currency_id
         currency_code = rate_card.currency.code if rate_card.currency else str(currency_id)
-
         avg_monthly_volume = item.quantity or Decimal("0.00")
         term_dec = Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
 
-        # FORMULA (PDF Page 2 & 4):
-        # 1. Annual Figures (12-month period)
-        # Annual Consumption Fee = Rate per Unit * Average Monthly Volume * 12
-        annual_consumption_fee = quantize_currency(rate_per_unit * avg_monthly_volume * Decimal("12"))
-
-        # Annual Subscription Before Item Discount = Annual Platform Fee + Annual Consumption Fee
-        subscription_before_discount = quantize_currency(platform_fee + annual_consumption_fee)
-
-        # Item Discount Amount = Item Subscription Before Discount * Item Discount % / 100
-        item_discount_amount = quantize_currency(
-            subscription_before_discount * (item_discount_pct / Decimal("100.00"))
+        # The formula comes from the matched rate card's pricing model (always set on the row).
+        pricing_model_obj = rate_card.pricing_model or (
+            self.db.get(PricingModel, pricing_model_id) if pricing_model_id else None
         )
+        if pricing_model_obj is None:
+            raise MissingConfigurationError(
+                f"Rate card {rate_card.id} references pricing model {rate_card.pricing_model_id}, which does not exist"
+            )
+        pm_name = pricing_model_obj.name
+        unit_rate_basis = pricing_model_obj.unit_rate_basis
+        fixed_fee_basis = pricing_model_obj.fixed_fee_basis or "annual"
+        if unit_rate_basis not in BILLING_PERIODS_PER_YEAR and unit_rate_basis != "one_time":
+            raise MissingConfigurationError(f"Pricing model '{pm_name}' has an unknown unit_rate_basis '{unit_rate_basis}'")
+        tier_name = rate_card.tier.name if rate_card.tier else f"tier_id={rate_card.tier_id}"
 
-        # Item Subscription After Discount = Item Subscription Before Discount - Item Discount Amount
+        # Every component the pricing model declares must be priced; a missing price is never treated as 0.
+        def missing(what: str) -> MissingRateCardMatchError:
+            return MissingRateCardMatchError(
+                f"The {pm_name} rate for '{target_name}' has no {what} for {tier_name} "
+                f"(line {item.line_number}). Enter it in the Rate Card before calculating."
+            )
+
+        if pricing_model_obj.has_fixed_component and rate_card.fixed_fee is None:
+            raise missing("fixed (platform) fee")
+        if pricing_model_obj.has_unit_component and rate_card.unit_rate is None:
+            raise missing("unit rate")
+        if unit_rate_basis == "one_time" and rate_card.unit_rate is not None and rate_card.amc_percentage is None:
+            raise missing("AMC % (enter 0 if no maintenance is charged)")
+
+        platform_fee = rate_card.fixed_fee or Decimal("0.00")
+        rate_per_unit = rate_card.unit_rate or Decimal("0.00")
+        amc_pct = rate_card.amc_percentage or Decimal("0.00")  # 0-100 scale (check constraint): 5 means 5%
+        contract_years = term_dec / Decimal("12")
+
+        # FORMULAS (PDF pages 2 & 4; calculation explained.xlsx). Driven only by the pricing model's
+        # billing bases, never by its name:
+        #   Fixed fee   annual   -> fee per year            | one_time -> charged once
+        #   Unit rate   monthly  -> rate x volume x months  | annual   -> rate x volume x years
+        #               one_time -> rate x volume, once (e.g. licence fee per user)
+        #   AMC         % of the one-time unit total, charged every year (Licence Fee + AMC)
+        # "Platform" figures hold the fixed and one-time charges; "consumption" figures hold the
+        # recurring usage and AMC. Annual figures describe the first contract year.
+        if unit_rate_basis == "one_time":
+            one_time_unit_total = quantize_currency(rate_per_unit * avg_monthly_volume)
+            annual_amc = quantize_currency(one_time_unit_total * amc_pct / Decimal("100"))
+            annual_platform_component = quantize_currency(platform_fee + one_time_unit_total)
+            annual_consumption_fee = annual_amc
+            contract_platform_fee = quantize_currency(
+                (platform_fee if fixed_fee_basis == "one_time" else platform_fee * contract_years) + one_time_unit_total
+            )
+            contract_consumption_fee = quantize_currency(annual_amc * contract_years)
+        else:
+            periods_per_year = BILLING_PERIODS_PER_YEAR[unit_rate_basis]
+            annual_platform_component = platform_fee
+            annual_consumption_fee = quantize_currency(rate_per_unit * avg_monthly_volume * periods_per_year)
+            contract_periods = term_dec * periods_per_year / Decimal("12")
+            contract_consumption_fee = quantize_currency(rate_per_unit * avg_monthly_volume * contract_periods)
+            if fixed_fee_basis == "one_time":
+                contract_platform_fee = quantize_currency(platform_fee)
+            else:
+                contract_platform_fee = quantize_currency(platform_fee * contract_years)
+
+        # Annual Subscription Before Item Discount = Platform (fixed + one-time) + Consumption (usage + AMC)
+        subscription_before_discount = quantize_currency(annual_platform_component + annual_consumption_fee)
+        # Item Discount Amount = Item Subscription Before Discount * Item Discount % / 100
+        item_discount_amount = quantize_currency(subscription_before_discount * (item_discount_pct / Decimal("100.00")))
         subscription_after_discount = subscription_before_discount - item_discount_amount
 
-        # 2. Dynamic Contract-Period Figures (term_dec months)
-        # Contract Consumption Fee = Rate per Unit * Average Monthly Volume * Contract Months
-        contract_consumption_fee = quantize_currency(rate_per_unit * avg_monthly_volume * term_dec)
-        contract_platform_fee = quantize_currency(platform_fee * (term_dec / Decimal("12")))
         contract_subscription_before_discount = quantize_currency(contract_platform_fee + contract_consumption_fee)
         contract_discount_amount = quantize_currency(
             contract_subscription_before_discount * (item_discount_pct / Decimal("100.00"))
@@ -765,6 +875,13 @@ class PricingCalculationEngine:
             "product_name": product_name or "Standard Module",
             "product_code": product_code or "MODULE",
             "uom_id": item.uom_id,
+            "uom_code": rate_card.uom.code if rate_card.uom else None,
+            "uom_name": rate_card.uom.name if rate_card.uom else None,
+            "tier_id": rate_card.tier_id,
+            "tier_name": rate_card.tier.name if rate_card.tier else None,
+            "unit_rate_basis": unit_rate_basis,
+            "fixed_fee_basis": fixed_fee_basis,
+            "amc_percentage": float(amc_pct) if rate_card.amc_percentage is not None else None,
             "rate_card_id": rate_card.id,
             "currency_id": currency_id,
             "currency_code": currency_code,
@@ -860,12 +977,16 @@ class PricingCalculationEngine:
 
         if service_rate:
             hourly_rate = service_rate.hourly_rate
-            hours_per_day = service_rate.hours_per_day or default_hours_per_day or Decimal("8.00")
+            hours_per_day = service_rate.hours_per_day or default_hours_per_day
+            if not hours_per_day:
+                raise MissingServiceRateError(
+                    f"Service rate {service_rate.id} ('{service_rate.role_name}') has no standard hours per day"
+                )
             day_rate = service_rate.daily_rate
             if day_rate is None and hourly_rate is not None:
                 day_rate = quantize_currency(hourly_rate * hours_per_day)
             currency_id = service_rate.currency_id
-            currency_code = service_rate.currency.code if service_rate.currency else "INR"
+            currency_code = service_rate.currency.code if service_rate.currency else str(service_rate.currency_id)
         else:
             # Rates come only from the service-rate master (no client-supplied rate fallback).
             raise MissingServiceRateError(

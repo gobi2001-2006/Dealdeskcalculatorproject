@@ -46,6 +46,8 @@ import {
   upsertRateCard,
   deleteRateCardGroup,
   getUnitsOfMeasure,
+  getAllowedUomsForPricingModel,
+  saveRateCardTarget,
 } from '../../api/ratesApi'
 
 import {
@@ -56,7 +58,7 @@ import {
 
 import { getPacks } from '../../api/packsApi'
 
-import { getCurrencySymbol } from './rateCardFormatters'
+import { getCurrencySymbol, rateLayoutFor, deriveSharedValue } from './rateCardFormatters'
 
 // Writes must reference saved records: an unresolved id stops the save instead of
 // silently falling back to an arbitrary record such as id 1.
@@ -89,6 +91,74 @@ function tierFromField(field, tiers) {
   const legacy = f.match(/^tier([123])Rate$/)
   if (legacy) return tiers[Number(legacy[1]) - 1] || null
   return null
+}
+
+// Saved amounts arrive as NUMERIC strings ("380000.0000"); show them without trailing zeros.
+function displayAmount(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return ''
+  const n = Number(value)
+  return Number.isFinite(n) ? String(n) : String(value)
+}
+
+// Platform + Subscription rows: one UOM and one subscription rate shared by every tier row.
+// Collapse the tier rows' values into that shared value (and flag tiers that disagree).
+function finalizeSharedRateFields(row) {
+  const unit = deriveSharedValue(row._unitRates || [])
+  const uom = deriveSharedValue(row._uomIds || [])
+  // Tiers with different saved rates are edited (and saved) per tier, as in the workbook.
+  const out = { ...row, subscriptionRate: unit.value, subscriptionRateMixed: unit.mixed, perTierRates: unit.mixed, uomMixed: uom.mixed }
+  delete out._unitRates
+  delete out._uomIds
+  return out
+}
+
+// Apply one edit from the Platform + Subscription grid to a row (keeps the legacy alias keys in step).
+function applyPlatformChange(row, change, tiers, uomList) {
+  const next = { ...row }
+  if (change.tierId !== undefined && change.fixedFee !== undefined) {
+    const idx = tiers.findIndex((t) => String(t.id) === String(change.tierId))
+    next[`fixed_tier_${change.tierId}`] = change.fixedFee
+    next[`fixed_${change.tierId}Rate`] = change.fixedFee
+    if (idx >= 0 && idx < 3) next[`fixed_tier${idx + 1}Rate`] = change.fixedFee
+  }
+  if (change.uomId !== undefined) {
+    next.uomId = change.uomId
+    next.unitOfMeasure = uomList.find((u) => String(u.id) === String(change.uomId))?.name || ''
+    next.uomMixed = false
+  }
+  const setTierRate = (tierId, value) => {
+    const idx = tiers.findIndex((t) => String(t.id) === String(tierId))
+    next[`tier_${tierId}`] = value
+    next[`${tierId}Rate`] = value
+    if (idx >= 0 && idx < 3) next[`tier${idx + 1}Rate`] = value
+  }
+  if (change.subscriptionRate !== undefined) {
+    next.subscriptionRate = change.subscriptionRate
+    next.subscriptionRateMixed = false
+    tiers.forEach((t) => setTierRate(t.id, change.subscriptionRate))
+  }
+  if (change.unitRate !== undefined && change.tierId !== undefined) {
+    setTierRate(change.tierId, change.unitRate)
+  }
+  if (change.amcPercentage !== undefined && change.tierId !== undefined) {
+    next[`amc_tier_${change.tierId}`] = change.amcPercentage
+  }
+  if (change.perTierRates !== undefined) {
+    next.perTierRates = change.perTierRates
+    if (change.perTierRates) {
+      // Start every tier from the shared rate.
+      tiers.forEach((t) => {
+        if (next[`tier_${t.id}`] === undefined || next[`tier_${t.id}`] === '') setTierRate(t.id, next.subscriptionRate ?? '')
+      })
+    } else {
+      // Back to one rate: take the first tier's rate for every tier.
+      const first = tiers.map((t) => next[`tier_${t.id}`]).find((v) => v !== undefined && v !== '') ?? next.subscriptionRate ?? ''
+      next.subscriptionRate = first
+      next.subscriptionRateMixed = false
+      tiers.forEach((t) => setTierRate(t.id, first))
+    }
+  }
+  return next
 }
 
 // Helper to extract human-readable error from backend responses (including Pydantic 422 lists)
@@ -147,6 +217,8 @@ export function RateCardPage() {
   const [packRates, setPackRates] = useState([])
   const [featureRates, setFeatureRates] = useState([])
   const [uoms, setUoms] = useState([])
+  // Allowed UOMs of the selected pricing model, keyed by pricing model id (from the backend).
+  const [allowedUomsState, setAllowedUomsState] = useState({ pricingModelId: null, list: [] })
   const [rawRateCards, setRawRateCards] = useState([])
 
   // 6. Backend Integration State
@@ -230,7 +302,7 @@ export function RateCardPage() {
           const familyIds =
             packObj?.familyIds ||
             (familyId !== 'all' ? [familyId] : [])
-          const groupKey = `${rc.pack_version_id}-${rc.country_id}-${rc.deployment_model_id}-${rc.pricing_model_id}`
+          const groupKey = `${rc.pack_version_id}-${rc.country_id}-${rc.deployment_model_id}-${rc.pricing_model_id}-${rc.uom_id}`
           if (!livePackRatesMap.has(groupKey)) {
             livePackRatesMap.set(groupKey, {
               id: `pr-db-${rc.id}`,
@@ -248,6 +320,7 @@ export function RateCardPage() {
               countryId: rc.country_id,
               unitOfMeasure: rc.uom?.name || `UoM #${rc.uom_id}`,
               uomId: rc.uom_id,
+              savedUomId: rc.uom_id,
               currencyCode: rc.currency?.code || '',
               tier1Rate: '',
               tier2Rate: '',
@@ -255,9 +328,11 @@ export function RateCardPage() {
             })
           }
           const row = livePackRatesMap.get(groupKey)
+          row._unitRates = [...(row._unitRates || []), rc.unit_rate]
+          row._uomIds = [...(row._uomIds || []), rc.uom_id]
           const tierIdx = tiersList.findIndex((t) => t.id === rc.tier_id)
-          const rateVal = String(rc.unit_rate ?? '')
-          const fixedVal = String(rc.fixed_fee ?? '')
+          const rateVal = displayAmount(rc.unit_rate)
+          const fixedVal = displayAmount(rc.fixed_fee)
           if (tierIdx === 0) {
             row.tier1Rate = rateVal
             row.fixed_tier1Rate = fixedVal
@@ -273,6 +348,7 @@ export function RateCardPage() {
           row[rc.tier_id] = rateVal
           row[`fixed_tier_${rc.tier_id}`] = fixedVal
           row[`fixed_${rc.tier_id}Rate`] = fixedVal
+          row[`amc_tier_${rc.tier_id}`] = displayAmount(rc.amc_percentage)
         } else if (rc.feature_id) {
           const featObj = (featuresList || []).find(
             (f) => String(f.id) === String(rc.feature_id),
@@ -288,10 +364,10 @@ export function RateCardPage() {
             featObj?.familyId ||
             featObj?.product_family_id ||
             'all'
-          const groupKey = `${rc.feature_id}-${rc.country_id}-${rc.deployment_model_id}-${rc.pricing_model_id}`
+          const groupKey = `${rc.feature_id}-${rc.country_id}-${rc.deployment_model_id}-${rc.pricing_model_id}-${rc.uom_id}`
           if (!liveFeatureRatesMap.has(groupKey)) {
             liveFeatureRatesMap.set(groupKey, {
-              id: `fr-feat-${rc.feature_id}-${rc.deployment_model_id}-${rc.pricing_model_id}`,
+              id: `fr-feat-${rc.feature_id}-${rc.deployment_model_id}-${rc.pricing_model_id}-${rc.uom_id}`,
               featureId: rc.feature_id,
               productId: featObj?.product_id || rc.feature?.product_id,
               productCode: featObj?.code || rc.feature?.code || `FEAT-${rc.feature_id}`,
@@ -308,6 +384,7 @@ export function RateCardPage() {
                   : 'Adrenalin Native',
               unitOfMeasure: rc.uom?.name || `UoM #${rc.uom_id}`,
               uomId: rc.uom_id,
+              savedUomId: rc.uom_id,
               currencyCode: rc.currency?.code || '',
               tier1Rate: '',
               tier2Rate: '',
@@ -315,11 +392,13 @@ export function RateCardPage() {
             })
           }
           const row = liveFeatureRatesMap.get(groupKey)
+          row._unitRates = [...(row._unitRates || []), rc.unit_rate]
+          row._uomIds = [...(row._uomIds || []), rc.uom_id]
           const tierIdx = tiersList.findIndex(
             (t) => String(t.id) === String(rc.tier_id),
           )
-          const rateVal = String(rc.unit_rate ?? '')
-          const fixedVal = String(rc.fixed_fee ?? '')
+          const rateVal = displayAmount(rc.unit_rate)
+          const fixedVal = displayAmount(rc.fixed_fee)
           if (tierIdx === 0) {
             row.tier1Rate = rateVal
             row.fixed_tier1Rate = fixedVal
@@ -335,16 +414,17 @@ export function RateCardPage() {
           row[rc.tier_id] = rateVal
           row[`fixed_tier_${rc.tier_id}`] = fixedVal
           row[`fixed_${rc.tier_id}Rate`] = fixedVal
+          row[`amc_tier_${rc.tier_id}`] = displayAmount(rc.amc_percentage)
         }
       })
 
       if (livePackRatesMap.size > 0) {
-        setPackRates(Array.from(livePackRatesMap.values()))
+        setPackRates(Array.from(livePackRatesMap.values()).map(finalizeSharedRateFields))
       } else {
         setPackRates([])
       }
       if (liveFeatureRatesMap.size > 0) {
-        setFeatureRates(Array.from(liveFeatureRatesMap.values()))
+        setFeatureRates(Array.from(liveFeatureRatesMap.values()).map(finalizeSharedRateFields))
       } else {
         setFeatureRates([])
       }
@@ -511,6 +591,10 @@ export function RateCardPage() {
             description: pm.description || '',
             uomLockedId: pm.uom_locked_id || null,
             unitOfMeasure: pm.uom_locked?.name || '',
+            hasFixedComponent: Boolean(pm.has_fixed_component),
+            hasUnitComponent: Boolean(pm.has_unit_component),
+            fixedFeeBasis: pm.fixed_fee_basis || null,
+            unitRateBasis: pm.unit_rate_basis || null,
           }))
           setPricingModels(mappedPricingModels)
 
@@ -733,6 +817,125 @@ export function RateCardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger])
 
+  // --- Platform + Subscription: allowed UOMs and row saves ---
+  const activePricingModelObj =
+    pricingModels.find(
+      (pm) =>
+        pm.code === selectedPricingModel ||
+        pm.name === selectedPricingModel ||
+        String(pm.id) === String(selectedPricingModel),
+    ) || null
+  const activePricingModelId = activePricingModelObj?.id ?? null
+  const rateLayout = rateLayoutFor(activePricingModelObj)
+  const allowedUoms = allowedUomsState.pricingModelId === activePricingModelId ? allowedUomsState.list : []
+
+  useEffect(() => {
+    if (!activePricingModelId) return undefined
+    let cancelled = false
+    Promise.resolve(getAllowedUomsForPricingModel(activePricingModelId))
+      .then((list) => {
+        if (!cancelled) setAllowedUomsState({ pricingModelId: activePricingModelId, list: Array.isArray(list) ? list : [] })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setAllowedUomsState({ pricingModelId: activePricingModelId, list: [] })
+        showToast(`Could not load units of measure for this pricing model: ${formatApiError(err)}`, 'error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activePricingModelId, refreshTrigger, showToast])
+
+  const platformSaveTimers = useRef({})
+
+  // Request body for PUT /rates/rate-cards/target from a grid row (one UOM schedule of a pack/feature).
+  const buildTargetPayload = (row, kind, layout = rateLayout) => {
+    const uomId = activePricingModelObj?.uomLockedId || row.uomId
+    if (!uomId) throw new Error('Select the unit of measure for this rate.')
+    const tierLabel = (t) => t.code || t.name
+    const perTier = layout === 'license' || Boolean(row.perTierRates)
+    const tierEntries = pricingTiers.map((t) => {
+      const entry = { tier_id: requireId(t.id, 'Customer tier') }
+      if (layout !== 'license') {
+        entry.fixed_fee = parseAmount(row[`fixed_tier_${t.id}`], `${tierLabel(t)} platform fee`) ?? null
+      }
+      if (perTier) {
+        entry.unit_rate =
+          parseAmount(row[`tier_${t.id}`], `${tierLabel(t)} ${layout === 'license' ? 'licence fee' : 'subscription rate'}`) ?? null
+      }
+      if (layout === 'license') {
+        const amc = parseAmount(row[`amc_tier_${t.id}`], `${tierLabel(t)} AMC %`)
+        if (amc !== undefined && amc > 100) throw new Error(`${tierLabel(t)} AMC % must be between 0 and 100.`)
+        entry.amc_percentage = amc ?? null
+      }
+      return entry
+    })
+    const savedUom = row.savedUomId ?? null
+    return {
+      ...(savedUom && Number(savedUom) !== Number(uomId) ? { current_uom_id: Number(savedUom) } : {}),
+      rate_card_version_id: requireId(activeVersion?.id, 'Rate card version'),
+      country_id: typeof row.countryId === 'number' ? row.countryId : requireId(activeCountry?.id, 'Country'),
+      deployment_model_id: requireId(row.deploymentModelId, 'Deployment model'),
+      pricing_model_id: requireId(row.pricingModelId, 'Pricing model'),
+      ...(kind === 'pack'
+        ? { pack_version_id: requireId(row.packVersionId, 'Pack version') }
+        : { feature_id: requireId(row.featureId, 'Feature') }),
+      uom_id: requireId(uomId, 'Unit of measure'),
+      unit_rate: perTier ? null : parseAmount(row.subscriptionRate, 'Subscription rate') ?? null,
+      tier_fees: tierEntries,
+    }
+  }
+
+  const isSameTarget = (rc, payload) =>
+    rc.rate_card_version_id === payload.rate_card_version_id &&
+    rc.country_id === payload.country_id &&
+    rc.deployment_model_id === payload.deployment_model_id &&
+    rc.pricing_model_id === payload.pricing_model_id &&
+    [payload.uom_id, payload.current_uom_id].includes(rc.uom_id) &&
+    (payload.pack_version_id ? rc.pack_version_id === payload.pack_version_id : rc.feature_id === payload.feature_id)
+
+  const reloadRateCards = async () => {
+    const cards = await getRateCards(activeVersion?.id ? { rate_card_version_id: activeVersion.id } : {})
+    if (Array.isArray(cards)) {
+      setRawRateCards(cards)
+      processRateCards(cards, pricingTiers, deploymentModels, pricingModels, packs, features, products)
+    }
+  }
+
+  const handleUpdatePlatformRate = (kind, rowId, change) => {
+    if (isVersionLocked) {
+      showToast(
+        `Rate card version "${activeVersion?.version_no}" is retired and protected against modifications.`,
+        'error',
+      )
+      return
+    }
+    const list = kind === 'pack' ? packRates : featureRates
+    const setList = kind === 'pack' ? setPackRates : setFeatureRates
+    const current = list.find((r) => r.id === rowId)
+    if (!current) return
+    const next = applyPlatformChange(current, change, pricingTiers, allowedUoms)
+    setList((prev) => prev.map((r) => (r.id === current.id ? applyPlatformChange(r, change, pricingTiers, allowedUoms) : r)))
+
+    if (!isLiveBackendData) return
+    const timerKey = `${kind}-${current.id}`
+    clearTimeout(platformSaveTimers.current[timerKey])
+    platformSaveTimers.current[timerKey] = setTimeout(async () => {
+      try {
+        const payload = buildTargetPayload(next, kind)
+        const saved = await saveRateCardTarget(payload)
+        if (Array.isArray(saved)) {
+          setRawRateCards((prev) => [...prev.filter((rc) => !isSameTarget(rc, payload)), ...saved])
+        }
+        // The schedule now lives under the saved UOM; later edits must target it there.
+        setList((prev) => prev.map((r) => (r.id === current.id ? { ...r, savedUomId: payload.uom_id } : r)))
+        showToast('Rate saved to PostgreSQL database.')
+      } catch (err) {
+        showToast(`Failed to save rate: ${formatApiError(err)}`, 'error')
+      }
+    }, 600)
+  }
+
   // --- Handlers: Left Sidebar (Products & Families) ---
   const handleSaveNewProduct = (newProduct) => {
     const productWithId = {
@@ -891,6 +1094,7 @@ export function RateCardPage() {
               deployment_model_id: depId,
               pricing_model_id: pmId,
               pack_version_id: rate.packVersionId,
+              ...(rate.savedUomId ? { uom_id: Number(rate.savedUomId) } : {}),
             })
             setPackRates((prev) => prev.filter((r) => r.id !== id))
             showToast('Pack rate removed from database.')
@@ -949,6 +1153,37 @@ export function RateCardPage() {
           requireId(packObj?.latestVersionId, 'Pack version')
 
         const versionId = requireId(activeVersion?.id, 'Rate card version')
+
+        const modalLayout = rateLayoutFor(activePmObj)
+        if (modalLayout === 'platform' || modalLayout === 'license') {
+          const existingRows = packRates.filter(
+            (r) =>
+              Number(r.packVersionId) === Number(packVersionId) &&
+              Number(r.deploymentModelId) === Number(depId) &&
+              Number(r.pricingModelId) === Number(pmId) &&
+              Number(r.uomId) === Number(activePmObj?.uomLockedId || newRate.uomId),
+          )
+          if (existingRows.length > 0) {
+            throw new Error('a rate for this unit of measure already exists; edit it in the grid instead')
+          }
+          const row = {
+            packVersionId,
+            deploymentModelId: depId,
+            pricingModelId: pmId,
+            countryId: activeCountryId,
+            uomId: newRate.uomId,
+            subscriptionRate: newRate.subscriptionRate,
+          }
+          pricingTiers.forEach((t) => {
+            row[`fixed_tier_${t.id}`] = newRate.fixedTierRates?.[t.id] ?? ''
+            row[`tier_${t.id}`] = newRate.tierRates?.[t.id] ?? ''
+            row[`amc_tier_${t.id}`] = newRate.amcTierRates?.[t.id] ?? ''
+          })
+          await saveRateCardTarget(buildTargetPayload(row, 'pack', modalLayout))
+          await reloadRateCards()
+          showToast(`Pack rate for "${newRate.packName}" saved to PostgreSQL database.`)
+          return
+        }
 
         // Upsert across all dynamic tiers
         const tierEntries = pricingTiers.map((tier, idx) => {
@@ -1339,7 +1574,7 @@ export function RateCardPage() {
       return
     }
 
-    const rate = featureRates.find((r) => r.id === id || r.featureId === id)
+    const rate = featureRates.find((r) => r.id === id)
     const name = rate?.featureName || 'Feature Rate'
 
     setDeleteConfirm({
@@ -1370,6 +1605,7 @@ export function RateCardPage() {
               deployment_model_id: depId,
               pricing_model_id: pmId,
               feature_id: rate.featureId,
+              ...(rate.savedUomId ? { uom_id: Number(rate.savedUomId) } : {}),
             })
             setFeatureRates((prev) => prev.filter((r) => r.id !== id))
             showToast('Feature rate removed from database.')
@@ -1454,6 +1690,37 @@ export function RateCardPage() {
         }
 
         const versionId = requireId(activeVersion?.id, 'Rate card version')
+
+        const modalLayout = rateLayoutFor(activePmObj)
+        if (modalLayout === 'platform' || modalLayout === 'license') {
+          const existingRows = featureRates.filter(
+            (r) =>
+              Number(r.featureId) === Number(featureId) &&
+              Number(r.deploymentModelId) === Number(depId) &&
+              Number(r.pricingModelId) === Number(pmId) &&
+              Number(r.uomId) === Number(activePmObj?.uomLockedId || newRate.uomId),
+          )
+          if (existingRows.length > 0) {
+            throw new Error('a rate for this unit of measure already exists; edit it in the grid instead')
+          }
+          const row = {
+            featureId,
+            deploymentModelId: depId,
+            pricingModelId: pmId,
+            countryId: activeCountryId,
+            uomId: newRate.uomId,
+            subscriptionRate: newRate.subscriptionRate,
+          }
+          pricingTiers.forEach((t) => {
+            row[`fixed_tier_${t.id}`] = newRate.fixedTierRates?.[t.id] ?? ''
+            row[`tier_${t.id}`] = newRate.tierRates?.[t.id] ?? ''
+            row[`amc_tier_${t.id}`] = newRate.amcTierRates?.[t.id] ?? ''
+          })
+          await saveRateCardTarget(buildTargetPayload(row, 'feature', modalLayout))
+          await reloadRateCards()
+          showToast(`Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`)
+          return
+        }
 
         // Upsert across all dynamic tiers
         const tierEntries = pricingTiers.map((tier, idx) => {
@@ -2374,6 +2641,9 @@ export function RateCardPage() {
             setIsAddFeatureRateOpen(true)
           }}
           // Platform + Subscription
+          allowedUoms={allowedUoms}
+          onUpdatePackPlatformRate={(id, change) => handleUpdatePlatformRate('pack', id, change)}
+          onUpdateFeaturePlatformRate={(id, change) => handleUpdatePlatformRate('feature', id, change)}
           // Full Registry Table Data & Handlers
           rawRateCards={rawRateCards}
           onUpdateRegistryRate={handleUpdateRegistryRate}
@@ -2479,10 +2749,10 @@ export function RateCardPage() {
         families={families}
         activeDeployment={selectedDeployment}
         activePricing={selectedPricingModel}
-        uoms={uoms}
-        lockedUomId={pricingModels.find((pm) => pm.code === selectedPricingModel || pm.name === selectedPricingModel)?.uomLockedId || null}
+        layout={rateLayout}
+        uoms={allowedUoms.length > 0 ? allowedUoms : uoms}
+        lockedUomId={activePricingModelObj?.uomLockedId || null}
         activeCurrencySymbol={activeCurrencySymbol}
-        existingPackRates={packRates}
       />
 
       <AddFeatureRateModal
@@ -2499,10 +2769,10 @@ export function RateCardPage() {
         families={families}
         activeDeployment={selectedDeployment}
         activePricing={selectedPricingModel}
-        uoms={uoms}
-        lockedUomId={pricingModels.find((pm) => pm.code === selectedPricingModel || pm.name === selectedPricingModel)?.uomLockedId || null}
+        layout={rateLayout}
+        uoms={allowedUoms.length > 0 ? allowedUoms : uoms}
+        lockedUomId={activePricingModelObj?.uomLockedId || null}
         activeCurrencySymbol={activeCurrencySymbol}
-        existingFeatureRates={featureRates}
       />
 
       <DeleteRateCardConfirmDialog

@@ -7,7 +7,6 @@ import {
   X,
   Info,
   ChevronDown,
-  Clock,
   ShieldAlert,
   Database,
   TableProperties,
@@ -21,7 +20,7 @@ import { FeatureRatesSection } from './FeatureRatesSection'
 import { PlatformSubscriptionSection } from './PlatformSubscriptionSection'
 import { ServiceRatesSection } from './ServiceRatesSection'
 import { RateCardRegistryTable } from './RateCardRegistryTable'
-import { getCurrencySymbol } from './rateCardFormatters'
+import { getCurrencySymbol, rateLayoutFor, unitRateBasisLabel } from './rateCardFormatters'
 
 export function RateCardCenterEditor({
   apiError = null,
@@ -60,6 +59,9 @@ export function RateCardCenterEditor({
   onRemoveFeatureRate,
   onOpenAddFeatureRate,
   // Platform + Subscription
+  allowedUoms = [],
+  onUpdatePackPlatformRate,
+  onUpdateFeaturePlatformRate,
   isVersionLocked = false,
   // Full Registry Table Data & Handlers
   rawRateCards = [],
@@ -101,33 +103,14 @@ export function RateCardCenterEditor({
         String(d.id) === String(selectedDeployment),
     ) || deploymentModels[0]
 
-  // Filter pricing models by active deployment using deployment_pricing_options
+  // Pricing models permitted for the active deployment come only from deployment_pricing_options.
   const availablePricingModels = useMemo(() => {
-    if (
-      Array.isArray(deploymentPricingOptions) &&
-      deploymentPricingOptions.length > 0 &&
-      activeDeploymentObj?.id
-    ) {
-      const allowedIds = deploymentPricingOptions
-        .filter((opt) => opt.deployment_model_id === activeDeploymentObj.id)
-        .map((opt) => opt.pricing_model_id)
-      return pricingModels.filter((pm) => allowedIds.includes(pm.id))
-    }
-
-    // Fallback when deploymentPricingOptions is empty / offline:
-    const depNameLower = (activeDeploymentObj?.name || selectedDeployment || '').toLowerCase()
-    if (depNameLower.includes('premise')) {
-      return pricingModels.filter((pm) => {
-        const pmLower = (pm.name + ' ' + pm.code).toLowerCase()
-        return pmLower.includes('license') || pmLower.includes('amc')
-      })
-    }
-
-    return pricingModels.filter((pm) => {
-      const pmLower = (pm.name + ' ' + pm.code).toLowerCase()
-      return !pmLower.includes('license') && !pmLower.includes('amc')
-    })
-  }, [pricingModels, deploymentPricingOptions, activeDeploymentObj, selectedDeployment])
+    if (!activeDeploymentObj?.id || !Array.isArray(deploymentPricingOptions)) return []
+    const allowedIds = deploymentPricingOptions
+      .filter((opt) => String(opt.deployment_model_id) === String(activeDeploymentObj.id))
+      .map((opt) => String(opt.pricing_model_id))
+    return pricingModels.filter((pm) => allowedIds.includes(String(pm.id)))
+  }, [pricingModels, deploymentPricingOptions, activeDeploymentObj])
 
   // Automatically synchronize selected pricing model if current selection is invalid for active deployment
   useEffect(() => {
@@ -145,154 +128,53 @@ export function RateCardCenterEditor({
   }, [availablePricingModels, selectedPricingModel, onChangePricingModel])
 
   const activePricingModel =
-    pricingModels.find(
+    availablePricingModels.find(
       (pm) =>
         String(pm.code).toLowerCase() === String(selectedPricingModel).toLowerCase() ||
         String(pm.name).toLowerCase() === String(selectedPricingModel).toLowerCase() ||
         String(pm.id) === String(selectedPricingModel),
-    ) || {
-      name: selectedPricingModel,
-      code: selectedPricingModel,
-    }
+    ) || null
 
-  const selLower = String(selectedPricingModel || '').toLowerCase()
-  const activeCodeLower = String(activePricingModel?.code || '').toLowerCase()
-  const activeNameLower = String(activePricingModel?.name || '').toLowerCase()
+  // Which grid to show is decided by the pricing model's components and billing bases (master data),
+  // never by its name: one-time unit rate -> licence grid, fixed + unit -> platform grid, else unit-rate grid.
+  const rateLayout = rateLayoutFor(activePricingModel)
+  const noPricingModelForDeployment = availablePricingModels.length === 0
+  const unitPeriod = unitRateBasisLabel(activePricingModel?.unitRateBasis)
 
-  const isLicensePEPM =
-    (selLower.includes('license') && selLower.includes('pepm')) ||
-    (activeCodeLower.includes('license') && activeCodeLower.includes('pepm')) ||
-    (activeNameLower.includes('license') && activeNameLower.includes('pepm'))
+  const matchesFamily = (rate, catalogueList, idOf) =>
+    selectedFamilyId === 'all' ||
+    rate.familyId === 'all' ||
+    !rate.familyId ||
+    String(rate.familyId) === String(selectedFamilyId) ||
+    (Array.isArray(rate.familyIds) && rate.familyIds.some((fid) => String(fid) === String(selectedFamilyId))) ||
+    catalogueList.some(
+      (item) =>
+        idOf(item, rate) &&
+        (String(item.familyId) === String(selectedFamilyId) ||
+          String(item.product_family_id) === String(selectedFamilyId) ||
+          (Array.isArray(item.familyIds) && item.familyIds.some((fid) => String(fid) === String(selectedFamilyId)))),
+    )
 
-  const isPEPM =
-    selLower === 'pepm' ||
-    activeCodeLower === 'pepm' ||
-    activeNameLower === 'pepm' ||
-    activeNameLower.includes('per employee') ||
-    isLicensePEPM
+  const matchesContext = (rate) =>
+    String(rate.deploymentModelId) === String(activeDeploymentObj?.id) &&
+    String(rate.pricingModelId) === String(activePricingModel?.id) &&
+    (!rate.countryId ||
+      String(rate.countryId) === String(selectedCountryId) ||
+      (activeCountry?.id && String(rate.countryId) === String(activeCountry.id)))
 
-  const isDualComponent =
-    isLicensePEPM ||
-    Boolean(activePricingModel?.has_fixed_component && activePricingModel?.has_unit_component)
-
-  const isPlatformSubscription =
-    selLower.includes('platform') ||
-    activeCodeLower.includes('platform') ||
-    activeNameLower.includes('platform')
-
-  const isLicenseAMC =
-    selLower.includes('license') ||
-    selLower.includes('amc') ||
-    activeCodeLower.includes('license') ||
-    activeCodeLower.includes('amc') ||
-    activeNameLower.includes('license') ||
-    activeNameLower.includes('amc')
-
-  const isOnPremiseWithoutConfig =
-    (activeDeploymentObj?.code === 'on_premise' ||
-      (activeDeploymentObj?.name || '').toLowerCase().includes('premise')) &&
-    availablePricingModels.length === 0
-
-  // Filter PEPM rates by active family and country if selected
-  // Filter PEPM rates by active family and country if selected
-  const filteredPackRates = packRates.filter((pr) => {
-    const matchDeployment =
-      !pr.deploymentModelId ||
-      String(pr.deploymentModelId) === String(activeDeploymentObj?.id) ||
-      String(pr.deploymentModel || '').toLowerCase() === String(selectedDeployment || '').toLowerCase()
-
-    const prPricingLower = String(pr.pricingModel || '').toLowerCase()
-    const selPricingLower = String(selectedPricingModel || '').toLowerCase()
-    const activePricingCodeLower = String(activePricingModel?.code || '').toLowerCase()
-    const activePricingNameLower = String(activePricingModel?.name || '').toLowerCase()
-
-    const matchPricing =
-      pr.pricingModel === selectedPricingModel ||
-      pr.pricingModelId === activePricingModel?.id ||
-      prPricingLower === selPricingLower ||
-      prPricingLower === activePricingCodeLower ||
-      prPricingLower === activePricingNameLower ||
-      (isPEPM &&
-        (prPricingLower === 'pepm' ||
-          prPricingLower.includes('per employee'))) ||
-      (isPlatformSubscription &&
-        (prPricingLower.includes('platform') ||
-          prPricingLower.includes('subscription'))) ||
-      (isLicenseAMC &&
-        (prPricingLower.includes('license') ||
-          prPricingLower.includes('amc')))
-
-    const matchFamily =
-      selectedFamilyId === 'all' ||
-      pr.familyId === 'all' ||
-      !pr.familyId ||
-      String(pr.familyId) === String(selectedFamilyId) ||
-      (Array.isArray(pr.familyIds) && pr.familyIds.some((fid) => String(fid) === String(selectedFamilyId))) ||
-      packs.some(
-        (p) =>
-          (String(p.id) === String(pr.packId) || String(p.packId) === String(pr.packId)) &&
-          (selectedFamilyId === 'all' ||
-            String(p.familyId) === String(selectedFamilyId) ||
-            String(p.product_family_id) === String(selectedFamilyId) ||
-            (Array.isArray(p.familyIds) && p.familyIds.some((fid) => String(fid) === String(selectedFamilyId)))),
+  const filteredPackRates = activePricingModel
+    ? packRates.filter(
+        (pr) =>
+          matchesContext(pr) &&
+          matchesFamily(pr, packs, (p, r) => String(p.id) === String(r.packId) || String(p.packId) === String(r.packId)),
       )
+    : []
 
-    const matchCountry =
-      !pr.countryId ||
-      String(pr.countryId) === String(selectedCountryId) ||
-      (activeCountry?.id && String(pr.countryId) === String(activeCountry.id))
-
-    return matchDeployment && matchPricing && matchFamily && matchCountry
-  })
-
-  const filteredFeatureRates = featureRates.filter((fr) => {
-    const matchDeployment =
-      !fr.deploymentModelId ||
-      String(fr.deploymentModelId) === String(activeDeploymentObj?.id) ||
-      String(fr.deploymentModel || '').toLowerCase() === String(selectedDeployment || '').toLowerCase()
-
-    const frPricingLower = String(fr.pricingModel || '').toLowerCase()
-    const selPricingLower = String(selectedPricingModel || '').toLowerCase()
-    const activePricingCodeLower = String(activePricingModel?.code || '').toLowerCase()
-    const activePricingNameLower = String(activePricingModel?.name || '').toLowerCase()
-
-    const matchPricing =
-      !fr.pricingModel ||
-      fr.pricingModel === selectedPricingModel ||
-      fr.pricingModelId === activePricingModel?.id ||
-      frPricingLower === selPricingLower ||
-      frPricingLower === activePricingCodeLower ||
-      frPricingLower === activePricingNameLower ||
-      (isPEPM &&
-        (frPricingLower === 'pepm' ||
-          frPricingLower.includes('per employee'))) ||
-      (isPlatformSubscription &&
-        (frPricingLower.includes('platform') ||
-          frPricingLower.includes('subscription'))) ||
-      (isLicenseAMC &&
-        (frPricingLower.includes('license') ||
-          frPricingLower.includes('amc')))
-
-    const matchFamily =
-      selectedFamilyId === 'all' ||
-      fr.familyId === 'all' ||
-      !fr.familyId ||
-      String(fr.familyId) === String(selectedFamilyId) ||
-      features.some(
-        (f) =>
-          String(f.id) === String(fr.featureId) &&
-          (selectedFamilyId === 'all' ||
-            String(f.familyId) === String(selectedFamilyId) ||
-            String(f.product_family_id) === String(selectedFamilyId)),
+  const filteredFeatureRates = activePricingModel
+    ? featureRates.filter(
+        (fr) => matchesContext(fr) && matchesFamily(fr, features, (f, r) => String(f.id) === String(r.featureId)),
       )
-
-    const matchCountry =
-      !fr.countryId ||
-      String(fr.countryId) === String(selectedCountryId) ||
-      (activeCountry?.id && String(fr.countryId) === String(activeCountry.id))
-
-    return matchDeployment && matchPricing && matchFamily && matchCountry
-  })
+    : []
 
   // Helper to determine if a pack/feature rate record has entered/available pricing data
   const hasConfiguredRate = (r) => {
@@ -326,8 +208,18 @@ export function RateCardCenterEditor({
   }
 
   // Render pack and feature cards only when they contain available entered data
-  const renderFamilySections = (dualComponentMode) => {
+  const renderFamilySections = (dualComponentMode, layout = 'default') => {
     const renderedPackRateIds = new Set()
+    const platformProps =
+      layout === 'platform' || layout === 'license'
+        ? {
+            layout,
+            allowedUoms,
+            lockedUomId: activePricingModel?.uomLockedId || null,
+            fixedFeeBasis: activePricingModel?.fixedFeeBasis || null,
+            unitRateBasis: activePricingModel?.unitRateBasis || null,
+          }
+        : {}
 
     const rendered = familiesToRender
       .map((family) => {
@@ -383,7 +275,7 @@ export function RateCardCenterEditor({
                 <div>
                   <h4 className="text-sm font-bold text-slate-900">{family.name}</h4>
                   <p className="text-xs text-slate-500 mt-1">
-                    No rate cards configured yet for {family.name} under {selectedDeployment} ({activeCountry?.currency || 'INR'}).
+                    No rate cards configured yet for {family.name} under {selectedDeployment}{activeCountry?.currency ? ` (${activeCountry.currency})` : ''}.
                   </p>
                 </div>
                 {!isVersionLocked && (
@@ -426,6 +318,8 @@ export function RateCardCenterEditor({
                 activeCurrencySymbol={activeCurrencySymbol}
                 isVersionLocked={isVersionLocked}
                 isDualComponent={dualComponentMode}
+                {...platformProps}
+                onUpdatePlatformRate={onUpdatePackPlatformRate}
                 onUpdateRate={onUpdatePackRate}
                 onRemoveRate={onRemovePackRate}
                 onOpenAddPackRate={() => onOpenAddPackRate(family.id)}
@@ -442,6 +336,8 @@ export function RateCardCenterEditor({
                 activeCurrencySymbol={activeCurrencySymbol}
                 isVersionLocked={isVersionLocked}
                 isDualComponent={dualComponentMode}
+                {...platformProps}
+                onUpdatePlatformRate={onUpdateFeaturePlatformRate}
                 apiError={apiError}
                 onUpdateRate={onUpdateFeatureRate}
                 onRemoveRate={onRemoveFeatureRate}
@@ -471,6 +367,8 @@ export function RateCardCenterEditor({
             activeCurrencySymbol={activeCurrencySymbol}
             isVersionLocked={isVersionLocked}
             isDualComponent={dualComponentMode}
+            {...platformProps}
+            onUpdatePlatformRate={onUpdatePackPlatformRate}
             onUpdateRate={onUpdatePackRate}
             onRemoveRate={onRemovePackRate}
             onOpenAddPackRate={() => onOpenAddPackRate(null)}
@@ -491,7 +389,7 @@ export function RateCardCenterEditor({
               No Available Rate Cards
             </h3>
             <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-              No pack or feature rates with available pricing data were found for {selectedDeployment} ({activeCountry?.currency || 'INR'}).
+              No pack or feature rates with available pricing data were found for {selectedDeployment}{activeCountry?.currency ? ` (${activeCountry.currency})` : ''}.
             </p>
           </div>
           {!isVersionLocked && (
@@ -789,66 +687,70 @@ export function RateCardCenterEditor({
         <>
           {/* Editor Content based on Selected Deployment and Pricing Model */}
 
-      {isOnPremiseWithoutConfig ? (
-        /* Section: On-Premise + License Fee + AMC configuration status */
-        <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-5 shadow-2xs">
+      {noPricingModelForDeployment ? (
+        /* No deployment/pricing combination configured for this deployment in master data */
+        <div className="bg-white border border-slate-200 rounded-xl p-6 sm:p-8 space-y-3 shadow-2xs">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-              <Server className="w-5 h-5" aria-hidden="true" />
+            <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-5 h-5" aria-hidden="true" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900">
-                  On-Premise Deployment Architecture — License Fee + AMC
-                </h3>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-300">
-                  Configuration Required in Database
-                </span>
-              </div>
+              <h3 className="text-sm font-bold text-slate-900">
+                No pricing model is configured for {activeDeploymentObj?.name || selectedDeployment}
+              </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Pricing Method: License Fee + AMC (Combination 5)
+                Add the deployment and pricing model combination in master data (deployment_pricing_options) to configure its rate card.
               </p>
             </div>
           </div>
-
-          <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 text-xs text-amber-900 space-y-2">
-            <div className="font-semibold text-amber-950 flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" aria-hidden="true" />
-              <span>Database Architecture Configuration Status:</span>
-            </div>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              According to pricing governance documents, On-Premise deployment couples strictly with the <strong>License Fee + AMC</strong> pricing model.
-              Currently, no live pricing model record or deployment-pricing mapping is declared in the backend PostgreSQL database for On-Premise.
-            </p>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              To activate this method, register a <em>License Fee + AMC</em> pricing model in Master Data and configure its deployment mapping in <code>deployment_pricing_options</code>.
-            </p>
-          </div>
-
-          <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-3">
-            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              Required Commercial Parameters
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-              <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold text-slate-400 font-mono">Input 1</span>
-                <p className="font-semibold text-slate-800 mt-0.5">Base License Fee</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Perpetual or term capex license amount</p>
-              </div>
-              <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold text-slate-400 font-mono">Input 2</span>
-                <p className="font-semibold text-slate-800 mt-0.5">Annual Maintenance (AMC)</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Annual recurring software maintenance (% or fixed fee)</p>
-              </div>
-              <div className="p-3 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                <span className="text-[10px] uppercase font-bold text-slate-400 font-mono">Scope</span>
-                <p className="font-semibold text-slate-800 mt-0.5">Client Hosted Datacenter</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">Currency: {activeCountry?.name} ({activeCountry?.symbol || activeCountry?.currency})</p>
-              </div>
-            </div>
-          </div>
         </div>
-      ) : isPEPM ? (
+      ) : rateLayout === 'platform' ? (
+        /* Fixed fee per tier + unit (subscription) rate */
+        <div className="space-y-8">
+          <PlatformSubscriptionSection
+            activeCurrencySymbol={activeCurrencySymbol}
+            activeCurrencyCode={activeCountry?.currency}
+            isVersionLocked={isVersionLocked}
+            activeDeployment={selectedDeployment}
+            activeCountry={activeCountry}
+            selectedFamilyName={activeFamily ? activeFamily.name : 'All Product Families'}
+            pricingModelName={activePricingModel?.name}
+            fixedFeeBasis={activePricingModel?.fixedFeeBasis}
+            unitRateBasis={activePricingModel?.unitRateBasis}
+            tierCount={pricingTiers.length}
+          />
+
+          <h2 className="sr-only">Pack Rates ({activePricingModel?.name})</h2>
+          {renderFamilySections(true, 'platform')}
+        </div>
+      ) : rateLayout === 'license' ? (
+        /* One-time unit rate (licence fee per user) + AMC % */
+        <div className="space-y-8">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                <Server className="w-5 h-5" aria-hidden="true" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">{activePricingModel?.name} Configuration</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  A one-time licence fee per user and an annual maintenance (AMC) percentage, for each customer tier.
+                </p>
+              </div>
+            </div>
+            <div className="bg-sky-50/70 border border-sky-200/80 rounded-xl p-3.5 text-[11px] text-sky-900 flex items-start gap-2">
+              <Info className="w-4 h-4 text-sky-600 shrink-0" aria-hidden="true" />
+              <span className="font-mono font-semibold">
+                Total = Licence fee per user × Users + (Licence total × AMC %) × Contract years
+              </span>
+            </div>
+          </div>
+
+          <h2 className="sr-only">Pack Rates ({activePricingModel?.name})</h2>
+          {renderFamilySections(true, 'license')}
+        </div>
+      ) : (
+        /* Unit rate only (e.g. PEPM) */
         <div className="space-y-8">
           {filteredPackRates.length === 0 && filteredFeatureRates.length === 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-900 flex items-start gap-3 shadow-2xs">
@@ -864,99 +766,25 @@ export function RateCardCenterEditor({
             </div>
           )}
 
-          {/* PEPM Formula Banner */}
           <div className="bg-sky-50/70 border border-sky-200/80 rounded-xl p-3.5 text-xs text-sky-950 flex items-start gap-3">
             <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" aria-hidden="true" />
             <div className="space-y-1">
               <div className="font-semibold text-sky-950">
-                PEPM Pricing Formula & Commercial Contract Logic:
+                {activePricingModel?.name} Pricing Formula:
               </div>
               <div className="text-[11px] font-mono text-sky-900 bg-sky-100/70 px-2 py-1 rounded inline-block font-semibold">
-                Rate = rate per Active Employee (with ESS) per month × headcount × term months = Full Contract Value.
+                Total = Rate per {activePricingModel?.unitOfMeasure || 'unit'}{unitPeriod ? ` per ${unitPeriod}` : ''} × Quantity × {unitPeriod === 'year' ? 'Contract years' : 'Contract months'}
               </div>
               <p className="text-[11px] text-sky-800 leading-relaxed">
-                The rate grids below configure active monthly per-employee rates across defined tiers. Full proposal totals, discounting schedules, and multi-year contract values are calculated in <strong>Page 4 — Proposal Configurator</strong>.
+                The grids below hold one rate per customer tier. Proposal totals are calculated by the backend in <strong>Page 4 — Proposal Configurator</strong>.
               </p>
             </div>
           </div>
 
-          {/* Section Accessibility Headers for PEPM */}
-          <h2 className="sr-only">Pack Rates (PEPM)</h2>
-          <h2 className="sr-only">À la Carte Feature Rates (PEPM)</h2>
+          <h2 className="sr-only">Pack Rates ({activePricingModel?.name})</h2>
+          <h2 className="sr-only">À la Carte Feature Rates ({activePricingModel?.name})</h2>
 
-          {renderFamilySections(isDualComponent)}
-        </div>
-      ) : isPlatformSubscription ? (
-        /* Section 3: Platform + Subscription with Pack & Feature Configuration */
-        <div className="space-y-8">
-          <PlatformSubscriptionSection
-            activeCurrencySymbol={activeCurrencySymbol}
-            activeCurrencyCode={activeCountry?.currency}
-            isVersionLocked={isVersionLocked}
-            activeDeployment={selectedDeployment}
-            activeCountry={activeCountry}
-            selectedFamilyName={activeFamily ? activeFamily.name : 'All Product Families'}
-            pricingTiers={pricingTiers}
-          />
-
-          <h2 className="sr-only">Pack Rates (Platform + Subscription)</h2>
-          {renderFamilySections(true)}
-        </div>
-      ) : isLicenseAMC ? (
-        /* Section 4: License Fee + AMC Configuration UI with Pack Configuration */
-        <div className="space-y-8">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
-                <Server className="w-5 h-5" aria-hidden="true" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    {activePricingModel.name} Configuration
-                  </h3>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Combination 5: On-Premise + License Fee + AMC
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Dual component: Perpetual / Term Capex License Fee + Recurring Annual Maintenance (AMC).
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 space-y-2">
-              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-slate-600 shrink-0" aria-hidden="true" />
-                <span>Commercial Structure & Calculation Rules</span>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Capex License fee applies as a fixed component, while AMC is computed as annual maintenance. Proposal totals and multi-year payment schedules are evaluated in <strong>Page 4 — Proposal Configurator</strong>.
-              </p>
-            </div>
-          </div>
-
-          <h2 className="sr-only">Pack Rates (License Fee + AMC)</h2>
-          {renderFamilySections(true)}
-        </div>
-      ) : (
-        /* Section 4: Custom / New Pricing Model awaiting backend implementation */
-        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-4 shadow-2xs">
-          <div className="w-12 h-12 rounded-xl bg-orange-100 text-orange-600 mx-auto flex items-center justify-center">
-            <CreditCard className="w-6 h-6" aria-hidden="true" />
-          </div>
-          <div className="max-w-md mx-auto space-y-1.5">
-            <h3 className="text-base font-bold text-slate-800">
-              {activePricingModel.name} — Commercial Pricing Configuration
-            </h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Commercial calculations, discount matrices, and contract formulas for this pricing model are awaiting backend engine configuration.
-            </p>
-          </div>
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
-            <Clock className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>Pending backend calculation</span>
-          </div>
+          {renderFamilySections(false)}
         </div>
       )}
 

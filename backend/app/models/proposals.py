@@ -566,6 +566,13 @@ class ProposalLineItem(Base):
         nullable=False,
         index=True,
     )
+    proposal_country_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("proposal_countries.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Country block that prices this line (NULL = the proposal's primary country block)",
+    )
     line_number: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -678,6 +685,13 @@ class ProposalServiceLine(Base):
         ForeignKey("proposal_versions.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
+    )
+    proposal_country_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("proposal_countries.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Country block that prices this line (NULL = the proposal's primary country block)",
     )
     service_rate_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,

@@ -359,6 +359,10 @@ class UnitOfMeasure(Base):
             "status IN ('active', 'inactive', 'retired')",
             name="ck_units_of_measure_status",
         ),
+        CheckConstraint(
+            "category IN ('uom1', 'uom2')",
+            name="ck_units_of_measure_category",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -375,6 +379,13 @@ class UnitOfMeasure(Base):
     name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
+    )
+    category: Mapped[str] = mapped_column(
+        String(20),
+        default="uom2",
+        server_default=text("'uom2'"),
+        nullable=False,
+        comment="UOM Category: 'uom1' (employee-level) or 'uom2' (product-specific)",
     )
     conversion_rule: Mapped[Optional[str]] = mapped_column(
         Text,
@@ -399,6 +410,13 @@ class UnitOfMeasure(Base):
         nullable=False,
     )
 
+    # Relationships
+    pricing_model_associations: Mapped[list["PricingModelUom"]] = relationship(
+        "PricingModelUom",
+        back_populates="uom",
+        cascade="all, delete-orphan",
+    )
+
 
 class PricingModel(Base):
     """Commercial pricing structure models (PEPM, Platform + Subscription, etc.)."""
@@ -409,6 +427,10 @@ class PricingModel(Base):
         CheckConstraint(
             "fixed_fee_basis IS NULL OR fixed_fee_basis IN ('annual', 'one_time')",
             name="ck_pricing_models_fixed_fee_basis",
+        ),
+        CheckConstraint(
+            "unit_rate_basis IN ('monthly', 'annual', 'one_time')",
+            name="ck_pricing_models_unit_rate_basis",
         ),
         CheckConstraint(
             "status IN ('active', 'inactive', 'retired')",
@@ -454,6 +476,13 @@ class PricingModel(Base):
         nullable=True,
         comment="Fixed fee frequency: 'annual' or 'one_time'",
     )
+    unit_rate_basis: Mapped[str] = mapped_column(
+        String(20),
+        default="monthly",
+        server_default=text("'monthly'"),
+        nullable=False,
+        comment="How the unit rate is billed: 'monthly', 'annual' or 'one_time'",
+    )
     uom_locked_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         ForeignKey("units_of_measure.id", ondelete="RESTRICT"),
@@ -487,6 +516,49 @@ class PricingModel(Base):
         "DeploymentPricingOption",
         back_populates="pricing_model",
         cascade="all, delete-orphan",
+    )
+    allowed_uoms: Mapped[list["PricingModelUom"]] = relationship(
+        "PricingModelUom",
+        back_populates="pricing_model",
+        cascade="all, delete-orphan",
+    )
+
+
+class PricingModelUom(Base):
+    """Allowed matrix combinations of pricing model and compatible units of measure."""
+
+    __tablename__ = "pricing_model_uoms"
+
+    pricing_model_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("pricing_models.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    uom_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("units_of_measure.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    pricing_model: Mapped["PricingModel"] = relationship(
+        "PricingModel",
+        back_populates="allowed_uoms",
+    )
+    uom: Mapped["UnitOfMeasure"] = relationship(
+        "UnitOfMeasure",
+        back_populates="pricing_model_associations",
     )
 
 

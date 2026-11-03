@@ -43,10 +43,15 @@ export function ProposalFinancialTable({ snapshotPayload = null, showDiscounts =
             {products.map((p) => {
               const native = p.native_currency_code
               return (
-                <Fragment key={p.product_code}>
+                <Fragment key={p.product_key || p.product_code}>
                   <tr className="bg-[#0B1528] text-white">
                     <td className="py-2.5 px-4 font-bold" colSpan={5}>
                       {p.product_name} <span className="font-mono text-orange-300 text-[11px]">({p.product_code})</span>
+                      {p.country_name && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-semibold text-orange-200">
+                          Delivered from {p.country_name}
+                        </span>
+                      )}
                       <span className="ml-2 text-[10px] font-mono text-slate-300">
                         Native {native}
                         {native !== reporting ? ` → ${reporting} @ ${p.fx_rate_multiplier} (${p.currency_pair}${p.fx_effective_date ? `, ${p.fx_effective_date}` : ''})` : ''}

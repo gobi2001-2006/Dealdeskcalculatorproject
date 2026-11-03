@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { CheckCircle2, Lock, Sparkles, Loader2, AlertCircle } from 'lucide-react'
-import { resolveRateCard } from '../../../api/ratesApi'
+import { resolveRateCard, getRateScheduleUoms } from '../../../api/ratesApi'
+import { describeFixedFee, describeUnitRate, quantityUnitLabel } from '../rateUnits'
 import { describeApiError } from '../../../api/proposalsApi'
 
 /**
@@ -27,6 +28,8 @@ export function FeaturesTable({
   headcount = '',
   featureHeadcounts = {},
   onUpdateFeatureHeadcount,
+  featureUomIds = {},
+  onUpdateFeatureUom,
 }) {
   const familyProductIds = new Set(
     products
@@ -55,6 +58,7 @@ export function FeaturesTable({
   }, [dimensionKey])
 
   const selectedFeatureIdsKey = (selectedFeatureIds || []).map(String).sort().join(',')
+  const featureUomKey = JSON.stringify(featureUomIds || {})
 
   // Resolve the rate card for each selected feature (unit of measure comes from the rate card)
   useEffect(() => {
@@ -68,27 +72,36 @@ export function FeaturesTable({
       inFlightRef.current.add(numFeatId)
       setFeatureRates((prev) => ({ ...prev, [numFeatId]: { status: 'loading', rate: null, error: null } }))
 
-      resolveRateCard({
+      const dims = {
         country_id: Number(countryId),
         tier_id: Number(pricingTierId),
         deployment_model_id: Number(deploymentModelId),
         pricing_model_id: Number(pricingModelId),
         feature_id: numFeatId,
-      })
+      }
+      const chosenUom = featureUomIds?.[numFeatId]
+      resolveRateCard({ ...dims, ...(chosenUom ? { uom_id: Number(chosenUom) } : {}) })
         .then((data) => {
           inFlightRef.current.delete(numFeatId)
-          setFeatureRates((prev) => ({ ...prev, [numFeatId]: { status: 'resolved', rate: data, error: null } }))
+          setFeatureRates((prev) => ({ ...prev, [numFeatId]: { status: 'resolved', rate: data, error: null, uomOptions: prev[numFeatId]?.uomOptions } }))
         })
-        .catch((err) => {
+        .catch(async (err) => {
           inFlightRef.current.delete(numFeatId)
+          // More than one UOM schedule: offer the choice instead of failing.
+          const uomOptions = err.response?.status === 409 ? await getRateScheduleUoms(dims).catch(() => []) : []
           setFeatureRates((prev) => ({
             ...prev,
-            [numFeatId]: { status: 'missing', rate: null, error: describeApiError(err, 'No rate card configured for this feature') },
+            [numFeatId]: {
+              status: uomOptions.length > 1 ? 'choose_uom' : 'missing',
+              rate: null,
+              uomOptions,
+              error: describeApiError(err, 'No rate card configured for this feature'),
+            },
           }))
         })
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFeatureIdsKey, dimensionKey, countryId, pricingTierId, deploymentModelId, pricingModelId])
+  }, [selectedFeatureIdsKey, featureUomKey, dimensionKey, countryId, pricingTierId, deploymentModelId, pricingModelId])
 
   if (familyFeatures.length === 0) {
     return (
@@ -191,7 +204,7 @@ export function FeaturesTable({
                               className="w-24 px-2 py-0.5 text-xs font-mono rounded border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-[11px] text-slate-500">
-                              {rate?.uom_id ? 'units / month (unit of measure from the rate card)' : 'units / month'}
+                              {rate ? quantityUnitLabel(rate) : 'units (unit of measure from the rate card)'}
                             </span>
                           </div>
 
@@ -199,6 +212,28 @@ export function FeaturesTable({
                             <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                               <Loader2 className="w-3.5 h-3.5 text-orange-600 animate-spin" />
                               <span>Resolving rate card for {feat.name}...</span>
+                            </div>
+                          )}
+                          {(resolved?.status === 'choose_uom' || (featureUomIds?.[feat.id] && resolved?.uomOptions?.length > 1)) && (
+                            <div className="flex items-center gap-2">
+                              <label htmlFor={`feat-uom-${feat.id}`} className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">
+                                Rate schedule:
+                              </label>
+                              <select
+                                id={`feat-uom-${feat.id}`}
+                                value={featureUomIds?.[feat.id] || ''}
+                                onChange={(e) => {
+                                  inFlightRef.current.delete(Number(feat.id))
+                                  setFeatureRates((prev) => ({ ...prev, [Number(feat.id)]: { ...prev[Number(feat.id)], status: 'pending' } }))
+                                  onUpdateFeatureUom?.(feat.id, e.target.value ? Number(e.target.value) : null)
+                                }}
+                                className="px-2 py-0.5 text-xs rounded border border-slate-300 bg-white"
+                              >
+                                <option value="">-- Choose unit of measure --</option>
+                                {resolved.uomOptions.map((u) => (
+                                  <option key={u.id} value={u.id}>{u.name}</option>
+                                ))}
+                              </select>
                             </div>
                           )}
                           {resolved?.status === 'missing' && (
@@ -237,14 +272,10 @@ export function FeaturesTable({
                         rate ? (
                           <div className="space-y-0.5 font-mono">
                             {rate.fixed_fee !== null && rate.fixed_fee !== undefined && (
-                              <div className="text-slate-700">
-                                Fee {rate.currency_code} {Number(rate.fixed_fee).toLocaleString()}
-                              </div>
+                              <div className="text-slate-700">{describeFixedFee(rate)}</div>
                             )}
                             {rate.unit_rate !== null && rate.unit_rate !== undefined && (
-                              <div className="font-bold text-slate-900">
-                                {rate.currency_code} {Number(rate.unit_rate).toFixed(2)} / unit / mo
-                              </div>
+                              <div className="font-bold text-slate-900">{describeUnitRate(rate)}</div>
                             )}
                           </div>
                         ) : resolved?.status === 'loading' ? (

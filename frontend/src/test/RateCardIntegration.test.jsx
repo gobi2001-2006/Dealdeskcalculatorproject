@@ -90,7 +90,10 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
         code: 'PEPM',
         name: 'Per Employee Per Month (PEPM)',
         description: 'Recurring seat pricing',
+        has_unit_component: true,
+        unit_rate_basis: 'monthly',
         uom_locked_id: 1,
+        uom_locked: { id: 1, code: 'employee', name: 'Active Employees (with ESS)' },
         status: 'active',
       },
       {
@@ -98,6 +101,10 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
         code: 'PLATFORM_SUBSCRIPTION',
         name: 'Platform + Subscription',
         description: 'Platform access fee plus per-employee subscription',
+        has_fixed_component: true,
+        has_unit_component: true,
+        fixed_fee_basis: 'annual',
+        unit_rate_basis: 'monthly',
         uom_locked_id: 1,
         status: 'active',
       },
@@ -435,7 +442,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Rate = rate per Active Employee \(with ESS\) per month × headcount × term months = Full Contract Value\./i),
+        screen.getByText(/Total = Rate per Active Employees \(with ESS\) per month × Quantity × Contract months/i),
       ).toBeInTheDocument()
     })
 
@@ -466,10 +473,8 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
 
     // Should indicate no configured pricing methods and display the On-Premise status card
     await waitFor(() => {
-      expect(screen.getByText(/On-Premise Deployment Architecture — License Fee \+ AMC/i)).toBeInTheDocument()
-      expect(screen.getByText(/Configuration Required in Database/i)).toBeInTheDocument()
-      expect(screen.getByText(/Base License Fee/i)).toBeInTheDocument()
-      expect(screen.getByText(/Annual Maintenance \(AMC\)/i)).toBeInTheDocument()
+      expect(screen.getByText(/No pricing model is configured for On-Premise/i)).toBeInTheDocument()
+      expect(screen.getByText(/deployment_pricing_options/i)).toBeInTheDocument()
     })
   })
 
@@ -496,13 +501,17 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     expect(screen.queryByLabelText(/Tier 1 Monthly Subscription Fee/i)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Tier 1 Number of Employees/i)).not.toBeInTheDocument()
 
-    // Confirms dual-component matrix inputs are rendered
+    // Platform fee per tier, then one UOM and one subscription rate for the pack
     expect(screen.getByLabelText(/DEV TA Premium Tier 1 Platform Fee/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/DEV TA Premium Tier 1 Subscription Rate/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/DEV TA Premium Tier 2 Platform Fee/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/DEV TA Premium Tier 1 Subscription Rate/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/^DEV TA Premium Subscription Rate$/i)).toHaveValue(65)
+    expect(screen.getByLabelText(/DEV TA Premium Unit of Measure/i)).toBeInTheDocument()
+    expect(ratesApi.getAllowedUomsForPricingModel).toHaveBeenCalledWith(2)
   })
 
-  it('persists Platform + Subscription rate edits to backend upsertRateCard API', async () => {
-    ratesApi.upsertRateCard.mockResolvedValue({ id: 10, rate_card_version_id: 1 })
+  it('persists Platform + Subscription rate edits as one row save (tier fees + UOM + rate)', async () => {
+    ratesApi.saveRateCardTarget.mockResolvedValue([])
 
     render(
       <BrowserRouter>
@@ -525,12 +534,20 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     fireEvent.change(platformFeeInput, { target: { value: '150000' } })
 
     await waitFor(() => {
-      expect(ratesApi.upsertRateCard).toHaveBeenCalledWith(
+      expect(ratesApi.saveRateCardTarget).toHaveBeenCalledWith(
         expect.objectContaining({
-          fixed_fee: 150000,
           rate_card_version_id: 1,
+          pricing_model_id: 2,
+          pack_version_id: 38,
+          uom_id: 1, // locked by the pricing model in this fixture
+          unit_rate: 65,
+          tier_fees: [
+            { tier_id: 1, fixed_fee: 150000 },
+            { tier_id: 2, fixed_fee: null },
+          ],
         }),
       )
     }, { timeout: 2000 })
+    expect(ratesApi.upsertRateCard).not.toHaveBeenCalled()
   })
 })

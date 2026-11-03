@@ -19,6 +19,7 @@ import {
   getLatestCalculation,
   updateProposalLineItem,
   lineTargetKey,
+  lineCountryIdOf,
   describeApiError,
 } from '../../api/proposalsApi'
 import { deserializeBackendProposal } from '../calculator/calculatorData'
@@ -34,20 +35,27 @@ function draftVersionOf(detail) {
   return (detail?.versions || []).filter((v) => v.status === 'draft').sort((a, b) => b.version_no - a.version_no)[0] || null
 }
 
+/** Country + target keys of saved lines or calculated lines (both carry country_id). */
 function targetKeysOf(lines) {
-  return new Set((lines || []).map((li) => lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id })))
+  return new Set(
+    (lines || []).map((li) =>
+      lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id, countryId: li.country_id }),
+    ),
+  )
 }
 
-/** Product-level discounts for the calculation request, keyed by the product codes in `calcData`. */
+/** Product-level discounts for the calculation request, keyed by the product keys in `calcData`. */
 function productDiscounts(calcData, overallPct, servicePct) {
   const product_subscription_discounts = {}
   const product_service_discounts = {}
   ;(calcData?.snapshot_payload?.products || []).forEach((p) => {
+    // "<code>@<country>" when a product is sold in more than one country; older snapshots have only product_code.
+    const key = p.product_key || p.product_code
     if (overallPct > 0 && Number(p.subscription_subtotal_before_discount) > 0) {
-      product_subscription_discounts[p.product_code] = overallPct
+      product_subscription_discounts[key] = overallPct
     }
     if (servicePct > 0 && Number(p.service_subtotal_before_discount) > 0) {
-      product_service_discounts[p.product_code] = servicePct
+      product_service_discounts[key] = servicePct
     }
   })
   return { product_subscription_discounts, product_service_discounts }
@@ -202,9 +210,12 @@ export function PricingPage() {
     try {
       // 1. Line discounts are stored on the proposal line items.
       const detail = await getProposal(effectiveProposalId)
-      const lines = draftVersionOf(detail)?.line_items || []
+      const lines = (draftVersionOf(detail)?.line_items || []).map((li) => ({
+        ...li,
+        country_id: lineCountryIdOf(li, detail.countries),
+      }))
       for (const li of lines) {
-        const key = lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id })
+        const key = lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id, countryId: li.country_id })
         const raw = lineItemDiscounts[key]?.value
         const wanted = raw === '' || raw === undefined || raw === null ? null : Number(raw)
         const current = li.discount_pct === null || li.discount_pct === undefined ? null : Number(li.discount_pct)
@@ -218,7 +229,14 @@ export function PricingPage() {
       const overallPct = Number(overall.value) || 0
       const servicePct = Number(service.value) || 0
       let codesFrom = calcApiResult?.data
-      const snapshotKeys = targetKeysOf(codesFrom?.snapshot_payload?.all_subscription_line_items)
+      // Snapshots written before multi-region support have no country on their lines: they were
+      // priced in the primary country, which lineCountryIdOf falls back to.
+      const snapshotKeys = targetKeysOf(
+        (codesFrom?.snapshot_payload?.all_subscription_line_items || []).map((li) => ({
+          ...li,
+          country_id: lineCountryIdOf(li, detail.countries),
+        })),
+      )
       const currentKeys = targetKeysOf(lines)
       const sameLines = snapshotKeys.size === currentKeys.size && [...currentKeys].every((k) => snapshotKeys.has(k))
       if ((overallPct > 0 || servicePct > 0) && !sameLines) {
@@ -308,6 +326,7 @@ export function PricingPage() {
           <PricingEditor
             countryConfig={activeCountry}
             isPrimary={isPrimary}
+            primaryCountryId={countryConfigs?.[0]?.countryId}
             focusedFamilyId={focusedFamilyId}
             lookup={lookup}
             savedLineKeys={savedLineItems ? targetKeysOf(savedLineItems) : null}

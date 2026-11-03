@@ -9,6 +9,8 @@
  * must come from a saved master record.
  */
 
+import { lineCountryIdOf, lineTargetKey } from '../../api/proposalsApi'
+
 /** A new, empty proposal header. */
 export const INITIAL_CLIENT_INFO = {
   proposalId: null,
@@ -205,8 +207,8 @@ function familyIdForFeature(products, feature) {
  * - `latestCalc` (GET .../calculations/latest) supplies the contract term, which the
  *   backend records only on the calculation snapshot.
  *
- * Line items and service lines belong to the proposal version, not to a country, so they
- * are attached to the primary country block only.
+ * Line items and service lines belong to their country block (proposal_country_id); lines
+ * saved before multi-region support have none and belong to the primary country block.
  */
 export function deserializeBackendProposal(backendProposal, { masters = {}, latestCalc = null } = {}) {
   const clientInfo = {
@@ -227,7 +229,11 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
       .filter((v) => v.status === 'draft')
       .sort((a, b) => b.version_no - a.version_no)[0] ||
     [...(backendProposal.versions || [])].sort((a, b) => b.version_no - a.version_no)[0]
-  const lineItems = draftVersion?.line_items || []
+  // Every saved line carries the country it is priced in (country_id), for per-country keys.
+  const lineItems = (draftVersion?.line_items || []).map((li) => ({
+    ...li,
+    country_id: lineCountryIdOf(li, backendProposal.countries),
+  }))
   const serviceLines = draftVersion?.service_lines || []
   const term = latestCalc?.contract_term_months ?? latestCalc?.snapshot_payload?.contract_term_months ?? ''
 
@@ -236,8 +242,7 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
     return a.id - b.id
   })
 
-  const countryConfigs = blocks.map((c, idx) => {
-    const isPrimary = idx === 0
+  const countryConfigs = blocks.map((c) => {
     const countryMaster =
       (masters.countries || []).find((m) => Number(m.id) === Number(c.country_id)) || c.country || {}
     const currencyCode = countryCurrencyCode(countryMaster)
@@ -246,22 +251,25 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
     const familyEntry = (famId) => {
       const key = famId ?? 'unassigned'
       if (!familyMap.has(key)) {
-        familyMap.set(key, { familyId: famId, selectedPackId: null, selectedFeatureIds: [], featureHeadcounts: {} })
+        familyMap.set(key, { familyId: famId, selectedPackId: null, packUomId: null, selectedFeatureIds: [], featureHeadcounts: {}, featureUomIds: {} })
       }
       return familyMap.get(key)
     }
-    if (isPrimary) {
-      lineItems.forEach((li) => {
-        if (li.pack_version_id) {
-          familyEntry(familyIdForPackVersion(masters.packs, li.pack_version_id)).selectedPackId = li.pack_version_id
-        } else if (li.feature_id) {
-          const entry = familyEntry(familyIdForFeature(masters.products, li.feature))
-          if (!entry.selectedFeatureIds.includes(li.feature_id)) entry.selectedFeatureIds.push(li.feature_id)
-          // The saved quantity of each standalone feature line.
-          entry.featureHeadcounts[li.feature_id] = Number(li.quantity)
-        }
-      })
-    }
+    // Each line belongs to its own country block (lines without one belong to the primary block).
+    const inThisCountry = (line) => lineCountryIdOf(line, backendProposal.countries) === Number(c.country_id)
+    lineItems.filter(inThisCountry).forEach((li) => {
+      if (li.pack_version_id) {
+        const entry = familyEntry(familyIdForPackVersion(masters.packs, li.pack_version_id))
+        entry.selectedPackId = li.pack_version_id
+        entry.packUomId = li.uom_id ?? null
+      } else if (li.feature_id) {
+        const entry = familyEntry(familyIdForFeature(masters.products, li.feature))
+        if (!entry.selectedFeatureIds.includes(li.feature_id)) entry.selectedFeatureIds.push(li.feature_id)
+        // The saved quantity of each standalone feature line.
+        entry.featureHeadcounts[li.feature_id] = Number(li.quantity)
+        entry.featureUomIds[li.feature_id] = li.uom_id ?? null
+      }
+    })
 
     return {
       id: `cfg-country-${c.id}`,
@@ -280,11 +288,13 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
         familyId: f.familyId,
         headcount: c.user_headcount ?? '',
         selectedPackId: f.selectedPackId,
+        packUomId: f.packUomId,
         selectedFeatureIds: f.selectedFeatureIds,
         featureHeadcounts: f.featureHeadcounts,
+        featureUomIds: f.featureUomIds,
       })),
-      serviceLines: isPrimary
-        ? serviceLines.map((sl) => ({
+      serviceLines: serviceLines.some(inThisCountry)
+        ? serviceLines.filter(inThisCountry).map((sl) => ({
             id: `srv-${sl.id}`,
             backendId: sl.id,
             roleName: sl.role_name,
@@ -297,11 +307,11 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
     }
   })
 
-  // Line discounts are stored on the line items; key them by target for Pricing & Discounts.
+  // Line discounts are stored on the line items; key them by country + target for Pricing & Discounts.
   const lineDiscountsByTarget = {}
   lineItems.forEach((li) => {
     if (li.discount_pct !== null && li.discount_pct !== undefined && Number(li.discount_pct) > 0) {
-      const key = li.pack_version_id ? `pack:${li.pack_version_id}` : `feature:${li.feature_id}`
+      const key = lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id, countryId: li.country_id })
       lineDiscountsByTarget[key] = Number(li.discount_pct)
     }
   })

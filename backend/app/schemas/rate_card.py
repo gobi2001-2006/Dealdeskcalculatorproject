@@ -232,6 +232,14 @@ class RateCardBase(BaseModel):
         decimal_places=4,
         description="Internal COGS unit cost per UOM",
     )
+    amc_percentage: Optional[Decimal] = Field(
+        default=None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        max_digits=7,
+        decimal_places=4,
+        description="Annual Maintenance (AMC) percentage on license fee (0-100%)",
+    )
 
 
 class RateCardCreate(RateCardBase):
@@ -298,6 +306,14 @@ class RateCardUpdate(BaseModel):
         ge=Decimal("0"),
         max_digits=18,
         decimal_places=4,
+    )
+    amc_percentage: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        max_digits=7,
+        decimal_places=4,
+        description="Annual Maintenance (AMC) percentage on license fee (0-100%)",
     )
 
     @field_validator(

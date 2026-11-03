@@ -73,9 +73,18 @@ function DiscountInput({ id, label, value, reason, error, onValue, onReason, dis
  *  - one overall services discount (%) per product    -> sent with the calculation
  * All amounts are read from the latest backend calculation; nothing is computed here.
  */
+// Billing period of the unit rate, from the backend calculation (pricing model's unit_rate_basis).
+function unitBasisSuffix(basis) {
+  if (basis === 'monthly') return ' / mo'
+  if (basis === 'annual') return ' / yr'
+  if (basis === 'one_time') return ' (one-time)'
+  return ''
+}
+
 export function PricingEditor({
   countryConfig,
   isPrimary = true,
+  primaryCountryId = null,
   focusedFamilyId,
   lookup = buildCatalogueLookup(),
   savedLineKeys = null,
@@ -95,8 +104,13 @@ export function PricingEditor({
   const snapshotLines = Array.isArray(snapshot.all_subscription_line_items) ? snapshot.all_subscription_line_items : []
   const snapshotServices = Array.isArray(snapshot.all_service_lines) ? snapshot.all_service_lines : []
   const snapshotProducts = Array.isArray(snapshot.products) ? snapshot.products : []
+  // Calculated lines carry the country they were priced in; older snapshots priced everything in the primary country.
+  const countryOf = (row) => Number(row.country_id ?? primaryCountryId)
   const calcLine = (key) =>
-    snapshotLines.find((li) => lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id }) === key) || null
+    snapshotLines.find(
+      (li) => lineTargetKey({ packVersionId: li.pack_version_id, featureId: li.feature_id, countryId: countryOf(li) }) === key,
+    ) || null
+  const countryProducts = snapshotProducts.filter((p) => countryOf(p) === Number(countryConfig.countryId))
 
   const overallError = validateDiscountPct(overallDiscount.value)
   const serviceError = validateDiscountPct(serviceDiscount.value)
@@ -120,10 +134,15 @@ export function PricingEditor({
         <td className="py-3 px-3">
           {calculated ? (
             <span className="text-[11px] font-mono text-slate-800 font-semibold">
-              {formatMoney(calculated.rate_per_unit, calculated.currency_code)} / unit / mo
+              {formatMoney(calculated.rate_per_unit, calculated.currency_code)} / {calculated.uom_name || 'unit'}
+              {unitBasisSuffix(calculated.unit_rate_basis)}
+              {calculated.unit_rate_basis === 'one_time' && calculated.amc_percentage != null && (
+                <span className="text-[10px] text-slate-500 font-normal block">+ AMC {Number(calculated.amc_percentage)}% / yr</span>
+              )}
               {Number(calculated.platform_fee) > 0 && (
                 <span className="text-[10px] text-slate-500 font-normal block">
-                  + {formatMoney(calculated.platform_fee, calculated.currency_code)} platform / yr
+                  + {formatMoney(calculated.platform_fee, calculated.currency_code)} platform
+                  {calculated.fixed_fee_basis === 'one_time' ? ' (one-time)' : calculated.fixed_fee_basis === 'annual' ? ' / yr' : ''}
                 </span>
               )}
             </span>
@@ -144,7 +163,7 @@ export function PricingEditor({
           )}
         </td>
         <td className="py-3 px-4">
-          {isPrimary ? (
+          {(
             <DiscountInput
               id={`line-discount-${key}`}
               label={`Discount for ${title}`}
@@ -155,8 +174,6 @@ export function PricingEditor({
               onValue={(v) => onUpdateLineDiscount(key, { value: v })}
               onReason={(r) => onUpdateLineDiscount(key, { reason: r })}
             />
-          ) : (
-            <span className="text-[11px] text-slate-400">Not priced (secondary country)</span>
           )}
         </td>
         <td className="py-3 px-3 text-right">
@@ -190,7 +207,7 @@ export function PricingEditor({
                   </span>
                 )}
                 <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                  {isPrimary ? 'Primary (priced)' : 'Secondary'}
+                  {isPrimary ? 'Primary country' : 'Additional country'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
@@ -199,12 +216,10 @@ export function PricingEditor({
             </div>
           </div>
         </div>
-        {!isPrimary && (
-          <p className="mt-3 text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
-            The backend currently prices every line with the primary country&apos;s rates. Lines and discounts are
-            managed on the primary country.
-          </p>
-        )}
+        <p className="mt-3 text-[11px] text-slate-600">
+          Priced with {countryConfig.countryName || 'this country'}&apos;s rate card and currency; totals are converted to the
+          reporting currency on the Proposal Summary.
+        </p>
       </section>
 
       {/* Product family line items */}
@@ -243,7 +258,7 @@ export function PricingEditor({
                       <tr>
                         <th scope="col" className="py-2.5 px-4 min-w-[220px]">Item</th>
                         <th scope="col" className="py-2.5 px-3 min-w-[130px]">Rate Card</th>
-                        <th scope="col" className="py-2.5 px-3">Qty / month</th>
+                        <th scope="col" className="py-2.5 px-3">Quantity</th>
                         <th scope="col" className="py-2.5 px-3 min-w-[120px]">Annual Gross</th>
                         <th scope="col" className="py-2.5 px-4 min-w-[260px]">Line Discount</th>
                         <th scope="col" className="py-2.5 px-3 min-w-[120px] text-right">Annual Net</th>
@@ -252,7 +267,7 @@ export function PricingEditor({
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {pack &&
                         renderLineRow({
-                          key: lineTargetKey({ packVersionId: fam.selectedPackId }),
+                          key: lineTargetKey({ packVersionId: fam.selectedPackId, countryId: Number(countryConfig.countryId) }),
                           icon: <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-[#F26522]" aria-hidden="true" />,
                           title: pack.name,
                           subtitle: `${pack.code}${pack.versionNo ? ` · v${pack.versionNo}` : ''} · ${pack.featureIds.length} features`,
@@ -261,7 +276,7 @@ export function PricingEditor({
                       {(fam.selectedFeatureIds || []).map((featId) => {
                         const feat = lookup.feature(featId)
                         return renderLineRow({
-                          key: lineTargetKey({ featureId: featId }),
+                          key: lineTargetKey({ featureId: featId, countryId: Number(countryConfig.countryId) }),
                           icon: <Sparkles className="w-3.5 h-3.5 text-orange-500 shrink-0" aria-hidden="true" />,
                           title: feat.name,
                           subtitle: `${feat.code}${feat.productName ? ` · ${feat.productName}` : ''} · à la carte`,
@@ -277,7 +292,7 @@ export function PricingEditor({
         )}
       </div>
 
-      {isPrimary && (
+      {(
         <>
           {/* Overall subscription discount (per product) */}
           <section aria-label="Overall Subscription Discount" className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
@@ -297,7 +312,7 @@ export function PricingEditor({
               onValue={(v) => onUpdateOverallDiscount({ value: v })}
               onReason={(r) => onUpdateOverallDiscount({ reason: r })}
             />
-            {snapshotProducts.length > 0 && (
+            {countryProducts.length > 0 && (
               <table className="w-full text-left text-[11px]" aria-label="Subscription totals by product">
                 <thead className="text-[10px] uppercase text-slate-500 border-b border-slate-200">
                   <tr>
@@ -308,8 +323,8 @@ export function PricingEditor({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono">
-                  {snapshotProducts.map((p) => (
-                    <tr key={p.product_code}>
+                  {countryProducts.map((p) => (
+                    <tr key={p.product_key || p.product_code}>
                       <td className="py-1.5 font-sans">{p.product_name} <span className="text-slate-400">({p.product_code})</span></td>
                       <td className="py-1.5 text-right">{formatMoney(p.subscription_subtotal_before_discount, p.native_currency_code)}</td>
                       <td className="py-1.5 text-right">
@@ -340,7 +355,7 @@ export function PricingEditor({
             </p>
 
             {(countryConfig.serviceLines || []).length === 0 ? (
-              <p className="text-[11px] text-slate-400">No service lines on this proposal.</p>
+              <p className="text-[11px] text-slate-400">No service lines for {countryConfig.countryName || 'this country'}.</p>
             ) : (
               <table className="w-full text-left text-[11px]" aria-label="Service lines">
                 <thead className="text-[10px] uppercase text-slate-500 border-b border-slate-200">
@@ -382,12 +397,12 @@ export function PricingEditor({
               onValue={(v) => onUpdateServiceDiscount({ value: v })}
               onReason={(r) => onUpdateServiceDiscount({ reason: r })}
             />
-            {snapshotProducts.some((p) => Number(p.service_subtotal_before_discount) > 0) && (
+            {countryProducts.some((p) => Number(p.service_subtotal_before_discount) > 0) && (
               <ul className="text-[11px] font-mono text-slate-700 space-y-0.5">
-                {snapshotProducts
+                {countryProducts
                   .filter((p) => Number(p.service_subtotal_before_discount) > 0)
                   .map((p) => (
-                    <li key={p.product_code} className="flex items-center gap-1.5">
+                    <li key={p.product_key || p.product_code} className="flex items-center gap-1.5">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
                       {p.product_code}: {formatMoney(p.service_subtotal_before_discount, p.native_currency_code)} − {p.service_discount_pct}% ={' '}
                       <strong>{formatMoney(p.service_total_after_discount, p.native_currency_code)}</strong>

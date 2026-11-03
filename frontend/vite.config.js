@@ -17,6 +17,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.js',
+    // Browser E2E specs in e2e/ run with Playwright, not Vitest.
+    include: ['src/**/*.{test,spec}.{js,jsx}'],
     testTimeout: 15000,
   },
 })
