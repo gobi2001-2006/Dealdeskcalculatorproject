@@ -132,11 +132,12 @@ def seed(db: Session) -> SeedIds:
             "name": "Per Employee Per Month",
             "has_fixed_component": False,
             "has_unit_component": True,
-            "uom_locked_id": uom_employee.id,
         },
     )
-    if pepm.uom_locked_id != uom_employee.id:
-        pepm.uom_locked_id = uom_employee.id
+    # PEPM is charged per Active Employees (with ESS) or (non-ESS): not locked to one UOM; the two
+    # allowed UOMs come from pricing_model_uoms below (business decision 2026-11-06).
+    if pepm.uom_locked_id is not None:
+        pepm.uom_locked_id = None
         db.flush()
 
     platform_sub = _get_or_create(

@@ -526,6 +526,10 @@ def add_proposal_country(
             pricing_model_id=data.pricing_model_id,
             user_headcount=data.user_headcount,
             is_primary_deployment=data.is_primary_deployment,
+            subscription_discount_pct=data.subscription_discount_pct,
+            subscription_discount_reason=data.subscription_discount_reason,
+            service_discount_pct=data.service_discount_pct,
+            service_discount_reason=data.service_discount_reason,
         )
         db.add(new_pc)
         db.commit()
@@ -1034,7 +1038,8 @@ def update_proposal_country(
     proposal_country_id: int,
     data: ProposalCountryUpdate,
 ) -> ProposalCountry:
-    """Update a country block (country, deployment model, pricing model, headcount, primary flag)."""
+    """Update a country block (country, deployment and pricing model, headcount, primary flag,
+    and the country's overall subscription / services discounts)."""
     try:
         _require_draft_proposal(db, proposal_id)
         block = _get_country_block(db, proposal_id, proposal_country_id)

@@ -87,7 +87,8 @@ def client():
     db.add(uom_pepm)
     db.flush()
 
-    # PEPM is locked to Active Employees (with ESS) in master data (deployment combinations workbook).
+    # Fixture: a pricing model locked to one UOM (uom_locked_id), to cover the lock mechanism. Real PEPM
+    # master data allows ESS and non-ESS since 2026-11-06 (see tests/test_workbook_pricing.py).
     pm_pepm = PricingModel(code="pepm", name="Per Employee Per Month", status="active", has_unit_component=True,
                            uom_locked_id=uom_pepm.id)
     db.add(pm_pepm)

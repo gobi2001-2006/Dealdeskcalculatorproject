@@ -40,7 +40,9 @@ PLATFORM = {
             "platform_total": (125000, 250000, 500000), "subscription_total": (1800000, 4800000, 9000000),
             "combined": (1925000, 5050000, 9500000)},
 }
-PEPM = {"ESS": {"rate": (3, 4, 5), "total": (1800000, 4800000, 9000000)}}
+# PEPM is allowed for both UOM1 types (business decision 2026-11-06); workbook rows 53-60 and 63-70.
+PEPM = {"ESS": {"rate": (3, 4, 5), "total": (1800000, 4800000, 9000000)},
+        "NON": {"rate": (3, 4, 5), "total": (1800000, 4800000, 9000000)}}
 LICENSE = {
     "ESS": {"fee": (100000, 200000, 300000), "amc": (5, 7, 10),
             "licence_total": (1000000000, 4000000000, 9000000000), "annual_amc": (50000000, 280000000, 900000000),
@@ -79,14 +81,16 @@ def wb():
             for c in ("shared_cloud", "private_cloud", "on_premise")}
     ess = UnitOfMeasure(code="employee", name="Active Employees (with ESS)", category="uom1", status="active")
     non = UnitOfMeasure(code="active_employees_non_ess", name="Active Employees (non-ESS)", category="uom1", status="active")
+    cand = UnitOfMeasure(code="candidate", name="Candidate Inflow", category="uom2", status="active")
     user = User(email="wb@example.test", full_name="Workbook", password_hash="!", is_active=True)
-    db.add_all([india, *tiers, *deps.values(), ess, non, user])
+    db.add_all([india, *tiers, *deps.values(), ess, non, cand, user])
     db.flush()
     pms = {
         "platform": PricingModel(code="platform_subscription", name="Platform + Subscription", has_fixed_component=True,
                                  has_unit_component=True, fixed_fee_basis="annual", unit_rate_basis="monthly"),
+        # Not locked: the allowed UOMs come from pricing_model_uoms (ESS and non-ESS), as in the migration.
         "pepm": PricingModel(code="pepm", name="Per Employee Per Month", has_unit_component=True,
-                             unit_rate_basis="monthly", uom_locked_id=ess.id),
+                             unit_rate_basis="monthly"),
         "license": PricingModel(code="license_amc", name="License Fee + AMC", has_unit_component=True,
                                 unit_rate_basis="one_time"),
     }
@@ -100,6 +104,8 @@ def wb():
         DeploymentPricingOption(deployment_model_id=deps["on_premise"].id, pricing_model_id=pms["license"].id),
         PricingModelUom(pricing_model_id=pms["license"].id, uom_id=ess.id, is_default=True),
         PricingModelUom(pricing_model_id=pms["license"].id, uom_id=non.id),
+        PricingModelUom(pricing_model_id=pms["pepm"].id, uom_id=ess.id, is_default=True),
+        PricingModelUom(pricing_model_id=pms["pepm"].id, uom_id=non.id),
     ])
     rcv = RateCardVersion(version_no="RC-WB", name="Workbook", status="active", valid_from=date(2026, 1, 1))
     fam = ProductFamily(code="TA", name="Talent Acquisition")
@@ -125,7 +131,7 @@ def wb():
 
     app.dependency_overrides[get_db] = override
     ids = SimpleNamespace(inr=inr.id, india=india.id, tiers=[t.id for t in tiers], dep={k: v.id for k, v in deps.items()},
-                          pm={k: v.id for k, v in pms.items()}, uom={"ESS": ess.id, "NON": non.id}, rcv=rcv.id,
+                          pm={k: v.id for k, v in pms.items()}, uom={"ESS": ess.id, "NON": non.id, "CAND": cand.id}, rcv=rcv.id,
                           pv=pv.id, user=user.id)
     try:
         yield SimpleNamespace(client=TestClient(app), ids=ids, Session=Session)
@@ -168,8 +174,9 @@ def configure_workbook(env):
             r = save(env, dep, "platform", uom, [{"tier_id": t, "fixed_fee": str(cfg["fee"][i]), "unit_rate": str(cfg["rate"][i])}
                                                   for i, t in enumerate(env.ids.tiers)])
             assert r.status_code == 200, r.text
-        r = save(env, dep, "pepm", "ESS", [{"tier_id": t, "unit_rate": str(PEPM["ESS"]["rate"][i])} for i, t in enumerate(env.ids.tiers)])
-        assert r.status_code == 200, r.text
+        for uom, cfg in PEPM.items():
+            r = save(env, dep, "pepm", uom, [{"tier_id": t, "unit_rate": str(cfg["rate"][i])} for i, t in enumerate(env.ids.tiers)])
+            assert r.status_code == 200, r.text
     for uom, cfg in LICENSE.items():
         r = save(env, "on_premise", "license", uom, [{"tier_id": t, "unit_rate": str(cfg["fee"][i]), "amc_percentage": str(cfg["amc"][i])}
                                                       for i, t in enumerate(env.ids.tiers)])
@@ -193,20 +200,40 @@ def test_platform_subscription_workbook(wb, dep, uom, tier):
 
 
 @pytest.mark.parametrize("dep", ["shared_cloud", "private_cloud"])
+@pytest.mark.parametrize("uom", ["ESS", "NON"])
 @pytest.mark.parametrize("tier", [0, 1, 2])
-def test_pepm_workbook(wb, dep, tier):
+def test_pepm_workbook(wb, dep, uom, tier):
+    # PEPM total = monthly rate x employees x contract months (workbook: rate x users x 12 x 5).
     configure_workbook(wb)
-    res = price(wb, tier, dep, "pepm", "ESS", QTY[tier])
+    res = price(wb, tier, dep, "pepm", uom, QTY[tier])
     assert res.status_code == 200, res.text
     li = res.json()["snapshot_payload"]["all_subscription_line_items"][0]
-    assert li["contract_subscription_before_discount"] == PEPM["ESS"]["total"][tier]
+    assert li["contract_subscription_before_discount"] == PEPM[uom]["total"][tier]
     assert li["contract_platform_fee"] == 0
+    assert li["uom_id"] == wb.ids.uom[uom]
 
 
-def test_pepm_non_ess_rate_is_rejected_by_the_locked_uom(wb):
-    r = save(wb, "shared_cloud", "pepm", "NON", [{"tier_id": wb.ids.tiers[0], "unit_rate": "3"}])
-    assert r.status_code == 400
-    assert "locked" in r.json()["detail"]
+def test_pepm_offers_exactly_ess_and_non_ess(wb):
+    r = wb.client.get(f"/api/masters/pricing-models/{wb.ids.pm['pepm']}/allowed-uoms")
+    assert r.status_code == 200, r.text
+    assert [u["code"] for u in r.json()] == ["employee", "active_employees_non_ess"]  # ESS is the default, listed first
+
+
+def test_pepm_rejects_a_uom_outside_ess_and_non_ess(wb):
+    r = save(wb, "shared_cloud", "pepm", "CAND", [{"tier_id": wb.ids.tiers[0], "unit_rate": "3"}])
+    assert r.status_code == 400, r.text
+    assert "Candidate Inflow" in r.json()["detail"]
+
+
+def test_pepm_ess_and_non_ess_rates_resolve_by_the_lines_uom(wb):
+    # Different rates per UOM prove the rate is matched to the line's UOM, not shared.
+    tiers = wb.ids.tiers
+    assert save(wb, "shared_cloud", "pepm", "ESS", [{"tier_id": t, "unit_rate": "4"} for t in tiers]).status_code == 200
+    assert save(wb, "shared_cloud", "pepm", "NON", [{"tier_id": t, "unit_rate": "2"} for t in tiers]).status_code == 200
+    ess = price(wb, 1, "shared_cloud", "pepm", "ESS", 20000, months=24).json()["snapshot_payload"]["all_subscription_line_items"][0]
+    non = price(wb, 1, "shared_cloud", "pepm", "NON", 15000, months=24).json()["snapshot_payload"]["all_subscription_line_items"][0]
+    assert ess["contract_subscription_before_discount"] == 4 * 20000 * 24  # 1,920,000
+    assert non["contract_subscription_before_discount"] == 2 * 15000 * 24  # 720,000
 
 
 @pytest.mark.parametrize("uom", ["ESS", "NON"])

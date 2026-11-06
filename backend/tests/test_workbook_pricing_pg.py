@@ -49,7 +49,8 @@ def pg_wb(pg_engine, pg_client, pg_seed_ids):
 
     save("shared_cloud", "platform", "ESS", [{"tier_id": t, "fixed_fee": str(PLATFORM["ESS"]["fee"][i]),
                                               "unit_rate": str(PLATFORM["ESS"]["rate"][i])} for i, t in enumerate(tiers)])
-    save("shared_cloud", "pepm", "ESS", [{"tier_id": t, "unit_rate": str(PEPM["ESS"]["rate"][i])} for i, t in enumerate(tiers)])
+    for uom in ("ESS", "NON"):
+        save("shared_cloud", "pepm", uom, [{"tier_id": t, "unit_rate": str(PEPM[uom]["rate"][i])} for i, t in enumerate(tiers)])
     for uom in ("ESS", "NON"):
         save("on_premise", "license", uom, [{"tier_id": t, "unit_rate": str(LICENSE[uom]["fee"][i]),
                                              "amc_percentage": str(LICENSE[uom]["amc"][i])} for i, t in enumerate(tiers)])
@@ -81,10 +82,12 @@ def test_pg_platform_subscription_ess(pg_wb, tier):
     assert li["contract_subscription_before_discount"] == PLATFORM["ESS"]["combined"][tier]
 
 
+@pytest.mark.parametrize("uom", ["ESS", "NON"])
 @pytest.mark.parametrize("tier", [0, 1, 2])
-def test_pg_pepm_ess(pg_wb, tier):
-    li = pg_wb(tier, "shared_cloud", "pepm", "ESS", QTY[tier])
-    assert li["contract_subscription_before_discount"] == PEPM["ESS"]["total"][tier]
+def test_pg_pepm(pg_wb, uom, tier):
+    # Seeded master data + migration a3b4c5d6e7f8: PEPM accepts both ESS and non-ESS.
+    li = pg_wb(tier, "shared_cloud", "pepm", uom, QTY[tier])
+    assert li["contract_subscription_before_discount"] == PEPM[uom]["total"][tier]
 
 
 @pytest.mark.parametrize("uom", ["ESS", "NON"])

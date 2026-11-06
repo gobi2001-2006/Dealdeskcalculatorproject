@@ -423,7 +423,13 @@ class PricingCalculationEngine:
                 (item["_dec_item_subscription_after_discount"] for item in p_items),
                 Decimal("0.00"),
             )
-            sub_discount_pct = Decimal(str(product_discounts.get(pub_key, Decimal("0.00"))))
+            # Overall discounts are set per country (on the product's country block). A value sent
+            # with the calculation request is still accepted for a product whose country has none,
+            # but never both: the two would otherwise stack.
+            block = blocks_by_id.get(prod_key[0])
+            sub_discount_pct, sub_discount_source = self._overall_discount(
+                block, "subscription_discount_pct", pub_key, product_discounts, "subscription"
+            )
             if sub_discount_pct < 0 or sub_discount_pct > 100:
                 raise InvalidDiscountError(
                     f"Product subscription discount % for {pub_key} must be between 0 and 100, got {sub_discount_pct}"
@@ -447,7 +453,9 @@ class PricingCalculationEngine:
                 Decimal("0.00"),
             )
             # One overall service discount per product (PDF section 4); never per service line.
-            serv_discount_pct = Decimal(str(product_service_discounts.get(pub_key, Decimal("0.00"))))
+            serv_discount_pct, serv_discount_source = self._overall_discount(
+                block, "service_discount_pct", pub_key, product_service_discounts, "services"
+            )
             if serv_discount_pct < 0 or serv_discount_pct > 100:
                 raise InvalidDiscountError(
                     f"Product service discount % for {pub_key} must be between 0 and 100, got {serv_discount_pct}"
@@ -505,6 +513,10 @@ class PricingCalculationEngine:
                 "contract_term_months": int(term_dec),
                 "subscription_subtotal_before_discount": float(sub_subtotal_before_discount),
                 "subscription_discount_pct": float(sub_discount_pct),
+                "subscription_discount_source": sub_discount_source,
+                "subscription_discount_reason": (
+                    block.subscription_discount_reason if block is not None and sub_discount_source == "country" else None
+                ),
                 "subscription_discount_amount": float(sub_discount_amt),
                 "subscription_total_after_discount": float(sub_total_after_discount),
                 "contract_subscription_subtotal_before_discount": float(contract_sub_subtotal_before_discount),
@@ -512,6 +524,10 @@ class PricingCalculationEngine:
                 "contract_subscription_total_after_discount": float(contract_sub_total_after_discount),
                 "service_subtotal_before_discount": float(serv_subtotal_before_discount),
                 "service_discount_pct": float(serv_discount_pct),
+                "service_discount_source": serv_discount_source,
+                "service_discount_reason": (
+                    block.service_discount_reason if block is not None and serv_discount_source == "country" else None
+                ),
                 "service_discount_amount": float(serv_discount_amt),
                 "service_total_after_discount": float(serv_total_after_discount),
                 "product_native_total": float(product_native_total),
@@ -570,7 +586,14 @@ class PricingCalculationEngine:
                 "deployment_model_id": deployment_model_id,
                 "pricing_model_id": pricing_model_id,
                 "country_blocks": [
-                    {k: v for k, v in block_fields(b).items()} for b in primary_first
+                    {
+                        **block_fields(b),
+                        "subscription_discount_pct": None if b.subscription_discount_pct is None else float(b.subscription_discount_pct),
+                        "subscription_discount_reason": b.subscription_discount_reason,
+                        "service_discount_pct": None if b.service_discount_pct is None else float(b.service_discount_pct),
+                        "service_discount_reason": b.service_discount_reason,
+                    }
+                    for b in primary_first
                 ],
                 "customer_tier_id": customer_tier_id,
                 "contract_term_months": int(term_dec),
@@ -614,6 +637,33 @@ class PricingCalculationEngine:
         }
 
     @staticmethod
+    def _overall_discount(
+        block: Optional[ProposalCountry],
+        field: str,
+        pub_key: str,
+        requested: Dict[str, Decimal],
+        label: str,
+    ) -> tuple:
+        """The overall discount % for one product and where it came from.
+
+        Source of truth is the product's country block ("country"). A % sent with the calculation
+        request ("request") is accepted only when that country has none set, so a discount can
+        never be applied twice. Returns (pct, source); source is None when no discount applies.
+        """
+        stored = getattr(block, field, None) if block is not None else None
+        if pub_key in requested:
+            if stored is not None:
+                country = block.country.name if block.country else f"country block {block.id}"
+                raise InvalidDiscountError(
+                    f"The overall {label} discount for {country} is set on the country ({Decimal(stored).normalize()}%); "
+                    f"do not also send one for {pub_key} with the calculation"
+                )
+            return Decimal(str(requested[pub_key])), "request"
+        if stored is not None:
+            return Decimal(stored), "country"
+        return Decimal("0.00"), None
+
+    @staticmethod
     def _inputs_fingerprint(proposal: Proposal, version: ProposalVersion) -> str:
         """Hash of the persisted inputs a calculation depends on.
 
@@ -634,6 +684,13 @@ class PricingCalculationEngine:
             "rate_card_version_id": version.rate_card_version_id,
             "countries": sorted(
                 [c.country_id, c.deployment_model_id, c.pricing_model_id, c.user_headcount, bool(c.is_primary_deployment)]
+                # Country discounts are added only when set, so fingerprints of proposals saved before
+                # country-level discounts existed are unchanged (no false "stale" flags).
+                + (
+                    [dec(c.subscription_discount_pct), dec(c.service_discount_pct)]
+                    if c.subscription_discount_pct is not None or c.service_discount_pct is not None
+                    else []
+                )
                 for c in proposal.countries
             ),
             "lines": sorted(

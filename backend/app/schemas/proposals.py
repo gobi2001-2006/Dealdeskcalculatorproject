@@ -572,6 +572,28 @@ class ProposalCountryBase(BaseModel):
         False,
         description="Whether this country is the primary deployment location",
     )
+    subscription_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall subscription discount % for this country (NULL = none)",
+    )
+    subscription_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall subscription discount",
+    )
+    service_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall services discount % for this country (NULL = none)",
+    )
+    service_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall services discount",
+    )
 
     @model_validator(mode="after")
     def validate_pricing_dimensions_together(self) -> "ProposalCountryBase":
@@ -602,6 +624,28 @@ class ProposalCountryUpdate(BaseModel):
     pricing_model_id: Optional[int] = Field(None, gt=0)
     user_headcount: Optional[int] = Field(None, ge=0)
     is_primary_deployment: Optional[bool] = None
+    subscription_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall subscription discount % for this country (NULL = none)",
+    )
+    subscription_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall subscription discount",
+    )
+    service_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall services discount % for this country (NULL = none)",
+    )
+    service_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall services discount",
+    )
 
     @field_validator(
         "proposal_id",

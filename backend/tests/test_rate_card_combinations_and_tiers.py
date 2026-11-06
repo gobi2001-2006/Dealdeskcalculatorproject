@@ -69,7 +69,10 @@ def test_invalid_deployment_pricing_combination_rejected(test_data: Session):
 
 
 def test_pepm_uom_validation_rejects_incompatible_uom(test_data: Session):
-    """PEPM is locked to Active Employees (with ESS) through pricing_models.uom_locked_id (master data)."""
+    """A pricing model locked through pricing_models.uom_locked_id rejects any other UOM.
+
+    The fixture locks its PEPM model to cover the mechanism; real PEPM master data allows ESS and
+    non-ESS since 2026-11-06 (tests/test_workbook_pricing.py)."""
     db = test_data
     shared = db.dep_shared
     pepm = db.pm_pepm
