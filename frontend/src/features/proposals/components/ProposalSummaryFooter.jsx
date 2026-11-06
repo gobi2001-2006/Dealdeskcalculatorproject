@@ -9,7 +9,7 @@ export function ProposalSummaryFooter({ countryConfigs = [], clientInfo }) {
     {
       term: 'Subscription (annual)',
       description:
-        'Platform fee + (rate per unit × volume per billing period × billing periods in a year: 12 for monthly rates, 1 for annual), after line discounts and the overall subscription discount. The unit of measure and billing period come from the rate card. A one-time licence fee per user is charged once, with its AMC % charged every year.',
+        'Platform fee + (rate per unit × volume per billing period × billing periods in a year: 12 for monthly rates, 1 for annual), after line discounts and the overall subscription discount set for that country. The unit of measure and billing period come from the rate card. A one-time licence fee per user is charged once, with its AMC % charged every year.',
     },
     {
       term: 'Subscription (contract term)',
@@ -19,7 +19,7 @@ export function ProposalSummaryFooter({ countryConfigs = [], clientInfo }) {
     {
       term: 'Service Fees',
       description:
-        'One-time professional services: man-days × day rate (hourly rate × standard hours per day), with one overall services discount per product.',
+        'One-time professional services: man-days × day rate (hourly rate × standard hours per day), with one overall services discount per country.',
     },
     {
       term: 'Full Contract Value (FCV)',

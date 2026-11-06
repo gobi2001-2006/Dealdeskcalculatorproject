@@ -21,7 +21,7 @@ function PendingCell() {
   )
 }
 
-function DiscountInput({ id, label, value, reason, error, onValue, onReason, disabled }) {
+function DiscountInput({ id, label, value, reason, error, onValue, onReason, disabled, reasonPlaceholder = 'Reason (kept on screen only)' }) {
   return (
     <div className="space-y-1.5 max-w-xs">
       <div className="flex items-center gap-1.5">
@@ -49,7 +49,7 @@ function DiscountInput({ id, label, value, reason, error, onValue, onReason, dis
           value={reason}
           disabled={disabled}
           onChange={(e) => onReason(e.target.value)}
-          placeholder="Reason (kept on screen only)"
+          placeholder={reasonPlaceholder}
           aria-label={`${label} reason`}
           className="flex-1 min-w-[100px] px-2 py-1 text-[11px] rounded border border-slate-300 bg-white text-slate-800 focus:outline-none focus:border-orange-500 disabled:bg-slate-100"
         />
@@ -69,8 +69,9 @@ function DiscountInput({ id, label, value, reason, error, onValue, onReason, dis
  *
  * Discount levels follow the pricing guide (section 4):
  *  - line discount (%) per pack / standalone feature  -> saved on the proposal line item
- *  - one overall subscription discount (%) per product -> sent with the calculation
- *  - one overall services discount (%) per product    -> sent with the calculation
+ *  - overall subscription discount (%) per country     -> saved on the country block
+ *  - overall services discount (%) per country         -> saved on the country block
+ * (Overall discounts are set per country: business decision 2026-11-06.)
  * All amounts are read from the latest backend calculation; nothing is computed here.
  */
 // Billing period of the unit rate, from the backend calculation (pricing model's unit_rate_basis).
@@ -294,14 +295,17 @@ export function PricingEditor({
 
       {(
         <>
-          {/* Overall subscription discount (per product) */}
+          {/* Overall subscription discount (per country) */}
           <section aria-label="Overall Subscription Discount" className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
             <div className="flex items-center gap-2">
               <Percent className="w-4 h-4 text-orange-600" aria-hidden="true" />
-              <h3 className="text-xs font-bold text-slate-900">Overall Subscription Discount</h3>
+              <h3 className="text-xs font-bold text-slate-900">
+                Overall Subscription Discount — {countryConfig.countryName || 'this country'}
+              </h3>
             </div>
             <p className="text-[11px] text-slate-500">
-              Applied by the backend to each product&apos;s subscription subtotal after line discounts.
+              Set for {countryConfig.countryName || 'this country'} only. The backend applies it to this country&apos;s
+              subscription subtotals after line discounts; other countries keep their own discount.
             </p>
             <DiscountInput
               id="overall-subscription-discount"
@@ -309,6 +313,7 @@ export function PricingEditor({
               value={overallDiscount.value}
               reason={overallDiscount.reason || ''}
               error={overallError}
+              reasonPlaceholder="Justification (saved with this country)"
               onValue={(v) => onUpdateOverallDiscount({ value: v })}
               onReason={(r) => onUpdateOverallDiscount({ reason: r })}
             />
@@ -350,7 +355,7 @@ export function PricingEditor({
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-slate-400" aria-hidden="true" />
               <span>
                 Service lines are edited on the Proposal Configurator. Individual service lines are never discounted:
-                one overall services discount is applied per product.
+                one overall services discount is set for {countryConfig.countryName || 'this country'}.
               </span>
             </p>
 
@@ -393,6 +398,7 @@ export function PricingEditor({
               value={serviceDiscount.value}
               reason={serviceDiscount.reason || ''}
               error={serviceError}
+              reasonPlaceholder="Justification (saved with this country)"
               disabled={(countryConfig.serviceLines || []).length === 0}
               onValue={(v) => onUpdateServiceDiscount({ value: v })}
               onReason={(r) => onUpdateServiceDiscount({ reason: r })}

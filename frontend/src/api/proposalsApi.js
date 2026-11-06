@@ -623,8 +623,14 @@ export function discountsFromSnapshot(calcData) {
     // more than one country); snapshots written before multi-region support only have product_code.
     const key = p.product_key || p.product_code
     if (!key) return
-    if (Number(p.subscription_discount_pct) > 0) product_subscription_discounts[key] = Number(p.subscription_discount_pct)
-    if (Number(p.service_discount_pct) > 0) product_service_discounts[key] = Number(p.service_discount_pct)
+    // Discounts stored on the country block (source "country") are applied by the backend from the
+    // saved proposal; repeating them in the request would be rejected as a second discount.
+    if (Number(p.subscription_discount_pct) > 0 && p.subscription_discount_source !== 'country') {
+      product_subscription_discounts[key] = Number(p.subscription_discount_pct)
+    }
+    if (Number(p.service_discount_pct) > 0 && p.service_discount_source !== 'country') {
+      product_service_discounts[key] = Number(p.service_discount_pct)
+    }
   })
   return { product_subscription_discounts, product_service_discounts }
 }

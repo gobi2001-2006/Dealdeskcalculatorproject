@@ -201,12 +201,12 @@ AMC input is a percentage (5 = 5%), with a range check of 0–100. Entering 0.05
 
 ## 7. Remaining business questions
 
-1. **Workbook D1/D2:** confirm the full-contract total (platform × years + subscription × years) is the intended total.
-2. **PEPM non-ESS (D4):** keep PEPM locked to ESS, or allow non-ESS? If allowed: clear `uom_locked_id` and map both UOMs in `pricing_model_uoms`. This is data only, no code change.
+1. **Workbook D1/D2:** ~~confirm the full-contract total~~ **Resolved 2026-11-06:** platform × years + subscription × years (user's calculator check: 5,050,000 / 9,500,000). See `AUDIO_BUSINESS_RULE_DECISIONS.md`.
+2. **PEPM non-ESS (D4):** **Resolved 2026-11-06: both are allowed** (migration `a3b4c5d6e7f8`, see `PEPM_UOM_AUDIT.md`). Original question: keep PEPM locked to ESS, or allow non-ESS? If allowed: clear `uom_locked_id` and map both UOMs in `pricing_model_uoms`. This is data only, no code change.
 3. **Platform + Subscription UOMs (D8):** one UOM per rate, or a UOM1 fee table plus a UOM2 subscription unit? The latter needs a nullable `rate_cards.subscription_uom_id`.
 4. **Partial years:** an 18-month term pro-rates the annual platform fee (× 1.5). The workbook only shows whole years.
 5. **Default term:** when no contract term is supplied the engine assumes 12 months. Should it be mandatory?
-6. **Multi-region (PDF §3):** implemented (§8). Open point: the overall subscription and services discounts are still one value per proposal, applied to every country. Confirm whether they should be set per country.
+6. **Multi-region (PDF §3):** implemented (§8). **Resolved 2026-11-06:** overall discounts are set per country (migration `f2a3b4c5d6e7`, see `OVERALL_DISCOUNT_AUDIT.md`).
 7. **Discount justifications:** reasons are "kept on screen only". Should they be stored, and are approval thresholds to be enforced? The `approval_thresholds` table exists but the UI shows "Demo settings — not enforced".
 8. **Rounding policy, FX locking at signature, approval limits:** still open from the October audit.
 

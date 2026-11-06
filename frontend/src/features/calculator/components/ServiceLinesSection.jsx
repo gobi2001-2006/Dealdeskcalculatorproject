@@ -187,7 +187,7 @@ export function ServiceLinesSection({
             <Info className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
             <span>
               The backend prices each line as man-days × day rate (hourly rate × standard hours per day) and applies one
-              overall service discount per product on Pricing &amp; Discounts.
+              overall service discount per country on Pricing &amp; Discounts.
             </span>
           </div>
 

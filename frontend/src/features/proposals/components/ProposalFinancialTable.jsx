@@ -107,8 +107,12 @@ export function ProposalFinancialTable({ snapshotPayload = null, showDiscounts =
                   {showDiscounts && (Number(p.subscription_discount_pct) > 0 || Number(p.service_discount_pct) > 0) && (
                     <tr className="bg-orange-50/60 text-[11px] text-orange-900">
                       <td className="py-2 px-4" colSpan={5}>
-                        Overall subscription discount {p.subscription_discount_pct}% (−{formatMoney(p.subscription_discount_amount, native)} annual)
+                        {/* Overall discounts are set per country (stored on the country block). */}
+                        {p.country_name ? `${p.country_name} overall subscription discount` : 'Overall subscription discount'}{' '}
+                        {p.subscription_discount_pct}% (−{formatMoney(p.subscription_discount_amount, native)} annual)
+                        {p.subscription_discount_reason && <span className="italic"> — {p.subscription_discount_reason}</span>}
                         {' · '}Services discount {p.service_discount_pct}% (−{formatMoney(p.service_discount_amount, native)})
+                        {p.service_discount_reason && <span className="italic"> — {p.service_discount_reason}</span>}
                       </td>
                     </tr>
                   )}

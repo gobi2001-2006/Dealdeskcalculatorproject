@@ -1,111 +1,81 @@
 import { ShieldCheck, Info } from 'lucide-react'
 
-export function ApprovalPoliciesCard({ policies }) {
-  const floor = policies?.grossMarginFloor || '30.0'
-  const lineCeiling = policies?.lineItemDiscountCeiling || '15.0'
-  const overallCeiling = policies?.overallDiscountCeiling || '20.0'
+// Threshold categories stored in approval_thresholds.threshold_type (backend check constraint).
+// Labels only: every value shown comes from the database.
+const THRESHOLD_ROWS = [
+  { type: 'gm_floor', label: 'Gross-Margin Floor' },
+  { type: 'line_discount', label: 'Line-Item Discount Ceiling' },
+  { type: 'overall_discount', label: 'Overall Discount Ceiling' },
+  { type: 'service_discount', label: 'Services Discount Ceiling' },
+]
 
+/**
+ * Approval thresholds as configured in the approval_thresholds table.
+ * `thresholds`: rows from GET /api/masters/approval-thresholds (null while loading).
+ * Nothing enforces them yet, so the card says so; no value is invented when none is configured.
+ */
+export function ApprovalPoliciesCard({ thresholds = null, loadError = '' }) {
   return (
     <section
       role="region"
       aria-label="Approval Governance Policies"
       className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4"
     >
-      {/* Header */}
       <div className="flex items-center justify-between pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-orange-600" aria-hidden="true" />
-          <h2 className="text-xs font-bold text-slate-900 tracking-tight">
-            Approval Governance Policies
-          </h2>
+          <h2 className="text-xs font-bold text-slate-900 tracking-tight">Approval Governance Policies</h2>
         </div>
         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-          Demo settings — not enforced
+          Not enforced yet
         </span>
       </div>
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        Delegation of authority (DoA) thresholds configured in backend governance matrices.
+        Delegation of authority (DoA) thresholds from the approval_thresholds master table.
       </p>
 
-      {/* Policy Fields */}
+      {loadError && <p className="text-[11px] text-rose-600">Could not load approval thresholds: {loadError}</p>}
+
       <div className="space-y-2.5 text-xs">
-        {/* Gross Margin Floor */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-          <div>
-            <span className="font-semibold text-slate-800 block">
-              Gross-Margin Floor
-            </span>
-            <span className="text-[10px] text-slate-400">
-              Corporate target minimum
-            </span>
-          </div>
-          <div className="text-right">
-            <span className="font-mono font-bold text-slate-900">
-              {floor}%
-            </span>
-            <span className="block text-[9px] text-amber-700 font-medium">
-              Demo setting — not enforced
-            </span>
-          </div>
-        </div>
+        {THRESHOLD_ROWS.map(({ type, label }) => {
+          const rows = (thresholds || []).filter((t) => t.threshold_type === type)
+          return (
+            <div
+              key={type}
+              className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-3"
+            >
+              <span className="font-semibold text-slate-800">{label}</span>
+              <div className="text-right">
+                {thresholds === null && !loadError ? (
+                  <span className="text-[11px] text-slate-400">Loading…</span>
+                ) : rows.length === 0 ? (
+                  <span className="text-[11px] text-slate-500 italic">Not configured</span>
+                ) : (
+                  rows.map((t) => (
+                    <span key={t.id} className="block font-mono font-bold text-slate-900">
+                      {Number(t.value_pct)}%
+                      {t.region && <span className="ml-1 font-sans font-normal text-[10px] text-slate-500">({t.region})</span>}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          )
+        })}
 
-        {/* Line-item Discount Ceiling */}
         <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-          <div>
-            <span className="font-semibold text-slate-800 block">
-              Line-Item Discount Ceiling
-            </span>
-            <span className="text-[10px] text-slate-400">
-              Sales Lead delegation limit
-            </span>
-          </div>
-          <div className="text-right">
-            <span className="font-mono font-bold text-slate-900">
-              {lineCeiling}%
-            </span>
-            <span className="block text-[9px] text-amber-700 font-medium">
-              Demo setting — not enforced
-            </span>
-          </div>
-        </div>
-
-        {/* Overall Deal Discount Ceiling */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-          <div>
-            <span className="font-semibold text-slate-800 block">
-              Overall Deal Discount Ceiling
-            </span>
-            <span className="text-[10px] text-slate-400">
-              Business Head threshold
-            </span>
-          </div>
-          <div className="text-right">
-            <span className="font-mono font-bold text-slate-900">
-              {overallCeiling}%
-            </span>
-            <span className="block text-[9px] text-amber-700 font-medium">
-              Demo setting — not enforced
-            </span>
-          </div>
-        </div>
-
-        {/* Workflow Approval Status */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-          <span className="font-semibold text-slate-800">
-            Approval Routing Workflow:
-          </span>
+          <span className="font-semibold text-slate-800">Approval Routing Workflow:</span>
           <span className="text-[11px] font-mono text-slate-500 italic bg-white px-2 py-0.5 rounded border border-slate-200">
             Pending backend configuration
           </span>
         </div>
       </div>
 
-      {/* Governance Explanatory Notice */}
       <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-2 text-[10px] text-slate-500 leading-relaxed">
         <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />
         <span>
-          Approval decisions and routing steps are governed by the backend Wave 5 governance service.
+          Approval decisions and routing steps are governed by the backend governance service.
           The frontend does not enforce policy rules or auto-decide approval status.
         </span>
       </div>
