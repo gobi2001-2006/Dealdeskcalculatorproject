@@ -4,7 +4,6 @@ import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../api/client'
 import { ProposalProvider } from '../context/ProposalContext'
 import { ProposalSummaryPage } from '../features/proposals/ProposalSummaryPage'
-import { formatMoney } from '../utils/calculationView'
 import { installFakeApi } from './fixtures/fakeApi'
 import * as fx from './fixtures/backendRecords'
 
@@ -57,7 +56,7 @@ describe('Page 6 — Proposal Summary', () => {
     expect(within(table).getByText(/12 man-days × ₹12,000\.00\/day/)).toBeInTheDocument()
     // Native INR subtotal and the backend's USD conversion are both shown and labelled.
     expect(within(table).getByText(/Subtotal — TA Max \(INR\)/)).toBeInTheDocument()
-    expect(within(table).getByText(formatMoney(1413620, 'INR'))).toBeInTheDocument()
+    expect(within(table).getByText('₹1,413,620.00')).toBeInTheDocument()
     expect(within(table).getByText('Converted to USD')).toBeInTheDocument()
     expect(within(table).getByText(/INR → USD @ 0\.012/)).toBeInTheDocument()
     // Grand total = full contract value from the backend
@@ -85,7 +84,7 @@ describe('Page 6 — Proposal Summary', () => {
     }))
     renderPage()
     expect(await screen.findByText(/No calculation has been saved for this proposal yet/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/Not calculated yet/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Pending backend calculation/i).length).toBeGreaterThan(0)
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
 
@@ -135,7 +134,7 @@ describe('Page 6 — Proposal Summary', () => {
     renderPage()
     await screen.findByText('Standalone Add-on')
     fireEvent.click(screen.getAllByRole('button', { name: /Save Proposal/i })[0])
-    fireEvent.click(await screen.findByRole('button', { name: /Confirm Save/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Confirm Save to PostgreSQL/i }))
     expect(await screen.findByText(/Proposal #900 saved/)).toBeInTheDocument()
     expect(api.calls.some((c) => c.method === 'POST' && c.path === '/proposals/')).toBe(false)
     expect(api.calls.some((c) => c.method === 'PATCH' && c.path === '/proposals/900')).toBe(true)

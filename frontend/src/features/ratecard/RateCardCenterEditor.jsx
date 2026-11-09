@@ -776,7 +776,7 @@ export function RateCardCenterEditor({
                 Total = Rate per {activePricingModel?.unitOfMeasure || 'unit'}{unitPeriod ? ` per ${unitPeriod}` : ''} × Quantity × {unitPeriod === 'year' ? 'Contract years' : 'Contract months'}
               </div>
               <p className="text-[11px] text-sky-800 leading-relaxed">
-                The grids below hold one rate per customer tier. Proposal totals are calculated in <strong>Proposal step 1 — Configure</strong>.
+                The grids below hold one rate per customer tier. Proposal totals are calculated by the backend in <strong>Page 4 — Proposal Configurator</strong>.
               </p>
             </div>
           </div>

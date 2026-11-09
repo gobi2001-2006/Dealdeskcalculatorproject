@@ -69,7 +69,7 @@ describe('Page 4 — Proposal Configurator', () => {
     renderPage()
     expect(await screen.findByText(/Some master data could not be loaded/i)).toBeInTheDocument()
     expect(screen.getByText(/customer tiers: Internal Server Error/i)).toBeInTheDocument()
-    expect(screen.getByText('Server offline')).toBeInTheDocument()
+    expect(screen.getByText('OFFLINE / DISCONNECTED')).toBeInTheDocument()
   })
 
   it('reloads a saved proposal with its real pack version, features and man-day services', async () => {
@@ -120,7 +120,7 @@ describe('Page 4 — Proposal Configurator', () => {
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
 
     // Pack and feature rates are described with their own unit and period
-    expect(await screen.findByText(/platform fee INR (300,000|3,00,000) \/ year \+ INR 85\.00 per Interviews \/ month/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByText(/platform fee INR 300,000 \/ year \+ INR 85\.00 per Interviews \/ month/, {}, { timeout: 5000 })).toBeInTheDocument()
     const table = screen.getByRole('table', { name: /À la carte features/i })
     expect(await within(table).findByText('GB of Data / month', {}, { timeout: 5000 })).toBeInTheDocument()
     expect(within(table).getByText('INR 10.00 per GB of Data / month')).toBeInTheDocument()

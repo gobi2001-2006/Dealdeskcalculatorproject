@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Loader2, AlertCircle, Database, RefreshCw, ShieldAlert } from 'lucide-react'
 import { CatalogueTopNav } from '../catalogue/CatalogueTopNav'
+import { SummaryStrip } from '../catalogue/SummaryStrip'
 import { RateCardProductsSidebar } from './RateCardProductsSidebar'
 import { RateCardCenterEditor } from './RateCardCenterEditor'
 import { RateCardMasterPanels } from './RateCardMasterPanels'
@@ -928,7 +929,7 @@ export function RateCardPage() {
         }
         // The schedule now lives under the saved UOM; later edits must target it there.
         setList((prev) => prev.map((r) => (r.id === current.id ? { ...r, savedUomId: payload.uom_id } : r)))
-        showToast('Rate saved.')
+        showToast('Rate saved to PostgreSQL database.')
       } catch (err) {
         showToast(`Failed to save rate: ${formatApiError(err)}`, 'error')
       }
@@ -1043,7 +1044,7 @@ export function RateCardPage() {
         }
 
         await upsertRateCard(payload)
-        showToast('Rate updated.')
+        showToast('Rate updated in PostgreSQL database.')
       } catch (err) {
         showToast(
           `Failed to persist rate: ${formatApiError(err)}`,
@@ -1180,7 +1181,7 @@ export function RateCardPage() {
           })
           await saveRateCardTarget(buildTargetPayload(row, 'pack', modalLayout))
           await reloadRateCards()
-          showToast(`Pack rate for "${newRate.packName}" saved.`)
+          showToast(`Pack rate for "${newRate.packName}" saved to PostgreSQL database.`)
           return
         }
 
@@ -1283,7 +1284,7 @@ export function RateCardPage() {
         })
         setPackRates((prev) => [...prev.filter((r) => r.id !== rateWithId.id), rateWithId])
         showToast(
-          `Pack rate for "${newRate.packName}" saved.`,
+          `Pack rate for "${newRate.packName}" saved to PostgreSQL database.`,
         )
 
         // Resync backend rate cards so rawRateCards and UI matrix are in lockstep
@@ -1554,7 +1555,7 @@ export function RateCardPage() {
             ),
           )
         }
-        showToast('Feature rate updated.')
+        showToast('Feature rate updated in PostgreSQL database.')
       } catch (err) {
         showToast(
           `Failed to persist feature rate: ${formatApiError(err)}`,
@@ -1717,7 +1718,7 @@ export function RateCardPage() {
           })
           await saveRateCardTarget(buildTargetPayload(row, 'feature', modalLayout))
           await reloadRateCards()
-          showToast(`Feature rate for "${newRate.featureName}" saved.`)
+          showToast(`Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`)
           return
         }
 
@@ -1797,7 +1798,7 @@ export function RateCardPage() {
         })
 
         showToast(
-          `Feature rate for "${newRate.featureName}" saved.`,
+          `Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`,
         )
       } else {
         showToast('Cannot save feature rate: the backend is not available.', 'error')
@@ -1828,7 +1829,7 @@ export function RateCardPage() {
           defaultCurrencyId: created.default_currency_id,
         }
         setCountries((prev) => [...prev, mappedCountry])
-        showToast(`Country "${created.name}" added.`)
+        showToast(`Country "${created.name}" registered in PostgreSQL database.`)
       } else {
         const countryWithId = {
           ...newCountry,
@@ -2429,7 +2430,7 @@ export function RateCardPage() {
       const refreshed = await getRateCards({ rate_card_version_id: activeVersion?.id })
       setRawRateCards(Array.isArray(refreshed) ? refreshed : [])
       processRateCards(refreshed, pricingTiers, deploymentModels, pricingModels, packs, features, products)
-      showToast('Rate card record updated.')
+      showToast('Rate card record updated and persisted to PostgreSQL.')
     } catch (err) {
       showToast(`Failed to update rate card: ${formatApiError(err)}`, 'error')
     }
@@ -2443,13 +2444,19 @@ export function RateCardPage() {
       </div>
 
       {/* 2. White Commercial Master Summary Strip */}
+      <div className="shrink-0">
+        <SummaryStrip
+          productLinesCount={families.length}
+          totalProductsCount={products.length}
+        />
+      </div>
 
       {/* 3. Live Database Status Strip */}
       {isLoading && (
         <div className="bg-blue-50 border-b border-blue-200 px-4 py-1 text-xs text-blue-700 flex items-center justify-between shrink-0">
           <span className="flex items-center gap-2">
             <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-            Loading rate cards…
+            Connecting to PostgreSQL database & loading live rate cards...
           </span>
         </div>
       )}
@@ -2485,7 +2492,7 @@ export function RateCardPage() {
               <Database className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             )}
             <span>
-              Connected · Rate card ({activeVersion?.version_no || 'RC-DEV-1'})
+              Connected to PostgreSQL live rate card ({activeVersion?.version_no || 'RC-DEV-1'})
               {isVersionLocked ? (
                 <span className="ml-1.5 font-semibold text-amber-800">
                   [RETIRED / LOCKED] — Historical pricing snapshot is protected against modifications.

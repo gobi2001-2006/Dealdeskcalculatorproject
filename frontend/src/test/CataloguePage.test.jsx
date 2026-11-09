@@ -62,7 +62,7 @@ describe('Page 1 — Product Catalogue', () => {
   it('renders saved families and products from the backend', async () => {
     catalogueBackend()
     renderPage()
-    expect(await screen.findByText('Connected to database')).toBeInTheDocument()
+    expect(await screen.findByText('Live Database Connected (FastAPI / PostgreSQL)')).toBeInTheDocument()
     const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
     expect(within(sidebar).getByText('Talent Acquisition')).toBeInTheDocument()
     expect(within(sidebar).getByText('Payroll & Benefits')).toBeInTheDocument()

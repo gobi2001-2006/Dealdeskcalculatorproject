@@ -74,7 +74,7 @@ export function ProposalSummaryFooter({ countryConfigs = [], clientInfo }) {
           All monetary figures, discounts, margin calculations, and multi-currency consolidations are
           governed authoritatively by the Deal Desk backend pricing service. The frontend does not calculate
           totals, apply additive discount formulas, or fabricate gross margins. Figures marked as{' '}
-          <em className="text-slate-700 font-mono font-medium">Not calculated yet</em>{' '}
+          <em className="text-slate-700 font-mono font-medium">Pending backend calculation</em>{' '}
           await API calculation execution.
         </p>
       </div>

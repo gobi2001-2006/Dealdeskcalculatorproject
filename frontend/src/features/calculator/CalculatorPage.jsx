@@ -48,7 +48,7 @@ import {
 import { getPacks } from '../../api/packsApi'
 import { useProposal } from '../../context/ProposalContext'
 import { CalculationNotices } from '../../components/common/CalculationNotices'
-import { formatMoney, readCalculationTotals, NOT_CALCULATED } from '../../utils/calculationView'
+import { formatMoney, readCalculationTotals } from '../../utils/calculationView'
 
 const MASTER_SOURCES = [
   ['countries', getCountries, 'countries'],
@@ -389,9 +389,9 @@ export function CalculatorPage() {
   const summaryStripValues = useMemo(() => {
     if (!calcTotals) {
       return {
-        fcv: NOT_CALCULATED,
-        services: NOT_CALCULATED,
-        grandTotal: NOT_CALCULATED,
+        fcv: 'Pending backend calculation',
+        services: 'Pending backend calculation',
+        grandTotal: 'Pending backend calculation',
       }
     }
     const staleSuffix = isCalculationStale || calcTotals.isStale ? ' (Outdated)' : ''
@@ -468,27 +468,27 @@ export function CalculatorPage() {
                 {isCalculating ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" aria-hidden="true"></span>
-                    <span>Calculating…</span>
+                    <span>FastAPI Calculating...</span>
                   </span>
                 ) : isCalculationStale ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs" title="You changed the proposal after it was calculated. Click 'Calculate Pricing' to refresh the totals.">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs" title="Parameters were modified after calculation. Click 'Calculate Pricing' to refresh.">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>
-                    <span>Changed since last calculation — click Calculate Pricing</span>
+                    <span>Inputs Modified — Recalculation Required (Snapshot #{calcApiResult.data?.snapshot_id})</span>
                   </span>
                 ) : calcApiResult?.status === 'success' ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
-                    <span title={`Calculation #${calcApiResult.data?.snapshot_id}`}>Calculated · up to date</span>
+                    <span>FastAPI Calculated (Snapshot #{calcApiResult.data?.snapshot_id})</span>
                   </span>
                 ) : calcApiResult?.status === 'error' ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-800 border border-rose-200 shadow-2xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" aria-hidden="true"></span>
-                    <span>Calculation failed</span>
+                    <span>FastAPI Calculation Failed</span>
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400" aria-hidden="true"></span>
-                    <span>Not calculated yet</span>
+                    <span>FastAPI Calculation Engine Ready</span>
                   </span>
                 )}
                 {clientInfo.proposalId && (
@@ -498,7 +498,7 @@ export function CalculatorPage() {
                 )}
               </div>
               <p className="text-xs text-slate-500 leading-normal">
-                Enter the client details, add each country, choose packs, features and services, then click Calculate Pricing.
+                Configure multi-country commercial terms, packaging suites, à la carte features, and professional services connected to PostgreSQL.
               </p>
             </div>
 
@@ -586,10 +586,10 @@ export function CalculatorPage() {
               <div>
                 <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
                   <Globe className="w-4 h-4 text-orange-600" aria-hidden="true" />
-                  <span>Part B · Countries ({countryConfigs.length})</span>
+                  <span>Regional Country Configurations ({countryConfigs.length})</span>
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  Each country has its own tier, deployment, pricing model, contract term and currency.
+                  Each country retains independent pricing tiers, deployment models, contract terms, and currency contexts.
                 </p>
               </div>
 
@@ -611,7 +611,7 @@ export function CalculatorPage() {
                     No Countries Configured
                   </h3>
                   <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
-                    Add the first country this deal covers. You will then choose its packs, features and services.
+                    Add at least one regional deployment country to configure software packaging, à la carte features, and service lines.
                   </p>
                 </div>
                 <button

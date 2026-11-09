@@ -868,7 +868,7 @@ export function RateCardMasterPanels({
               )}
 
               <div className="p-2 rounded bg-amber-50/70 border border-amber-200 text-[10px] text-amber-800">
-                Totals and discounts are calculated on the server.
+                Commercial totals and discount calculations are executed by the FastAPI engine.
               </div>
             </div>
           )}
@@ -966,7 +966,7 @@ export function RateCardMasterPanels({
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
-                          <Clock className="w-3 h-3" /> Not calculated yet
+                          <Clock className="w-3 h-3" /> Pending backend calculation
                         </span>
                       )}
                     </div>

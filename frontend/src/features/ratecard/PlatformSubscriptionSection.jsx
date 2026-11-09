@@ -92,7 +92,7 @@ export function PlatformSubscriptionSection({
             Total Contract Value = {platformTerm} + {subscriptionTerm}
           </div>
           <p className="text-[11px] text-sky-800 leading-relaxed">
-            Set each tier&apos;s platform fee, the unit of measure and the subscription rate for every pack and feature below. The customer&apos;s tier picks the platform fee; the proposal quantity drives the subscription. Totals are calculated when you price a proposal in <strong>Proposal step 1 — Configure</strong>.
+            Set each tier&apos;s platform fee, the unit of measure and the subscription rate for every pack and feature below. The customer&apos;s tier picks the platform fee; the proposal quantity drives the subscription. Totals are calculated by the backend in <strong>Page 4 — Proposal Configurator</strong>.
           </p>
         </div>
       </div>

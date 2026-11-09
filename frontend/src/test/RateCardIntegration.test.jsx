@@ -220,7 +220,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     // Should indicate live connection
     await waitFor(() => {
       expect(
-        screen.getByText(/Connected · Rate card/i),
+        screen.getByText(/Connected to PostgreSQL live rate card/i),
       ).toBeInTheDocument()
     })
 
@@ -265,7 +265,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected · Rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
     })
 
     // Open add country modal
@@ -398,7 +398,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected · Rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
     })
 
     // Switch version to retired version
@@ -458,7 +458,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected · Rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
     })
 
     const deploymentSelect = screen.getByRole('combobox', { name: /Deployment Architecture/i })
@@ -486,7 +486,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected · Rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
     })
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })
@@ -520,7 +520,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected · Rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
     })
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })

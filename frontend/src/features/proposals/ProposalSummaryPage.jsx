@@ -38,7 +38,7 @@ import {
 import { deserializeBackendProposal, serializeProposalToBackendSchema } from '../calculator/calculatorData'
 import { useProposal } from '../../context/ProposalContext'
 import { loadCatalogueMasters } from '../../utils/catalogueLookup'
-import { formatMoney, readCalculationTotals, NOT_CALCULATED } from '../../utils/calculationView'
+import { formatMoney, readCalculationTotals } from '../../utils/calculationView'
 
 export function ProposalSummaryPage() {
   const {
@@ -186,9 +186,9 @@ export function ProposalSummaryPage() {
         clientName={clientInfo?.clientName || 'Untitled Proposal'}
         countriesValue={`${summaryCounts.countriesCount} Configured`}
         productLinesValue={`${summaryCounts.totalFamilies} Families (${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Features)`}
-        pricingFcv={totals ? formatMoney(totals.subscriptionContract, totals.currency) : NOT_CALCULATED}
-        servicesValue={totals ? formatMoney(totals.services, totals.currency) : NOT_CALCULATED}
-        grandTotal={totals ? formatMoney(totals.contractTotal, totals.currency) : NOT_CALCULATED}
+        pricingFcv={totals ? formatMoney(totals.subscriptionContract, totals.currency) : 'Pending backend calculation'}
+        servicesValue={totals ? formatMoney(totals.services, totals.currency) : 'Pending backend calculation'}
+        grandTotal={totals ? formatMoney(totals.contractTotal, totals.currency) : 'Pending backend calculation'}
       />
 
       {toastMessage && (
@@ -232,7 +232,7 @@ export function ProposalSummaryPage() {
                 <h1 className="text-lg font-bold text-slate-900">No Proposal Scope Configured</h1>
                 <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
                   There are no regional countries or product packages configured yet.
-                  Start with step 1 (Configure): add the client and at least one country, then calculate. The summary will appear here.
+                  Configure your customer requirements on Page 4 (Proposal Configurator) before viewing consolidated commercial summaries.
                 </p>
               </div>
               <div className="pt-2">
@@ -257,7 +257,7 @@ export function ProposalSummaryPage() {
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400" aria-hidden="true"></span>
-                        <span>Not calculated yet</span>
+                        <span>Pending Calculation</span>
                       </span>
                     )}
                   </div>
@@ -292,7 +292,7 @@ export function ProposalSummaryPage() {
                     <span>{isSaving ? 'Saving…' : 'Save Proposal'}</span>
                   </button>
 
-                  <button type="button" onClick={handleTriggerCalculation} disabled={isCalculating} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0B1528] text-white hover:bg-slate-800 transition-colors shadow-2xs disabled:opacity-60" title="Recalculate the totals on the server">
+                  <button type="button" onClick={handleTriggerCalculation} disabled={isCalculating} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#0B1528] text-white hover:bg-slate-800 transition-colors shadow-2xs disabled:opacity-60" title="Validate with FastAPI pricing calculation engine">
                     <RefreshCw className={`w-3.5 h-3.5 text-orange-400 ${isCalculating ? 'animate-spin' : ''}`} aria-hidden="true" />
                     <span>{isCalculating ? 'Calculating…' : 'Recalculate'}</span>
                   </button>
@@ -302,10 +302,10 @@ export function ProposalSummaryPage() {
               <section aria-label="High-Level Proposal Financial Metrics" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
                 <SummaryMetricCard title="Countries" value={summaryCounts.countriesCount} subtitle={summaryCounts.countriesCount === 1 ? '1 Configured Country' : `${summaryCounts.countriesCount} Configured Countries`} icon={Globe} colorVariant="slate" />
                 <SummaryMetricCard title="Product Lines" value={summaryCounts.totalFamilies} subtitle={`${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Add-ons`} icon={Package} colorVariant="slate" />
-                <SummaryMetricCard title="Subscription (Annual)" value={totals ? formatMoney(totals.subscriptionAnnual, currencyCode) : NOT_CALCULATED} subtitle="Platform + consumption, after discounts" icon={Key} colorVariant="blue" currencyCode={currencyCode} />
-                <SummaryMetricCard title={`Subscription (${totals?.termMonths ?? '—'} mo)`} value={totals ? formatMoney(totals.subscriptionContract, currencyCode) : NOT_CALCULATED} subtitle="Over the contract term" icon={Calendar} colorVariant="slate" currencyCode={currencyCode} />
-                <SummaryMetricCard title="Service Fees" value={totals ? formatMoney(totals.services, currencyCode) : NOT_CALCULATED} subtitle="One-time professional services" icon={Briefcase} colorVariant="teal" currencyCode={currencyCode} />
-                <SummaryMetricCard title="Grand Total (FCV)" value={totals ? formatMoney(totals.contractTotal, currencyCode) : NOT_CALCULATED} subtitle={totals ? `Year 1: ${formatMoney(totals.annualTotal, currencyCode)} · ${currencyCode}` : `Consolidated in ${currencyCode}`} icon={DollarSign} colorVariant="orange" isGrandTotal={true} currencyCode={currencyCode} />
+                <SummaryMetricCard title="Subscription (Annual)" value={totals ? formatMoney(totals.subscriptionAnnual, currencyCode) : 'Pending backend calculation'} subtitle="Platform + consumption, after discounts" icon={Key} colorVariant="blue" currencyCode={currencyCode} />
+                <SummaryMetricCard title={`Subscription (${totals?.termMonths ?? '—'} mo)`} value={totals ? formatMoney(totals.subscriptionContract, currencyCode) : 'Pending backend calculation'} subtitle="Over the contract term" icon={Calendar} colorVariant="slate" currencyCode={currencyCode} />
+                <SummaryMetricCard title="Service Fees" value={totals ? formatMoney(totals.services, currencyCode) : 'Pending backend calculation'} subtitle="One-time professional services" icon={Briefcase} colorVariant="teal" currencyCode={currencyCode} />
+                <SummaryMetricCard title="Grand Total (FCV)" value={totals ? formatMoney(totals.contractTotal, currencyCode) : 'Pending backend calculation'} subtitle={totals ? `Year 1: ${formatMoney(totals.annualTotal, currencyCode)} · ${currencyCode}` : `Consolidated in ${currencyCode}`} icon={DollarSign} colorVariant="orange" isGrandTotal={true} currencyCode={currencyCode} />
               </section>
 
               <section aria-label="Detailed Proposal Commercial Breakdown" className="space-y-3">

@@ -22,7 +22,7 @@ export function AppShell() {
             <div className="flex items-center gap-2">
               <Info className="w-3.5 h-3.5 text-emerald-700 shrink-0" aria-hidden="true" />
               <span>
-                <strong>DEMO DATA:</strong> Figures, metrics, and records shown are illustrative presentation data and do not come from the database.
+                <strong>DEMO DATA:</strong> Figures, metrics, and records shown are illustrative presentation data and do not come from PostgreSQL.
               </span>
             </div>
             <span className="hidden md:inline-block font-mono text-[10px] text-emerald-700 uppercase tracking-wider font-semibold">

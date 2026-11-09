@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { CatalogueTopNav } from '../catalogue/CatalogueTopNav'
+import { SummaryStrip } from '../catalogue/SummaryStrip'
 import { PacksSidebar } from './PacksSidebar'
 import { PackEditor } from './PackEditor'
 import { DeletePackModal } from './DeletePackModal'
@@ -395,6 +396,11 @@ export function PacksPage() {
       {/* 1. Top Navigation with Pack Builder highlighted */}
       <CatalogueTopNav activeSection="packs" />
 
+      {/* 2. Commercial Summary Strip */}
+      <SummaryStrip
+        productLinesCount={families.length}
+        totalProductsCount={products.length}
+      />
 
       {/* Backend Integration Status Banner */}
       <div className="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-1.5 flex items-center justify-between text-xs text-slate-300">
@@ -402,13 +408,13 @@ export function PacksPage() {
           {isLoading ? (
             <span className="flex items-center gap-1.5 text-orange-400">
               <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-              <span>Loading packs…</span>
+              <span>Connecting to PostgreSQL...</span>
             </span>
           ) : isLiveBackendData ? (
             <span className="flex items-center gap-1.5 text-emerald-400">
               <Database className="w-3.5 h-3.5" aria-hidden="true" />
               <span>
-                Connected &bull; {packs.length} packs, {products.length} products
+                Connected to PostgreSQL &bull; Live Packs &amp; Catalogue ({packs.length} packs, {products.length} products)
               </span>
             </span>
           ) : (

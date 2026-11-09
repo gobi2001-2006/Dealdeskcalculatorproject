@@ -1,9 +1,3 @@
-import { NOT_CALCULATED } from '../../utils/calculationView'
-
-/**
- * At-a-glance strip for the open proposal: who it is for, what is in it, and the backend totals.
- * Shown on the three proposal pages only.
- */
 export function SummaryStrip({
   clientName = '—',
   countriesValue = '—',
@@ -14,71 +8,69 @@ export function SummaryStrip({
   servicesValue = '—',
   grandTotal = '—',
 }) {
-  const detailItems = [
-    { label: 'Client', value: clientName },
-    { label: 'Countries', value: countriesValue },
+  const summaryItems = [
     {
-      label: 'Products',
-      value: productLinesValue || `${productLinesCount} Families (${totalProductsCount} SKUs)`,
+      label: 'Client',
+      value: clientName,
     },
-    { label: 'Subscription (FCV)', value: pricingFcv, isAmount: true },
-    { label: 'Services', value: servicesValue, isAmount: true },
+    {
+      label: 'Countries',
+      value: countriesValue,
+    },
+    {
+      label: 'Product Lines',
+      value:
+        productLinesValue ||
+        `${productLinesCount} Families (${totalProductsCount} SKUs)`,
+    },
+    {
+      label: 'Pricing FCV',
+      value: pricingFcv,
+    },
+    {
+      label: 'Services',
+      value: servicesValue,
+    },
+    {
+      label: 'Grand Total',
+      value: grandTotal,
+      isGrand: true,
+    },
   ]
-
-  const isPending = (v) => typeof v === 'string' && (v.startsWith(NOT_CALCULATED) || v === '—')
-  const grandPending = isPending(grandTotal)
-  const grandOutdated = typeof grandTotal === 'string' && grandTotal.includes('(Outdated)')
 
   return (
     <section
       aria-label="Commercial Master Summary"
-      className="bg-white border-b border-slate-200 shrink-0"
+      className="bg-white border-b border-slate-200 shrink-0 shadow-2xs"
     >
-      <div className="px-4 sm:px-6 py-2 flex flex-col md:flex-row md:items-stretch gap-2 md:gap-4">
-        <dl className="flex-1 min-w-0 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-4 gap-y-1.5">
-          {detailItems.map((item) => (
-            <div key={item.label} className="min-w-0">
-              <dt className="text-[10px] uppercase font-semibold tracking-wider text-slate-500 truncate">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 lg:gap-0 lg:divide-x lg:divide-slate-200/80">
+          {summaryItems.map((item, index) => (
+            <div
+              key={item.label}
+              className={`flex flex-col justify-center min-w-0 ${
+                index === 0
+                  ? 'lg:pr-4'
+                  : index === summaryItems.length - 1
+                  ? 'lg:pl-4'
+                  : 'lg:px-4'
+              }`}
+            >
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 truncate">
                 {item.label}
-              </dt>
-              <dd
+              </span>
+              <span
                 title={String(item.value)}
-                className={`text-[13px] mt-0.5 truncate ${
-                  isPending(item.value)
-                    ? 'text-slate-400 italic'
-                    : item.isAmount
-                    ? 'text-slate-900 font-semibold tabular-nums'
-                    : 'text-slate-900 font-medium'
+                className={`text-xs font-semibold mt-0.5 truncate ${
+                  item.isGrand
+                    ? 'text-emerald-700 font-mono font-bold'
+                    : 'text-slate-900'
                 }`}
               >
                 {item.value}
-              </dd>
+              </span>
             </div>
           ))}
-        </dl>
-
-        <div
-          className={`shrink-0 rounded-lg px-4 py-1.5 flex md:flex-col items-center md:items-end justify-between md:justify-center gap-2 md:gap-0 md:min-w-[200px] border ${
-            grandPending
-              ? 'bg-slate-50 border-slate-200'
-              : grandOutdated
-              ? 'bg-amber-50 border-amber-200'
-              : 'bg-emerald-50 border-emerald-200'
-          }`}
-        >
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Grand Total</span>
-          <span
-            title={String(grandTotal)}
-            className={`truncate ${
-              grandPending
-                ? 'text-[13px] text-slate-400 italic'
-                : grandOutdated
-                ? 'text-base font-bold text-amber-800 tabular-nums'
-                : 'text-base font-bold text-emerald-800 tabular-nums'
-            }`}
-          >
-            {grandTotal}
-          </span>
         </div>
       </div>
     </section>
@@ -86,3 +78,4 @@ export function SummaryStrip({
 }
 
 export default SummaryStrip
+
