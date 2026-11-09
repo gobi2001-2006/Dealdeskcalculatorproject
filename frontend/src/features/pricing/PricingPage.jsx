@@ -26,6 +26,7 @@ import { deserializeBackendProposal } from '../calculator/calculatorData'
 import { buildCatalogueLookup, loadCatalogueMasters } from '../../utils/catalogueLookup'
 import {
   formatMoney,
+  NOT_CALCULATED,
   readCalculationTotals,
   uniformProductDiscount,
   validateDiscountPct,
@@ -258,7 +259,7 @@ export function PricingPage() {
   }
 
   const totals = calcApiResult?.status === 'success' ? readCalculationTotals(calcApiResult.data) : null
-  const pending = 'Pending backend calculation'
+  const pending = NOT_CALCULATED
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-100 overflow-hidden text-slate-800 antialiased font-sans">

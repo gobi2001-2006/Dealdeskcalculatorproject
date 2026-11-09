@@ -65,7 +65,7 @@ export function CommercialSummaryCard({
               className="font-mono text-slate-400 italic text-right max-w-[160px] break-words"
               title="Awaiting backend calculation"
             >
-              Pending backend calculation
+              Not calculated yet
             </span>
           )}
         </div>
@@ -87,7 +87,7 @@ export function CommercialSummaryCard({
               className="font-mono text-slate-400 italic text-right max-w-[160px] break-words"
               title="Awaiting backend calculation"
             >
-              Pending backend calculation
+              Not calculated yet
             </span>
           )}
         </div>
@@ -117,7 +117,7 @@ export function CommercialSummaryCard({
               className="text-sm font-bold text-orange-400 font-mono text-right max-w-[160px] break-words"
               title="Authoritative calculation from backend pricing engine"
             >
-              Pending backend calculation
+              Not calculated yet
             </span>
           )}
         </div>
@@ -168,7 +168,7 @@ export function CommercialSummaryCard({
 
       {/* Financial Disclaimer */}
       <p className="text-[10px] text-slate-500 italic leading-relaxed pt-2 border-t border-slate-800">
-        Financial integrity notice: Margin percentages and consolidated revenue totals are backend-owned and populated by the FastAPI calculation engine.
+        Margins and totals are calculated on the server. Save your discounts to refresh them.
       </p>
 
       {/* Action Buttons */}
@@ -210,14 +210,14 @@ export function CommercialSummaryCard({
             className="inline-flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
           >
             <ArrowLeft className="w-3 h-3" aria-hidden="true" />
-            <span>Page 4 Config</span>
+            <span>Back: Configure</span>
           </Link>
 
           <Link
             to={`/proposals${query}`}
             className="inline-flex items-center justify-center gap-1 py-1.5 text-[11px] font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-orange-400 border border-slate-700 transition-colors"
           >
-            <span>Page 6 Summary</span>
+            <span>Next: Summary</span>
             <ArrowRight className="w-3 h-3" aria-hidden="true" />
           </Link>
         </div>

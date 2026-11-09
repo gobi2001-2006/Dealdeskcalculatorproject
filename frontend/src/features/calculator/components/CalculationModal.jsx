@@ -45,7 +45,7 @@ export function CalculationModal({
                 Authoritative Commercial Calculation Engine
               </h2>
               <p className="text-[11px] text-slate-300">
-                FastAPI deterministic pricing calculations, rate resolver, and immutable audit snapshot.
+                Prices are calculated on the server from the rate card and saved as a record of this version.
               </p>
             </div>
           </div>
@@ -257,7 +257,7 @@ export function CalculationModal({
         <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <ShieldCheck className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-            <span>PostgreSQL Immutable Snapshot Audit</span>
+            <span>Saved calculation record</span>
           </div>
 
           <div className="flex items-center gap-2">

@@ -207,7 +207,7 @@ export function RateCardRegistryTable({
                 type="button"
                 onClick={onRefresh}
                 className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-                title="Refresh rate records from PostgreSQL"
+                title="Refresh rate records from the server"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>

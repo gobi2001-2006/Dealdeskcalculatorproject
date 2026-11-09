@@ -248,7 +248,7 @@ export function AddPackRateModal({
                   <span>No Saved Packs in Pack Builder</span>
                 </div>
                 <p className="text-[11px] text-amber-800 leading-relaxed">
-                  No saved packs exist for {targetFamilyObj?.name || 'this product family'} in Page 2 — Pack Builder. Please build and save a pack first before configuring its rates.
+                  No saved packs exist for {targetFamilyObj?.name || 'this product family'} in the Pack Builder. Please build and save a pack first before configuring its rates.
                 </p>
                 <div className="pt-1">
                   <a

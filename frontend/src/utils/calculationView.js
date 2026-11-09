@@ -5,6 +5,9 @@
  * Every amount comes from the backend. A missing amount is shown as "—", never as 0.
  */
 
+/** Shown in place of an amount until the backend has calculated the proposal. */
+export const NOT_CALCULATED = 'Not calculated yet'
+
 /** Format a backend amount in its currency; null/undefined/NaN -> '—'. */
 export function formatMoney(value, currencyCode, { decimals = 2 } = {}) {
   if (value === null || value === undefined || value === '') return '—'

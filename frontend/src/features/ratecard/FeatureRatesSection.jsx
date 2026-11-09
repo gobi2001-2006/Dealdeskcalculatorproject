@@ -393,7 +393,7 @@ export function FeatureRatesSection({
             No catalogue features available for {familyName}
           </p>
           <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-            Standalone modules and AI agent copilot features can be registered in Page 1 — Product Catalogue.
+            Standalone modules and AI agent copilot features can be registered in the Product Catalog.
           </p>
           {!isVersionLocked && (
             <div className="pt-1">

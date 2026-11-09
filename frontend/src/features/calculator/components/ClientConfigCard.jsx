@@ -63,14 +63,14 @@ export function ClientConfigCard({
               )}
             </div>
             <p className="text-[11px] text-slate-500">
-              Customer entity, commercial deal code, and global financial consolidation currency.
+              Who this proposal is for, the deal reference, and the currency all totals are shown in.
             </p>
           </div>
         </div>
 
         <div className="hidden sm:flex items-center gap-2">
           <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-            Step 1 of 4
+            Part A · Client
           </span>
         </div>
       </div>

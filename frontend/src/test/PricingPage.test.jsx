@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import apiClient from '../api/client'
 import { ProposalProvider } from '../context/ProposalContext'
 import { PricingPage } from '../features/pricing/PricingPage'
+import { formatMoney } from '../utils/calculationView'
 import { installFakeApi, httpError } from './fixtures/fakeApi'
 import * as fx from './fixtures/backendRecords'
 
@@ -59,8 +60,8 @@ describe('Page 5 — Pricing & Discounts', () => {
     expect(within(table).getByText('TA Premium')).toBeInTheDocument()
     expect(within(table).getByText('Standalone Add-on')).toBeInTheDocument()
     // Native-currency amounts straight from the snapshot
-    expect(within(table).getAllByText('₹620,000.00')).toHaveLength(2) // gross and net (no line discount)
-    expect(within(table).getByText('₹55,800.00')).toBeInTheDocument()
+    expect(within(table).getAllByText(formatMoney(620000, 'INR'))).toHaveLength(2) // gross and net (no line discount)
+    expect(within(table).getByText(formatMoney(55800, 'INR'))).toBeInTheDocument()
     // Saved line discount (10%) restored from the line item; overall/service from the snapshot
     expect(screen.getByLabelText('Discount for Standalone Add-on')).toHaveValue(10)
     expect(screen.getByLabelText('Overall subscription discount')).toHaveValue(5)

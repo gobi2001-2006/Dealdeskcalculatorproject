@@ -115,7 +115,7 @@ export function ServiceRatesSection({
         <div className="space-y-0.5">
           <span className="font-semibold text-amber-950">Commercial Service Rate Rule:</span>{' '}
           <span>
-            Day Rate is derived automatically from <strong>Hourly Rate × 8.0 Working Hours</strong>. Total implementation effort, resource allocations, and gross margin are evaluated in <strong>Page 4 — Proposal Configurator</strong>.
+            Day Rate is derived automatically from <strong>Hourly Rate × 8.0 Working Hours</strong>. Total implementation effort, resource allocations, and gross margin are worked out in <strong>Proposal step 1 — Configure</strong>.
           </span>
         </div>
       </div>

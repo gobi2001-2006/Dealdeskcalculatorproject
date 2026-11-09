@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Search, Plus, Loader2, AlertCircle, Database, Info, RefreshCw } from 'lucide-react'
 import { CatalogueTopNav } from './CatalogueTopNav'
-import { SummaryStrip } from './SummaryStrip'
 import { ProductFamiliesSidebar } from './ProductFamiliesSidebar'
 import { ProductTable } from './ProductTable'
 import { AddFamilyModal } from './AddFamilyModal'
@@ -389,11 +388,6 @@ export function CataloguePage() {
       {/* 1. Top Navigation: Dark navy header with brand and navigation */}
       <CatalogueTopNav />
 
-      {/* 2. Summary Strip: Client, Countries, Product Lines, FCV, Services, Grand Total */}
-      <SummaryStrip
-        productLinesCount={families.length}
-        totalProductsCount={products.length}
-      />
 
       {/* Backend Integration & Status Banners */}
       <div className="bg-white border-b border-slate-200 px-4 py-1.5 flex flex-wrap items-center justify-between text-xs shrink-0 gap-2">
@@ -401,12 +395,12 @@ export function CataloguePage() {
           {isLoading ? (
             <span className="inline-flex items-center gap-1.5 text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-medium">
               <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-              <span>Connecting to Backend Catalogue API...</span>
+              <span>Loading catalog…</span>
             </span>
           ) : isLiveBackendData ? (
             <span className="inline-flex items-center gap-1.5 text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded font-medium">
               <Database className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
-              <span>Live Database Connected (FastAPI / PostgreSQL)</span>
+              <span>Connected to database</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded font-medium">
@@ -416,7 +410,7 @@ export function CataloguePage() {
           )}
 
           <span className="text-[11px] text-slate-500 hidden md:inline">
-            FastAPI Read Routes: <code className="font-mono text-slate-700">/api/catalogue/families</code>, <code className="font-mono text-slate-700">/products</code>, <code className="font-mono text-slate-700">/features</code>
+            {families.length} families · {products.length} products
           </span>
         </div>
 
@@ -425,10 +419,10 @@ export function CataloguePage() {
           onClick={handleReloadBackend}
           disabled={isLoading}
           className="inline-flex items-center gap-1 text-[11px] text-slate-600 hover:text-slate-900 px-2 py-0.5 rounded hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
-          title="Reload catalogue from backend"
+          title="Reload the catalog from the server"
         >
           <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-          <span>Sync Backend</span>
+          <span>Refresh</span>
         </button>
       </div>
 

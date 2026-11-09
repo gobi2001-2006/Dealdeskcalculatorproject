@@ -8,7 +8,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // Override with API_PROXY_TARGET when port 8000 is unavailable locally.
+        target: process.env.API_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
     },
