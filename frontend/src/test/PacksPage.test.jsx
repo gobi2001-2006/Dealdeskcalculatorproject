@@ -84,7 +84,7 @@ describe('Page 2 — Pack Builder', () => {
       'GET /catalogue/features': () => [],
     })
     renderPage()
-    expect(await screen.findByText(/Backend unavailable/)).toBeInTheDocument()
+    expect(await screen.findByText(/Service unavailable/)).toBeInTheDocument()
     expect(screen.queryByText('Talent Acquisition Growth Suite')).not.toBeInTheDocument()
   })
 
@@ -181,7 +181,7 @@ describe('Page 2 — Pack Builder', () => {
     await screen.findByRole('heading', { name: /Edit Pack: TA Premium/i })
     fireEvent.click(screen.getByRole('button', { name: /Delete Pack/i }))
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /Confirm Delete/i }))
-    expect(await screen.findByText('Pack deleted successfully.')).toBeInTheDocument()
+    expect(await screen.findByText('Pack deleted.')).toBeInTheDocument()
     expect(api.calls.some((c) => c.method === 'DELETE' && c.path === '/packs/40')).toBe(true)
   })
 })

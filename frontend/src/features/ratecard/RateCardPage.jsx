@@ -929,7 +929,7 @@ export function RateCardPage() {
         }
         // The schedule now lives under the saved UOM; later edits must target it there.
         setList((prev) => prev.map((r) => (r.id === current.id ? { ...r, savedUomId: payload.uom_id } : r)))
-        showToast('Rate saved to PostgreSQL database.')
+        showToast('Rate saved.')
       } catch (err) {
         showToast(`Failed to save rate: ${formatApiError(err)}`, 'error')
       }
@@ -1044,7 +1044,7 @@ export function RateCardPage() {
         }
 
         await upsertRateCard(payload)
-        showToast('Rate updated in PostgreSQL database.')
+        showToast('Rate updated.')
       } catch (err) {
         showToast(
           `Failed to persist rate: ${formatApiError(err)}`,
@@ -1097,7 +1097,7 @@ export function RateCardPage() {
               ...(rate.savedUomId ? { uom_id: Number(rate.savedUomId) } : {}),
             })
             setPackRates((prev) => prev.filter((r) => r.id !== id))
-            showToast('Pack rate removed from database.')
+            showToast('Pack rate removed.')
           } else {
             setPackRates((prev) => prev.filter((r) => r.id !== id))
             showToast('Pack rate removed.')
@@ -1181,7 +1181,7 @@ export function RateCardPage() {
           })
           await saveRateCardTarget(buildTargetPayload(row, 'pack', modalLayout))
           await reloadRateCards()
-          showToast(`Pack rate for "${newRate.packName}" saved to PostgreSQL database.`)
+          showToast(`Pack rate for "${newRate.packName}" saved.`)
           return
         }
 
@@ -1284,7 +1284,7 @@ export function RateCardPage() {
         })
         setPackRates((prev) => [...prev.filter((r) => r.id !== rateWithId.id), rateWithId])
         showToast(
-          `Pack rate for "${newRate.packName}" saved to PostgreSQL database.`,
+          `Pack rate for "${newRate.packName}" saved.`,
         )
 
         // Resync backend rate cards so rawRateCards and UI matrix are in lockstep
@@ -1305,7 +1305,7 @@ export function RateCardPage() {
           )
         }
       } else {
-        showToast('Cannot save pack rate: the backend is not available.', 'error')
+        showToast('Cannot save pack rate: service is unavailable.', 'error')
       }
     } catch (err) {
       showToast(
@@ -1555,7 +1555,7 @@ export function RateCardPage() {
             ),
           )
         }
-        showToast('Feature rate updated in PostgreSQL database.')
+        showToast('Feature rate updated.')
       } catch (err) {
         showToast(
           `Failed to persist feature rate: ${formatApiError(err)}`,
@@ -1608,7 +1608,7 @@ export function RateCardPage() {
               ...(rate.savedUomId ? { uom_id: Number(rate.savedUomId) } : {}),
             })
             setFeatureRates((prev) => prev.filter((r) => r.id !== id))
-            showToast('Feature rate removed from database.')
+            showToast('Feature rate removed.')
           } else {
             setFeatureRates((prev) => prev.filter((r) => r.id !== id))
             showToast('Feature rate removed.')
@@ -1718,7 +1718,7 @@ export function RateCardPage() {
           })
           await saveRateCardTarget(buildTargetPayload(row, 'feature', modalLayout))
           await reloadRateCards()
-          showToast(`Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`)
+          showToast(`Feature rate for "${newRate.featureName}" saved.`)
           return
         }
 
@@ -1798,10 +1798,10 @@ export function RateCardPage() {
         })
 
         showToast(
-          `Feature rate for "${newRate.featureName}" saved to PostgreSQL database.`,
+          `Feature rate for "${newRate.featureName}" saved.`,
         )
       } else {
-        showToast('Cannot save feature rate: the backend is not available.', 'error')
+        showToast('Cannot save feature rate: service is unavailable.', 'error')
       }
     } catch (err) {
       showToast(
@@ -1829,7 +1829,7 @@ export function RateCardPage() {
           defaultCurrencyId: created.default_currency_id,
         }
         setCountries((prev) => [...prev, mappedCountry])
-        showToast(`Country "${created.name}" registered in PostgreSQL database.`)
+        showToast(`Country "${created.name}" added.`)
       } else {
         const countryWithId = {
           ...newCountry,
@@ -1862,7 +1862,7 @@ export function RateCardPage() {
           if (isLiveBackendData && typeof id === 'number') {
             await deleteCountry(id)
             setCountries((prev) => prev.filter((country) => country.id !== id))
-            showToast('Country removed from database.')
+            showToast('Country removed.')
           } else {
             setCountries((prev) => prev.filter((country) => country.id !== id))
             showToast('Country removed from master catalog.')
@@ -1898,7 +1898,7 @@ export function RateCardPage() {
               : c,
           ),
         )
-        showToast('Country details updated in database.')
+        showToast('Country details updated.')
       } else {
         setCountries((prev) =>
           prev.map((c) => (c.id === id ? { ...c, ...updatedFields } : c)),
@@ -1930,7 +1930,7 @@ export function RateCardPage() {
               : t,
           ),
         )
-        showToast('Pricing tier updated in database.')
+        showToast('Pricing tier updated.')
       } else {
         setPricingTiers((prev) =>
           prev.map((t) => (t.id === id ? { ...t, ...updatedFields } : t)),
@@ -1964,7 +1964,7 @@ export function RateCardPage() {
         }
         setPricingTiers((prev) => [...prev, mapped])
         showToast(
-          `Pricing Tier "${mapped.code} — ${mapped.name}" saved to database.`,
+          `Pricing Tier "${mapped.code} — ${mapped.name}" saved.`,
         )
       } else {
         let maxTierNum = 0
@@ -2045,7 +2045,7 @@ export function RateCardPage() {
       if (isLiveBackendData && typeof tierId === 'number') {
         await deleteCustomerTier(tierId)
         setPricingTiers((prev) => prev.filter((t) => t.id !== tierId))
-        showToast(`Pricing tier "${tier.name}" removed from database.`)
+        showToast(`Pricing tier "${tier.name}" removed.`)
       } else {
         setPricingTiers((prev) => prev.filter((t) => t.id !== tierId))
         showToast(`Pricing tier "${tier.name}" removed.`)
@@ -2076,7 +2076,7 @@ export function RateCardPage() {
           description: created.description || '',
         }
         setDeploymentModels((prev) => [...prev, mapped])
-        showToast(`Deployment model "${created.name}" saved to database.`)
+        showToast(`Deployment model "${created.name}" saved.`)
       } else {
         const newModel = {
           id: `dep-${Date.now()}`,
@@ -2118,7 +2118,7 @@ export function RateCardPage() {
           unitOfMeasure: 'Configurable',
         }
         setPricingModels((prev) => [...prev, mapped])
-        showToast(`Pricing model "${created.name}" saved to database.`)
+        showToast(`Pricing model "${created.name}" saved.`)
       } else {
         const code = newModelData.code || newModelData.name
         const newModel = {
@@ -2157,7 +2157,7 @@ export function RateCardPage() {
           if (isLiveBackendData && typeof id === 'number') {
             await deleteDeploymentModel(id)
             setDeploymentModels((prev) => prev.filter((m) => m.id !== id))
-            showToast(`Deployment model "${model.name}" removed from database.`)
+            showToast(`Deployment model "${model.name}" removed.`)
           } else {
             setDeploymentModels((prev) => prev.filter((m) => m.id !== id))
             showToast(`Deployment model "${model.name}" removed.`)
@@ -2187,7 +2187,7 @@ export function RateCardPage() {
           if (isLiveBackendData && typeof id === 'number') {
             await deletePricingModel(id)
             setPricingModels((prev) => prev.filter((pm) => pm.id !== id))
-            showToast(`Pricing model "${model.name}" removed from database.`)
+            showToast(`Pricing model "${model.name}" removed.`)
           } else {
             setPricingModels((prev) => prev.filter((pm) => pm.id !== id))
             showToast(`Pricing model "${model.name}" removed.`)
@@ -2234,10 +2234,10 @@ export function RateCardPage() {
         }
         setHourlyRates((prev) => [...prev, mapped])
         showToast(
-          `Service rate for "${newRate.serviceLine}" saved to database.`,
+          `Service rate for "${newRate.serviceLine}" saved.`,
         )
       } else {
-        showToast('Cannot save service rate: the backend is not available.', 'error')
+        showToast('Cannot save service rate: service is unavailable.', 'error')
       }
     } catch (err) {
       showToast(
@@ -2263,7 +2263,7 @@ export function RateCardPage() {
           if (isLiveBackendData && typeof id === 'number') {
             await deleteServiceRate(id)
             setHourlyRates((prev) => prev.filter((item) => item.id !== id))
-            showToast('Hourly rate removed from database.')
+            showToast('Hourly rate removed.')
           } else {
             setHourlyRates((prev) => prev.filter((item) => item.id !== id))
             showToast('Hourly rate removed.')
@@ -2301,7 +2301,7 @@ export function RateCardPage() {
               : hr,
           ),
         )
-        showToast('Hourly rate updated in database.')
+        showToast('Hourly rate updated.')
       } else {
         setHourlyRates((prev) =>
           prev.map((hr) => (hr.id === id ? { ...hr, ...updatedFields } : hr)),
@@ -2327,7 +2327,7 @@ export function RateCardPage() {
         )
         if (!fromCurr || !toCurr) {
           throw new Error(
-            `Currency ${newFx.sourceCurrency} or ${newFx.targetCurrency} not found in database.`,
+            `Currency ${newFx.sourceCurrency} or ${newFx.targetCurrency} not found.`,
           )
         }
         const created = await createFxRate({
@@ -2347,7 +2347,7 @@ export function RateCardPage() {
         }
         setExchangeRates((prev) => [...prev, mapped])
         showToast(
-          `Exchange rate ${newFx.sourceCurrency}/${newFx.targetCurrency} saved to database.`,
+          `Exchange rate ${newFx.sourceCurrency}/${newFx.targetCurrency} saved.`,
         )
       } else {
         const fxWithId = {
@@ -2383,7 +2383,7 @@ export function RateCardPage() {
           if (isLiveBackendData && typeof id === 'number') {
             await deleteFxRate(id)
             setExchangeRates((prev) => prev.filter((item) => item.id !== id))
-            showToast('Exchange rate removed from database.')
+            showToast('Exchange rate removed.')
           } else {
             setExchangeRates((prev) => prev.filter((item) => item.id !== id))
             showToast('Exchange rate removed.')
@@ -2430,7 +2430,7 @@ export function RateCardPage() {
       const refreshed = await getRateCards({ rate_card_version_id: activeVersion?.id })
       setRawRateCards(Array.isArray(refreshed) ? refreshed : [])
       processRateCards(refreshed, pricingTiers, deploymentModels, pricingModels, packs, features, products)
-      showToast('Rate card record updated and persisted to PostgreSQL.')
+      showToast('Rate card record updated.')
     } catch (err) {
       showToast(`Failed to update rate card: ${formatApiError(err)}`, 'error')
     }
@@ -2453,19 +2453,19 @@ export function RateCardPage() {
 
       {/* 3. Live Database Status Strip */}
       {isLoading && (
-        <div className="bg-blue-50 border-b border-blue-200 px-4 py-1 text-xs text-blue-700 flex items-center justify-between shrink-0">
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-1.5 text-[11px] text-blue-700 flex items-center justify-between shrink-0">
           <span className="flex items-center gap-2">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-            Connecting to PostgreSQL database & loading live rate cards...
+            <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+            Loading rate cards...
           </span>
         </div>
       )}
 
       {apiError && !isLoading && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1 text-xs text-amber-800 flex items-center justify-between shrink-0">
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 text-[11px] text-amber-800 flex items-center justify-between shrink-0">
           <span className="flex items-center gap-2">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-            Backend offline: {apiError}. Changes will apply to current local state.
+            <AlertCircle className="w-4 h-4 text-amber-600" />
+            Rate card service unavailable: {apiError}. Changes apply to the current session only.
           </span>
           <button
             type="button"
@@ -2479,7 +2479,7 @@ export function RateCardPage() {
 
       {isLiveBackendData && !isLoading && (
         <div
-          className={`border-b px-4 py-1 text-xs flex flex-wrap items-center justify-between gap-2 shrink-0 ${
+          className={`border-b px-4 py-1.5 text-[11px] flex flex-wrap items-center justify-between gap-2 shrink-0 ${
             isVersionLocked
               ? 'bg-amber-50/90 border-amber-300 text-amber-900'
               : 'bg-emerald-50 border-emerald-200 text-emerald-800'
@@ -2487,18 +2487,16 @@ export function RateCardPage() {
         >
           <span className="flex items-center gap-2">
             {isVersionLocked ? (
-              <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
             ) : (
-              <Database className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              <Database className="w-4 h-4 text-emerald-600 shrink-0" />
             )}
             <span>
-              Connected to PostgreSQL live rate card ({activeVersion?.version_no || 'RC-DEV-1'})
-              {isVersionLocked ? (
+              Live rate card ({activeVersion?.version_no || 'RC-DEV-1'})
+              {isVersionLocked && (
                 <span className="ml-1.5 font-semibold text-amber-800">
-                  [RETIRED / LOCKED] — Historical pricing snapshot is protected against modifications.
+                  [RETIRED / LOCKED] — Protected against modifications.
                 </span>
-              ) : (
-                '. All modifications persist directly to the database.'
               )}
             </span>
           </span>
@@ -2517,7 +2515,7 @@ export function RateCardPage() {
                   aria-label="Rate Card Version"
                   value={activeVersion?.id || ''}
                   onChange={(e) => handleSelectVersion(Number(e.target.value))}
-                  className="text-xs font-semibold py-0.5 px-2 bg-white border border-slate-300 rounded shadow-2xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-500 text-slate-800"
+                  className="text-[12px] font-semibold py-1 px-2.5 bg-white border border-slate-300 rounded shadow-2xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-orange-500 text-slate-800"
                 >
                   {versionsList.map((v) => (
                     <option key={v.id} value={v.id}>
@@ -2531,14 +2529,14 @@ export function RateCardPage() {
             <button
               type="button"
               onClick={handleRefresh}
-              title="Refresh database records"
+              title="Refresh rate cards"
               className={`flex items-center gap-1 font-semibold cursor-pointer text-[11px] ${
                 isVersionLocked
                   ? 'text-amber-900 hover:text-amber-950'
                   : 'text-emerald-800 hover:text-emerald-950'
               }`}
             >
-              <RefreshCw className="w-3 h-3" />
+              <RefreshCw className="w-3.5 h-3.5" />
               <span>Refresh</span>
             </button>
           </div>
@@ -2546,13 +2544,13 @@ export function RateCardPage() {
       )}
 
       {/* Mobile/Tablet Column Selector (< lg) */}
-      <div className="lg:hidden flex items-center justify-between px-3 py-1.5 bg-white border-b border-slate-200 shrink-0 text-xs">
-        <span className="text-[11px] font-bold uppercase text-slate-500 tracking-wider">Workspace:</span>
+      <div className="lg:hidden flex items-center justify-between px-3 py-1.5 bg-white border-b border-slate-200 shrink-0 text-[11px]">
+        <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Workspace:</span>
         <div className="inline-flex rounded-lg bg-slate-100 p-0.5 font-semibold">
           <button
             type="button"
             onClick={() => setMobileView('products')}
-            className={`px-2.5 py-1 rounded-md transition-colors ${
+            className={`px-3 py-1.5 rounded-md transition-colors ${
               mobileView === 'products' ? 'bg-white text-orange-600 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -2561,7 +2559,7 @@ export function RateCardPage() {
           <button
             type="button"
             onClick={() => setMobileView('center')}
-            className={`px-2.5 py-1 rounded-md transition-colors ${
+            className={`px-3 py-1.5 rounded-md transition-colors ${
               mobileView === 'center' ? 'bg-white text-orange-600 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -2570,7 +2568,7 @@ export function RateCardPage() {
           <button
             type="button"
             onClick={() => setMobileView('masters')}
-            className={`px-2.5 py-1 rounded-md transition-colors ${
+            className={`px-3 py-1.5 rounded-md transition-colors ${
               mobileView === 'masters' ? 'bg-white text-orange-600 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
             }`}
           >

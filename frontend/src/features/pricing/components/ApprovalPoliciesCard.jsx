@@ -15,25 +15,25 @@ export function ApprovalPoliciesCard({ policies }) {
       <div className="flex items-center justify-between pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-orange-600" aria-hidden="true" />
-          <h2 className="text-xs font-bold text-slate-900 tracking-tight">
+          <h2 className="text-[16px] font-bold text-slate-900 tracking-tight">
             Approval Governance Policies
           </h2>
         </div>
-        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+        <span className="px-2.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
           Demo settings — not enforced
         </span>
       </div>
 
       <p className="text-[11px] text-slate-500 leading-relaxed">
-        Delegation of authority (DoA) thresholds configured in backend governance matrices.
+        Delegation of authority (DoA) indicative thresholds.
       </p>
 
       {/* Policy Fields */}
-      <div className="space-y-2.5 text-xs">
+      <div className="space-y-3 text-[12px]">
         {/* Gross Margin Floor */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
           <div>
-            <span className="font-semibold text-slate-800 block">
+            <span className="font-semibold text-slate-800 text-[13px] block">
               Gross-Margin Floor
             </span>
             <span className="text-[10px] text-slate-400">
@@ -41,19 +41,16 @@ export function ApprovalPoliciesCard({ policies }) {
             </span>
           </div>
           <div className="text-right">
-            <span className="font-mono font-bold text-slate-900">
+            <span className="font-mono font-bold text-[13px] sm:text-[14px] text-slate-900">
               {floor}%
-            </span>
-            <span className="block text-[9px] text-amber-700 font-medium">
-              Demo setting — not enforced
             </span>
           </div>
         </div>
 
         {/* Line-item Discount Ceiling */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
           <div>
-            <span className="font-semibold text-slate-800 block">
+            <span className="font-semibold text-slate-800 text-[13px] block">
               Line-Item Discount Ceiling
             </span>
             <span className="text-[10px] text-slate-400">
@@ -61,19 +58,16 @@ export function ApprovalPoliciesCard({ policies }) {
             </span>
           </div>
           <div className="text-right">
-            <span className="font-mono font-bold text-slate-900">
+            <span className="font-mono font-bold text-[13px] sm:text-[14px] text-slate-900">
               {lineCeiling}%
-            </span>
-            <span className="block text-[9px] text-amber-700 font-medium">
-              Demo setting — not enforced
             </span>
           </div>
         </div>
 
         {/* Overall Deal Discount Ceiling */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
           <div>
-            <span className="font-semibold text-slate-800 block">
+            <span className="font-semibold text-slate-800 text-[13px] block">
               Overall Deal Discount Ceiling
             </span>
             <span className="text-[10px] text-slate-400">
@@ -81,32 +75,28 @@ export function ApprovalPoliciesCard({ policies }) {
             </span>
           </div>
           <div className="text-right">
-            <span className="font-mono font-bold text-slate-900">
+            <span className="font-mono font-bold text-[13px] sm:text-[14px] text-slate-900">
               {overallCeiling}%
-            </span>
-            <span className="block text-[9px] text-amber-700 font-medium">
-              Demo setting — not enforced
             </span>
           </div>
         </div>
 
         {/* Workflow Approval Status */}
-        <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
-          <span className="font-semibold text-slate-800">
+        <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+          <span className="font-semibold text-slate-800 text-[13px]">
             Approval Routing Workflow:
           </span>
-          <span className="text-[11px] font-mono text-slate-500 italic bg-white px-2 py-0.5 rounded border border-slate-200">
-            Pending backend configuration
+          <span className="text-[10px] font-mono text-slate-500 italic bg-white px-2.5 py-1 rounded border border-slate-200">
+            Not configured
           </span>
         </div>
       </div>
 
       {/* Governance Explanatory Notice */}
-      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-2 text-[10px] text-slate-500 leading-relaxed">
-        <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />
+      <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-start gap-2 text-[10px] text-slate-500 leading-relaxed">
+        <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" aria-hidden="true" />
         <span>
-          Approval decisions and routing steps are governed by the backend Wave 5 governance service.
-          The frontend does not enforce policy rules or auto-decide approval status.
+          Approval thresholds shown above are indicative targets and are not enforced in this workflow.
         </span>
       </div>
     </section>

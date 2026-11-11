@@ -8,15 +8,15 @@ export function NotFoundPage() {
         <FileQuestion className="w-8 h-8 text-slate-600" aria-hidden="true" />
       </div>
 
-      <span className="text-xs font-mono font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full mb-2">
+      <span className="text-[11px] font-mono font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full mb-2">
         404 ERROR
       </span>
 
-      <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+      <h1 className="text-[26px] sm:text-[28px] font-bold text-slate-900 tracking-tight leading-tight">
         Page Not Found
       </h1>
 
-      <p className="mt-2 text-sm text-slate-500 max-w-md">
+      <p className="mt-2 text-[14px] text-slate-500 max-w-md">
         The commercial desk view or proposal route you requested does not exist or may have been relocated.
       </p>
 

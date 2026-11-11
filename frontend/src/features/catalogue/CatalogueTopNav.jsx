@@ -67,10 +67,10 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
               <ShieldCheck className="w-5 h-5 text-white" aria-hidden="true" />
             </div>
             <div>
-              <div className="text-sm font-bold tracking-wider text-white">
+              <div className="text-[14px] font-bold tracking-wider text-white">
                 DEAL DESK
               </div>
-              <div className="text-[9px] uppercase tracking-widest text-slate-400 font-medium leading-none">
+              <div className="text-[10px] uppercase tracking-widest text-slate-400 font-medium leading-none">
                 Commercial Engine
               </div>
             </div>
@@ -87,7 +87,7 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
                   <Link
                     key={item.label}
                     to={item.to}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                    className={`px-3.5 py-1.5 text-[13px] font-medium rounded-md transition-all flex items-center gap-1.5 whitespace-nowrap ${
                       item.isActive
                         ? 'bg-slate-800 text-white shadow-2xs border-b-2 border-orange-500 font-semibold'
                         : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
@@ -101,12 +101,12 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
               return (
                 <span
                   key={item.label}
-                  className="px-3 py-1.5 text-xs font-medium text-slate-500 cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
+                  className="px-3.5 py-1.5 text-[13px] font-medium text-slate-500 cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
                   title="Reference section — not implemented in current routes"
                 >
                   <span>{item.label}</span>
                   {item.badge && (
-                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                       {item.badge}
                     </span>
                   )}
@@ -120,31 +120,31 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
         <div className="flex items-center gap-3">
           {isDemo ? (
             <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
-              title="Demonstration dataset — not connected to production database"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
+              title="Sample data"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
               <span>DEMO DATA</span>
             </div>
           ) : isConnected === true ? (
             <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
-              title="Connected to PostgreSQL database"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800/80"
+              title="Connected"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
-              <span>POSTGRESQL LIVE</span>
+              <span>LIVE</span>
             </div>
           ) : isConnected === false ? (
             <div
-              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/80"
-              title="Disconnected from backend database"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-950/80 text-rose-300 border border-rose-800/80"
+              title="Service unavailable"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-rose-400" aria-hidden="true"></span>
               <span>OFFLINE / DISCONNECTED</span>
             </div>
           ) : null}
 
-          <div className="flex items-center gap-2 pl-2 border-l border-slate-800 text-xs text-slate-300">
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-800 text-[12px] text-slate-300">
             <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
               <User className="w-3.5 h-3.5" aria-hidden="true" />
             </div>

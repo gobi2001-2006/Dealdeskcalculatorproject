@@ -23,7 +23,7 @@ export function PlatformRateInputs({
   if (variant === 'license') {
     return (
       <div>
-        <span className="block text-xs font-semibold text-slate-700 mb-1.5">
+        <span className="block text-[13px] font-semibold text-slate-700 mb-1.5">
           Licence Fee per User ({currencySymbol}, one-time) and AMC % by Customer Tier
         </span>
         <div className={`grid gap-3 ${gridCols}`}>
@@ -43,7 +43,7 @@ export function PlatformRateInputs({
                 value={unitTierRates[tier.id] ?? ''}
                 onChange={(e) => onChangeUnit(tier.id, e.target.value)}
                 placeholder="0.00"
-                className="w-full px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
+                className="w-full px-3 py-1.5 text-[13px] sm:text-[14px] border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
               />
               <label className="block text-[10px] font-medium text-amber-700" htmlFor={`${idPrefix}-amc-${tier.id}`}>
                 AMC %
@@ -57,7 +57,7 @@ export function PlatformRateInputs({
                 value={amcTierRates[tier.id] ?? ''}
                 onChange={(e) => onChangeAmc(tier.id, e.target.value)}
                 placeholder="e.g. 5"
-                className="w-full px-2.5 py-1.5 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
+                className="w-full px-3 py-1.5 text-[13px] sm:text-[14px] border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono"
               />
             </div>
           ))}
@@ -69,7 +69,7 @@ export function PlatformRateInputs({
   return (
     <div className="space-y-3">
       <div>
-        <span className="block text-xs font-semibold text-slate-700 mb-1.5">
+        <span className="block text-[13px] font-semibold text-slate-700 mb-1.5">
           Platform Fee by Customer Tier ({currencySymbol})
         </span>
         <div className={`grid gap-3 ${gridCols}`}>
@@ -92,7 +92,7 @@ export function PlatformRateInputs({
                   value={fixedTierRates[tier.id] ?? ''}
                   onChange={(e) => onChangeFixed(tier.id, e.target.value)}
                   placeholder="0.00"
-                  className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono bg-amber-50/20"
+                  className="w-full pl-6 pr-3 py-1.5 text-[13px] sm:text-[14px] border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono bg-amber-50/20"
                 />
               </div>
             </div>
@@ -100,7 +100,7 @@ export function PlatformRateInputs({
         </div>
       </div>
       <div>
-        <label htmlFor={`${idPrefix}-subscription-rate`} className="block text-xs font-semibold text-slate-700 mb-1">
+        <label htmlFor={`${idPrefix}-subscription-rate`} className="block text-[13px] font-semibold text-slate-700 mb-1">
           Subscription Rate ({currencySymbol} per unit)
         </label>
         <div className="relative max-w-[200px]">
@@ -113,10 +113,10 @@ export function PlatformRateInputs({
             value={subscriptionRate}
             onChange={(e) => onChangeSubscription(e.target.value)}
             placeholder="0.00"
-            className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-sky-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-mono"
+            className="w-full pl-6 pr-3 py-1.5 text-[13px] sm:text-[14px] border border-sky-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-mono"
           />
         </div>
-        <p className="mt-1 text-[10px] text-slate-500">To use a different rate for each tier, choose “Set rate per tier” in the grid after adding.</p>
+        <p className="mt-1 text-[11px] text-slate-500">To use a different rate for each tier, choose “Set rate per tier” in the grid after adding.</p>
       </div>
     </div>
   )

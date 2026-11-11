@@ -85,10 +85,10 @@ export function PackRatesSection({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              <h3 className="text-[16px] font-bold text-slate-900 tracking-tight">
                 {familyName} — Pack Rates
               </h3>
-              <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-medium bg-slate-100 text-slate-600">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-100 text-slate-600">
                 {configuredPackRates.length} configured
               </span>
               {isVersionLocked && (
@@ -114,7 +114,7 @@ export function PackRatesSection({
           <button
             type="button"
             onClick={onOpenAddPackRate}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[12px] sm:text-[13px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Add Pack</span>
@@ -123,14 +123,14 @@ export function PackRatesSection({
       </div>
 
       {/* Pack summary line */}
-      <div className="px-5 py-2.5 bg-slate-50/80 border-b border-slate-200/70 text-xs text-slate-600">
-        <span className="font-semibold text-slate-700">From Pack Builder: </span>
-        <span className="font-mono text-[11px] text-slate-600">{packSummaryText}</span>
+      <div className="px-5 py-2.5 bg-slate-50/80 border-b border-slate-200/70 text-[11px] text-slate-600">
+        <span className="font-semibold text-slate-700">Packs: </span>
+        <span className="font-mono text-[10px] text-slate-600">{packSummaryText}</span>
       </div>
 
       {/* Formula Banner */}
       <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 text-[11px] text-sky-900 flex items-center gap-2">
-        <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
+        <Info className="w-4 h-4 text-sky-600 shrink-0" aria-hidden="true" />
         <div>
           <span className="font-semibold text-sky-950">Pricing Structure: </span>
           <code className="bg-sky-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-sky-900">
@@ -182,9 +182,9 @@ export function PackRatesSection({
         />
       ) : configuredPackRates.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-[12px] sm:text-[13px]">
             <thead>
-              <tr className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 tracking-wider border-b border-slate-200">
+              <tr className="bg-slate-50 text-[11px] uppercase font-bold text-slate-600 tracking-wider border-b border-slate-200">
                 <th className="py-2.5 px-4 font-semibold min-w-[260px]">Pack Details</th>
                 <th className="py-2.5 px-3 font-semibold">Deployment</th>
                 {isDualComponent &&
@@ -231,7 +231,7 @@ export function PackRatesSection({
                   <tr key={rate.id} className="hover:bg-slate-50/70 transition-colors">
                     {/* Pack Details */}
                     <td className="py-3 px-4">
-                      <div className="font-semibold text-slate-900">
+                      <div className="font-semibold text-slate-900 text-[13px]">
                         {rate.packName}
                       </div>
 
@@ -242,7 +242,7 @@ export function PackRatesSection({
 
                       {/* Code and bundled summary */}
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                        <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                           {rate.packCode}
                         </span>
                         {items.length > 0 && (
@@ -316,7 +316,7 @@ export function PackRatesSection({
                                   onUpdateRate(rate.id, fixedKey, e.target.value)
                                 }
                                 placeholder="0.00"
-                                className="w-24 px-2 py-1 text-right font-mono text-xs border border-amber-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
+                                className="w-28 px-2.5 py-1.5 text-right font-mono text-[13px] sm:text-[14px] border border-amber-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
                               />
                             </div>
                           </td>
@@ -355,7 +355,7 @@ export function PackRatesSection({
                               onChange={(e) =>
                                 onUpdateRate(rate.id, fieldKey, e.target.value)
                               }
-                              className="w-24 px-2 py-1 text-right font-mono text-xs border border-slate-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
+                              className="w-28 px-2.5 py-1.5 text-right font-mono text-[13px] sm:text-[14px] border border-slate-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
                             />
                           </div>
                         </td>
@@ -384,14 +384,14 @@ export function PackRatesSection({
         </div>
       ) : (
         <div className="py-6 px-4 text-center">
-          <p className="text-xs text-slate-500">
+          <p className="text-[12px] text-slate-500">
             No pack rates configured for {familyName} under {activeDeployment}.
           </p>
           {!isVersionLocked && (
             <button
               type="button"
               onClick={onOpenAddPackRate}
-              className="mt-2 text-xs font-semibold text-orange-600 hover:text-orange-700 underline cursor-pointer"
+              className="mt-2 text-[12px] font-semibold text-orange-600 hover:text-orange-700 underline cursor-pointer"
             >
               + Add Pack
             </button>

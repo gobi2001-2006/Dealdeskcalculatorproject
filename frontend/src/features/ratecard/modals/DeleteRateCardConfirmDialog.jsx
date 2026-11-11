@@ -50,11 +50,11 @@ export function DeleteRateCardConfirmDialog({
             <div className="flex-1 min-w-0">
               <h3
                 id="delete-dialog-title"
-                className="text-sm font-bold text-slate-900"
+                className="text-[16px] font-bold text-slate-900"
               >
                 {title}
               </h3>
-              <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+              <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
                 Are you sure you want to delete {recordName ? (
                   <>the {recordType} <span className="font-semibold text-slate-900 font-mono">"{recordName}"</span>?</>
                 ) : (
@@ -79,7 +79,7 @@ export function DeleteRateCardConfirmDialog({
             type="button"
             disabled={isDeleting}
             onClick={onClose}
-            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Cancel
           </button>
@@ -87,7 +87,7 @@ export function DeleteRateCardConfirmDialog({
             type="button"
             disabled={isDeleting}
             onClick={onConfirm}
-            className="px-4 py-1.5 text-xs font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+            className="px-4 py-2 text-[13px] font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
           >
             {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <span>{isDeleting ? 'Deleting...' : 'Delete'}</span>

@@ -17,12 +17,12 @@ export function Card({
         >
           <div>
             {title && (
-              <h2 className="text-base font-semibold text-slate-900 leading-tight">
+              <h2 className="text-[16px] font-semibold text-slate-900 leading-tight">
                 {title}
               </h2>
             )}
             {subtitle && (
-              <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">{subtitle}</p>
             )}
           </div>
           {action && <div className="shrink-0">{action}</div>}

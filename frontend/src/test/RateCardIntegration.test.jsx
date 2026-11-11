@@ -220,7 +220,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     // Should indicate live connection
     await waitFor(() => {
       expect(
-        screen.getByText(/Connected to PostgreSQL live rate card/i),
+        screen.getByText(/Live rate card/i),
       ).toBeInTheDocument()
     })
 
@@ -228,7 +228,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     expect(screen.getAllByText(/RC-DEV-1/i).length).toBeGreaterThan(0)
 
     // Confirms live service rate is mapped and displayed
-    expect(screen.getByText('Integration Architect')).toBeInTheDocument()
+    expect(screen.getAllByText('Integration Architect').length).toBeGreaterThan(0)
   })
 
   it('displays connection error when API fails and shows Reconnect button', async () => {
@@ -242,7 +242,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Backend offline: Connection refused/i),
+        screen.getByText(/Rate card service unavailable: Connection refused/i),
       ).toBeInTheDocument()
     })
 
@@ -265,7 +265,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Live rate card/i)).toBeInTheDocument()
     })
 
     // Open add country modal
@@ -302,7 +302,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Integration Architect')).toBeInTheDocument()
+      expect(screen.getAllByText('Integration Architect').length).toBeGreaterThan(0)
     })
 
     // Click delete service rate button
@@ -318,7 +318,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     const cancelBtn = within(dialog).getByRole('button', { name: /Cancel/i })
     fireEvent.click(cancelBtn)
     expect(ratesApi.deleteServiceRate).not.toHaveBeenCalled()
-    expect(screen.getByText('Integration Architect')).toBeInTheDocument()
+    expect(screen.getAllByText('Integration Architect').length).toBeGreaterThan(0)
 
     // Test Delete path: clicking Delete confirms deletion
     fireEvent.click(deleteBtn)
@@ -398,7 +398,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Live rate card/i)).toBeInTheDocument()
     })
 
     // Switch version to retired version
@@ -423,7 +423,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Integration Architect')).toBeInTheDocument()
+      expect(screen.getAllByText('Integration Architect').length).toBeGreaterThan(0)
     })
 
     // Confirms correct currency is displayed (India (INR), not India (USD))
@@ -458,7 +458,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Live rate card/i)).toBeInTheDocument()
     })
 
     const deploymentSelect = screen.getByRole('combobox', { name: /Deployment Architecture/i })
@@ -474,7 +474,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     // Should indicate no configured pricing methods and display the On-Premise status card
     await waitFor(() => {
       expect(screen.getByText(/No pricing model is configured for On-Premise/i)).toBeInTheDocument()
-      expect(screen.getByText(/deployment_pricing_options/i)).toBeInTheDocument()
+      expect(screen.getByText(/Configure a deployment and pricing model combination in master data/i)).toBeInTheDocument()
     })
   })
 
@@ -486,7 +486,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Live rate card/i)).toBeInTheDocument()
     })
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })
@@ -520,7 +520,7 @@ describe('Rate Card & Masters Integration Tests (Live Backend Wiring)', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
+      expect(screen.getByText(/Live rate card/i)).toBeInTheDocument()
     })
 
     const pricingSelect = screen.getByRole('combobox', { name: /Commercial Pricing Model/i })

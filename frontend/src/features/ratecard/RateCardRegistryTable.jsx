@@ -121,7 +121,7 @@ export function RateCardRegistryTable({
         versionStatus: activeVersion?.status || 'active',
         effectiveDates: activeVersion?.valid_from
           ? `${activeVersion.valid_from} to ${activeVersion.valid_to || 'Indefinite'}`
-          : 'Effective Baseline',
+          : 'Standard / Active',
       }
     })
   }, [rawRateCards, activeVersion, countries, deploymentModels, pricingModels, pricingTiers, packs, features])
@@ -189,17 +189,17 @@ export function RateCardRegistryTable({
               <Database className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              <h3 className="text-[16px] sm:text-[19px] font-bold text-slate-900 tracking-tight">
                 Full Commercial Rate Card Registry
               </h3>
               <p className="text-[11px] text-slate-500">
-                Normalized 6-dimensional table of all configured SKU rates in active version ({activeVersion?.version_no || 'RC-DEV-1'})
+                Configured SKU rates in active version ({activeVersion?.version_no || 'RC-DEV-1'})
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200">
+            <span className="text-[11px] font-mono font-semibold px-3 py-1 rounded bg-slate-100 text-slate-700 border border-slate-200">
               Showing {filteredRows.length} of {mappedRows.length} rates
             </span>
             {onRefresh && (
@@ -207,7 +207,7 @@ export function RateCardRegistryTable({
                 type="button"
                 onClick={onRefresh}
                 className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
-                title="Refresh rate records from PostgreSQL"
+                title="Refresh rates"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
               </button>
@@ -216,16 +216,16 @@ export function RateCardRegistryTable({
         </div>
 
         {/* Filters grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-100 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-100 text-[12px]">
           {/* Search */}
           <div className="relative lg:col-span-2">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
               placeholder="Search product, pack, code..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium"
+              className="w-full pl-9 pr-3 py-1.5 text-[13px] border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 font-medium"
             />
             {searchTerm && (
               <button
@@ -244,7 +244,7 @@ export function RateCardRegistryTable({
               aria-label="Filter by Country"
               value={filterCountry}
               onChange={(e) => setFilterCountry(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
+              className="w-full px-3 py-1.5 text-[13px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
             >
               <option value="all">All Countries ({countries.length})</option>
               {countries.map((c) => (
@@ -261,7 +261,7 @@ export function RateCardRegistryTable({
               aria-label="Filter by Deployment"
               value={filterDeployment}
               onChange={(e) => setFilterDeployment(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
+              className="w-full px-3 py-1.5 text-[13px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
             >
               <option value="all">All Deployments</option>
               {deploymentModels.map((d) => (
@@ -278,7 +278,7 @@ export function RateCardRegistryTable({
               aria-label="Filter by Pricing Model"
               value={filterPricingModel}
               onChange={(e) => setFilterPricingModel(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
+              className="w-full px-3 py-1.5 text-[13px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
             >
               <option value="all">All Pricing Models</option>
               {pricingModels.map((pm) => (
@@ -295,7 +295,7 @@ export function RateCardRegistryTable({
               aria-label="Filter by Customer Tier"
               value={filterTier}
               onChange={(e) => setFilterTier(e.target.value)}
-              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
+              className="w-full px-3 py-1.5 text-[13px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer font-medium"
             >
               <option value="all">All Tiers ({pricingTiers.length})</option>
               {pricingTiers.map((t) => (
@@ -312,9 +312,9 @@ export function RateCardRegistryTable({
       <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
         {filteredRows.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-[12px] sm:text-[13px]">
               <thead>
-                <tr className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 tracking-wider border-b border-slate-200">
+                <tr className="bg-slate-50 text-[11px] uppercase font-bold text-slate-600 tracking-wider border-b border-slate-200">
                   <th className="py-2.5 px-3 font-semibold min-w-[200px]">Product / Pack Target</th>
                   <th className="py-2.5 px-2.5 font-semibold">Country</th>
                   <th className="py-2.5 px-2.5 font-semibold">Deployment</th>
@@ -342,7 +342,7 @@ export function RateCardRegistryTable({
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1.5">
                           <span
-                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
                               row.targetType === 'Pack'
                                 ? 'bg-orange-100 text-orange-800'
                                 : 'bg-indigo-100 text-indigo-800'
@@ -350,7 +350,7 @@ export function RateCardRegistryTable({
                           >
                             {row.targetType}
                           </span>
-                          <span className="font-semibold text-slate-900 truncate">
+                          <span className="font-semibold text-slate-900 truncate text-[13px]">
                             {row.targetName}
                           </span>
                         </div>
@@ -361,7 +361,7 @@ export function RateCardRegistryTable({
 
                       {/* 2. Country */}
                       <td className="py-2.5 px-2.5 whitespace-nowrap">
-                        <span className="font-medium text-slate-800">
+                        <span className="font-medium text-slate-800 text-[12px]">
                           {row.countryName}
                         </span>
                         {row.countryCode && (
@@ -380,14 +380,14 @@ export function RateCardRegistryTable({
 
                       {/* 4. Pricing Model */}
                       <td className="py-2.5 px-2.5 whitespace-nowrap">
-                        <span className="font-medium text-slate-800">
+                        <span className="font-medium text-slate-800 text-[12px]">
                           {row.pricingModelName}
                         </span>
                       </td>
 
                       {/* 5. Customer Tier */}
                       <td className="py-2.5 px-2.5 whitespace-nowrap">
-                        <span className="font-mono font-semibold text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                        <span className="font-mono font-semibold text-[10px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                           {row.tierCode || row.tierName}
                         </span>
                       </td>
@@ -411,10 +411,10 @@ export function RateCardRegistryTable({
                               setEditValues((prev) => ({ ...prev, fixed_fee: e.target.value }))
                             }
                             placeholder="—"
-                            className="w-20 px-1.5 py-0.5 text-right font-mono text-xs border border-orange-400 rounded bg-white"
+                            className="w-24 px-2 py-1 text-right font-mono text-[12px] sm:text-[13px] border border-orange-400 rounded bg-white"
                           />
                         ) : row.fixedFee != null ? (
-                          <span className="text-amber-800 font-semibold">
+                          <span className="text-amber-800 font-semibold text-[12px] sm:text-[13px]">
                             {row.fixedFee.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
@@ -437,10 +437,10 @@ export function RateCardRegistryTable({
                               setEditValues((prev) => ({ ...prev, unit_rate: e.target.value }))
                             }
                             placeholder="—"
-                            className="w-20 px-1.5 py-0.5 text-right font-mono text-xs border border-orange-400 rounded bg-white"
+                            className="w-24 px-2 py-1 text-right font-mono text-[12px] sm:text-[13px] border border-orange-400 rounded bg-white"
                           />
                         ) : row.unitRate != null ? (
-                          <span className="text-emerald-800 font-bold">
+                          <span className="text-emerald-800 font-bold text-[12px] sm:text-[13px]">
                             {row.unitRate.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
@@ -460,7 +460,7 @@ export function RateCardRegistryTable({
                       <td className="py-2.5 px-2.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <span
-                            className={`w-1.5 h-1.5 rounded-full ${
+                            className={`w-2 h-2 rounded-full ${
                               row.versionStatus === 'active'
                                 ? 'bg-emerald-500'
                                 : row.versionStatus === 'retired'
@@ -472,7 +472,7 @@ export function RateCardRegistryTable({
                             {row.versionStatus}
                           </span>
                         </div>
-                        <div className="text-[9px] text-slate-400 font-mono">
+                        <div className="text-[10px] text-slate-400 font-mono">
                           {row.versionNo}
                         </div>
                       </td>
@@ -523,7 +523,7 @@ export function RateCardRegistryTable({
             <p className="text-xs font-semibold text-slate-700">
               No rate-card records match your current filter selections.
             </p>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[10px] text-slate-500">
               Try clearing search terms or selecting 'All' for countries, deployments, pricing models, and tiers.
             </p>
           </div>

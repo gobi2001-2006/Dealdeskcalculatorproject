@@ -59,7 +59,7 @@ function renderPage() {
 async function openPlatformModel() {
   renderPage()
   await waitFor(() => {
-    expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument()
+    expect(screen.getByText(/Live rate card/i)).toBeInTheDocument()
   })
   fireEvent.change(screen.getByRole('combobox', { name: /Commercial Pricing Model/i }), {
     target: { value: 'platform_subscription' },
@@ -290,7 +290,7 @@ describe('Rate Card — Platform + Subscription (tier fees, UOM, subscription ra
   it('adds a pack rate from the modal with tier fees, UOM and subscription rate', async () => {
     ratesApi.getRateCards.mockResolvedValue([platformCard(4, 11, 168800, 93, { pack_version_id: null, feature_id: 52 })])
     renderPage()
-    await waitFor(() => expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Live rate card/i)).toBeInTheDocument())
     fireEvent.change(screen.getByRole('combobox', { name: /Commercial Pricing Model/i }), {
       target: { value: 'platform_subscription' },
     })
@@ -329,7 +329,7 @@ describe('Rate Card — Platform + Subscription (tier fees, UOM, subscription ra
       { ...platformCard(9, 11, null, 85), pricing_model_id: 1 },
     ])
     renderPage()
-    await waitFor(() => expect(screen.getByText(/Connected to PostgreSQL live rate card/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText(/Live rate card/i)).toBeInTheDocument())
     expect(screen.getByRole('combobox', { name: /Commercial Pricing Model/i })).toHaveValue('pepm')
     await waitFor(() => expect(screen.getByLabelText(/TA Standard Tier 1 Rate/i)).toHaveValue(85))
     expect(screen.queryByLabelText('TA Standard Unit of Measure')).not.toBeInTheDocument()

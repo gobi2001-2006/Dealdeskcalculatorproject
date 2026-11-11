@@ -14,16 +14,16 @@ export function PacksSidebar({
       className="w-full md:w-[360px] lg:w-[380px] bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none overflow-hidden"
     >
       {/* Top Header */}
-      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between shrink-0 bg-slate-50/60">
+      <div className="px-4 py-3.5 border-b border-slate-200 flex items-center justify-between shrink-0 bg-slate-50/60">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-orange-100 text-orange-700 flex items-center justify-center shrink-0">
-            <Package className="w-3.5 h-3.5" aria-hidden="true" />
+            <Package className="w-4 h-4" aria-hidden="true" />
           </div>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+          <h2 className="text-[12px] font-bold uppercase tracking-wider text-slate-700">
             Packs
           </h2>
         </div>
-        <span className="text-xs font-mono font-semibold text-slate-600 bg-slate-200/80 px-2 py-0.5 rounded-full">
+        <span className="text-[11px] font-mono font-semibold text-slate-600 bg-slate-200/80 px-2.5 py-0.5 rounded-full">
           {packs.length}
         </span>
       </div>
@@ -34,7 +34,7 @@ export function PacksSidebar({
           <div className="py-12 text-center text-slate-400">
             <Package className="w-8 h-8 text-slate-300 mx-auto mb-2" aria-hidden="true" />
             <p className="text-xs font-medium text-slate-600">No packs saved yet</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[10px] text-slate-400 mt-0.5">
               Click &quot;Create New Pack&quot; below to build your first preset.
             </p>
           </div>
@@ -70,7 +70,7 @@ export function PacksSidebar({
                       aria-hidden="true"
                     />
                     <h3
-                      className="text-xs font-bold truncate leading-tight"
+                      className="text-[15px] sm:text-[16px] font-bold truncate leading-tight"
                       style={{ color: pack.color || '#9A3412' }}
                       title={pack.name}
                     >
@@ -81,7 +81,7 @@ export function PacksSidebar({
                   {/* Code & Product Count */}
                   <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                     {pack.code && (
-                      <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                      <span className="font-mono text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
                         {pack.code}
                       </span>
                     )}
@@ -92,7 +92,7 @@ export function PacksSidebar({
                 </div>
 
                 {/* Description */}
-                <p className="mt-2 text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                <p className="mt-2 text-[12px] text-slate-600 line-clamp-2 leading-relaxed">
                   {pack.description || (
                     <span className="text-slate-400 italic">No description</span>
                   )}
@@ -100,15 +100,15 @@ export function PacksSidebar({
 
                 {/* Product Type Count Badges */}
                 <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center gap-1.5 flex-wrap text-[10px]">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium border border-blue-200/60">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium border border-blue-200/60">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-600" aria-hidden="true" />
                     <span>Native: {typeCounts.native}</span>
                   </span>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-medium border border-purple-200/60">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-medium border border-purple-200/60">
                     <span className="w-1.5 h-1.5 rounded-full bg-purple-600" aria-hidden="true" />
                     <span>AI Agent: {typeCounts.aiAgent}</span>
                   </span>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 font-medium border border-orange-200/60">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-orange-50 text-orange-700 font-medium border border-orange-200/60">
                     <span className="w-1.5 h-1.5 rounded-full bg-orange-600" aria-hidden="true" />
                     <span>Partner: {typeCounts.partner}</span>
                   </span>
@@ -124,7 +124,7 @@ export function PacksSidebar({
         <button
           type="button"
           onClick={onCreateNewClick}
-          className="w-full py-2.5 px-4 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white shadow-xs transition-colors flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 cursor-pointer"
+          className="w-full py-2.5 px-4 text-[13px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white shadow-xs transition-colors flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 cursor-pointer"
           aria-label="Create New Pack"
         >
           <Plus className="w-4 h-4" aria-hidden="true" />

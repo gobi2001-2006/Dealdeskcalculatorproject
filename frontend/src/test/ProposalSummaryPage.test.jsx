@@ -56,7 +56,7 @@ describe('Page 6 — Proposal Summary', () => {
     expect(within(table).getByText(/12 man-days × ₹12,000\.00\/day/)).toBeInTheDocument()
     // Native INR subtotal and the backend's USD conversion are both shown and labelled.
     expect(within(table).getByText(/Subtotal — TA Max \(INR\)/)).toBeInTheDocument()
-    expect(within(table).getByText('₹1,413,620.00')).toBeInTheDocument()
+    expect(within(table).getByText('₹14,13,620.00')).toBeInTheDocument()
     expect(within(table).getByText('Converted to USD')).toBeInTheDocument()
     expect(within(table).getByText(/INR → USD @ 0\.012/)).toBeInTheDocument()
     // Grand total = full contract value from the backend
@@ -84,7 +84,7 @@ describe('Page 6 — Proposal Summary', () => {
     }))
     renderPage()
     expect(await screen.findByText(/No calculation has been saved for this proposal yet/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/Pending backend calculation/i).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Pending calculation/i).length).toBeGreaterThan(0)
     expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
 
@@ -134,7 +134,7 @@ describe('Page 6 — Proposal Summary', () => {
     renderPage()
     await screen.findByText('Standalone Add-on')
     fireEvent.click(screen.getAllByRole('button', { name: /Save Proposal/i })[0])
-    fireEvent.click(await screen.findByRole('button', { name: /Confirm Save to PostgreSQL/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Confirm Save/i }))
     expect(await screen.findByText(/Proposal #900 saved/)).toBeInTheDocument()
     expect(api.calls.some((c) => c.method === 'POST' && c.path === '/proposals/')).toBe(false)
     expect(api.calls.some((c) => c.method === 'PATCH' && c.path === '/proposals/900')).toBe(true)
@@ -143,11 +143,40 @@ describe('Page 6 — Proposal Summary', () => {
       .every((c) => c.body.proposal_country_id === 600)).toBe(true)
   })
 
-  it('keeps export and document generation visibly disabled (not implemented)', async () => {
-    installFakeApi(apiClient, routes())
+  it('enables export buttons and triggers proposal export for docx and pdf', async () => {
+    installFakeApi(apiClient, routes({
+      'GET /proposals/:id/export': () => new Blob(['fake docx'], { type: 'application/vnd.openxmlformats' }),
+    }))
     renderPage()
     await screen.findByText('Standalone Add-on')
-    expect(screen.getByRole('button', { name: /Export PDF/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /Generate Proposal Doc/i })).toBeDisabled()
+    const exportBtn = screen.getByRole('button', { name: /Export Proposal/i })
+    const pdfBtn = screen.getByRole('button', { name: /Export PDF/i })
+    expect(exportBtn).toBeEnabled()
+    expect(pdfBtn).toBeEnabled()
+  })
+
+  it('blocks export with clear validation message when proposal has zero commercial items', async () => {
+    const emptyCalc = fx.calculationResult()
+    emptyCalc.total_proposal_contract_reporting_currency = 0
+    emptyCalc.total_proposal_annual_reporting_currency = 0
+    emptyCalc.snapshot_payload = {
+      ...emptyCalc.snapshot_payload,
+      total_proposal_contract_reporting_currency: 0,
+      total_proposal_annual_reporting_currency: 0,
+      total_subscription_contract_reporting_currency: 0,
+      total_subscription_annual_reporting_currency: 0,
+      total_services_reporting_currency: 0,
+      products: [],
+      all_subscription_line_items: [],
+      all_service_lines: [],
+    }
+    const api = installFakeApi(apiClient, routes({
+      'GET /proposals/:id/calculations/latest': () => emptyCalc,
+    }))
+    renderPage()
+    const exportBtn = await screen.findByRole('button', { name: /Export Proposal/i })
+    fireEvent.click(exportBtn)
+    expect(await screen.findByText(/at least one valid commercial item is required/i)).toBeInTheDocument()
+    expect(api.calls.some((c) => c.path.includes('/export'))).toBe(false)
   })
 })

@@ -13,29 +13,28 @@ export function ProposalsPage() {
           { label: 'Commercial Operations' },
           { label: 'Saved Proposals' },
         ]}
-        description="Comprehensive repository and approval pipeline for customer commercial proposals, term sheets, and pricing drafts."
-        badge={<Badge variant="neutral">Step 5 Rebuild Target</Badge>}
+        description="Repository for customer commercial proposals, term sheets, and pricing drafts."
       />
 
       <Card
-        title="Saved Proposals Placeholder"
-        subtitle="Awaiting Step 5 rebuild"
+        title="Saved Proposals"
+        subtitle="Proposal repository"
       >
         <div className="py-12 flex flex-col items-center justify-center text-center">
           <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-500 mb-3">
             <FileText className="w-6 h-6" aria-hidden="true" />
           </div>
-          <h3 className="text-base font-semibold text-slate-900">
-            Proposals Pipeline Module
+          <h3 className="text-[16px] font-semibold text-slate-900">
+            Proposals Pipeline
           </h3>
-          <p className="mt-1 text-xs text-slate-500 max-w-md">
-            This page placeholder preserves routing integrity during the controlled frontend reset. It will be rebuilt in Step 5 after the Calculator workflow is established.
+          <p className="mt-1 text-[13px] text-slate-500 max-w-md">
+            No saved proposals are listed here yet. Create and calculate proposals in the Proposal Configurator.
           </p>
           <div className="mt-4">
             <Button
               to="/catalogue"
               variant="outline"
-              size="sm"
+              size="md"
               icon={ArrowRight}
               iconPosition="right"
             >

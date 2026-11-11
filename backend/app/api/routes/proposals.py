@@ -17,7 +17,7 @@ Implements proposal endpoints:
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -549,3 +549,108 @@ def get_latest_calculation_endpoint(
             detail=str(exc),
         )
 
+
+# ---------------------------------------------------------------------------
+# 12. Export Proposal with Final Calculated Values
+# ---------------------------------------------------------------------------
+@router.get(
+    "/{proposal_id}/export",
+    status_code=status.HTTP_200_OK,
+    summary="Export Proposal Document with Final Calculated Commercials",
+    description=(
+        "Exports the official proposal document (.docx) or PDF report (.pdf) populated "
+        "with final calculated commercial values from the authoritative CalculationSnapshot. "
+        "Rejects stale snapshots with HTTP 409 and uncalculated proposals with HTTP 404."
+    ),
+)
+def export_proposal_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    format: str = Query("docx", description="Export format: 'docx' or 'pdf'"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/export?format=docx|pdf"""
+    from app.services.proposal_export_service import (
+        IncompleteCommercialError,
+        NoCalculationSnapshotError,
+        StaleCalculationSnapshotError,
+        extract_proposal_export_data,
+        generate_proposal_docx,
+        generate_proposal_pdf,
+    )
+
+    fmt = (format or "docx").strip().lower()
+    if fmt not in ("docx", "pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported export format '{format}'. Supported formats: docx, pdf",
+        )
+
+    try:
+        # Validate data extraction first
+        data = extract_proposal_export_data(proposal_id=proposal_id, db=db)
+        code = data["proposal_code"].replace(" ", "_")
+
+        if fmt == "pdf":
+            stream = generate_proposal_pdf(proposal_id=proposal_id, db=db, _preloaded_data=data)
+            media_type = "application/pdf"
+            filename = f"Proposal_{code}.pdf"
+        else:
+            stream = generate_proposal_docx(proposal_id=proposal_id, db=db, _preloaded_data=data)
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            filename = f"Proposal_{code}.docx"
+
+        return Response(
+            content=stream.getvalue(),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except ProposalNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except NoCalculationSnapshotError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except StaleCalculationSnapshotError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except IncompleteCommercialError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Proposal document generation failed: {exc}",
+        )
+
+
+@router.get(
+    "/{proposal_id}/export/commercials",
+    status_code=status.HTTP_200_OK,
+    summary="Get Extracted Commercial Values for Proposal Export",
+    description=(
+        "Returns the structured commercial figures extracted from the latest snapshot "
+        "matching the Proposal Summary screen and export document."
+    ),
+)
+def get_proposal_commercials_for_export_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/export/commercials"""
+    from app.services.proposal_export_service import (
+        IncompleteCommercialError,
+        NoCalculationSnapshotError,
+        StaleCalculationSnapshotError,
+        extract_proposal_export_data,
+    )
+    try:
+        return extract_proposal_export_data(proposal_id=proposal_id, db=db)
+    except ProposalNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except NoCalculationSnapshotError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except StaleCalculationSnapshotError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except IncompleteCommercialError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))

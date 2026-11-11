@@ -61,7 +61,7 @@ export function SummaryStrip({
               </span>
               <span
                 title={String(item.value)}
-                className={`text-xs font-semibold mt-0.5 truncate ${
+                className={`text-[13px] sm:text-[14px] font-semibold mt-0.5 truncate ${
                   item.isGrand
                     ? 'text-emerald-700 font-mono font-bold'
                     : 'text-slate-900'

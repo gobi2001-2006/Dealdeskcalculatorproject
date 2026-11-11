@@ -113,13 +113,13 @@ export function AddCountryModal({
     >
       <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="bg-[#0B1528] text-white px-5 py-4 flex items-center justify-between border-b border-slate-800">
+        <div className="bg-[#0B1528] text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-orange-400">
               <Globe className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
-              <h2 id="add-country-title" className="text-sm font-bold text-white tracking-wide">
+              <h2 id="add-country-title" className="text-[16px] font-bold text-white tracking-wide">
                 Add Regional Country Deployment
               </h2>
               <p className="text-[11px] text-slate-300">
@@ -130,7 +130,7 @@ export function AddCountryModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5" aria-hidden="true" />
@@ -138,11 +138,11 @@ export function AddCountryModal({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label
               htmlFor="modal-country-select"
-              className="block text-xs font-semibold text-slate-700 mb-1"
+              className="block text-[13px] font-semibold text-slate-700 mb-1"
             >
               Select Country Entity <span className="text-rose-500">*</span>
             </label>
@@ -150,7 +150,7 @@ export function AddCountryModal({
               id="modal-country-select"
               value={selectedCountryId}
               onChange={(e) => setSelectedCountryId(e.target.value)}
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
+              className="w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
             >
               <option value="">{availableCountries.length ? '-- Select country --' : '-- No countries available --'}</option>
               {availableCountries.map((c) => {
@@ -168,7 +168,7 @@ export function AddCountryModal({
             <div>
               <label
                 htmlFor="modal-tier-select"
-                className="block text-xs font-semibold text-slate-700 mb-1"
+                className="block text-[13px] font-semibold text-slate-700 mb-1"
               >
                 Pricing Tier
               </label>
@@ -176,7 +176,7 @@ export function AddCountryModal({
                 id="modal-tier-select"
                 value={selectedTierId}
                 onChange={(e) => setSelectedTierId(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+                className="w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
                 <option value="">-- Select tier --</option>
                 {tierList.map((t) => (
@@ -190,7 +190,7 @@ export function AddCountryModal({
             <div>
               <label
                 htmlFor="modal-deployment-select"
-                className="block text-xs font-semibold text-slate-700 mb-1"
+                className="block text-[13px] font-semibold text-slate-700 mb-1"
               >
                 Deployment Model
               </label>
@@ -198,7 +198,7 @@ export function AddCountryModal({
                 id="modal-deployment-select"
                 value={selectedDeploymentId}
                 onChange={(e) => handleDeploymentChange(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+                className="w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
                 <option value="">-- Select deployment --</option>
                 {deploymentList.map((d) => (
@@ -214,7 +214,7 @@ export function AddCountryModal({
             <div>
               <label
                 htmlFor="modal-pricing-model-select"
-                className="block text-xs font-semibold text-slate-700 mb-1"
+                className="block text-[13px] font-semibold text-slate-700 mb-1"
               >
                 Pricing Architecture
               </label>
@@ -222,7 +222,7 @@ export function AddCountryModal({
                 id="modal-pricing-model-select"
                 value={selectedPricingModelId}
                 onChange={(e) => setSelectedPricingModelId(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+                className="w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
                 <option value="">{selectedDeploymentId ? '-- Select pricing model --' : '-- Choose deployment first --'}</option>
                 {filteredPricingModels.map((p) => (
@@ -236,7 +236,7 @@ export function AddCountryModal({
             <div>
               <label
                 htmlFor="modal-term-input"
-                className="block text-xs font-semibold text-slate-700 mb-1"
+                className="block text-[13px] font-semibold text-slate-700 mb-1"
               >
                 Contract Term (Months) <span className="text-rose-500">*</span>
               </label>
@@ -250,7 +250,7 @@ export function AddCountryModal({
                   setContractTerm(e.target.value)
                   setTermError('')
                 }}
-                className={`w-full px-3 py-2 text-xs rounded-lg border ${
+                className={`w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border ${
                   termError ? 'border-rose-400' : 'border-slate-300'
                 } bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-mono`}
               />
@@ -261,7 +261,7 @@ export function AddCountryModal({
           </div>
 
           <div>
-            <label htmlFor="modal-headcount-input" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="modal-headcount-input" className="block text-[13px] font-semibold text-slate-700 mb-1">
               Headcount / quantity <span className="text-rose-500">*</span>
             </label>
             <input
@@ -273,7 +273,7 @@ export function AddCountryModal({
                 setHeadcount(e.target.value)
                 setFormError('')
               }}
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-mono"
+              className="w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 font-mono"
             />
           </div>
 
@@ -285,13 +285,13 @@ export function AddCountryModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:bg-slate-100 transition-colors"
+              className="px-4 py-2 text-[13px] font-medium rounded-lg text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors"
+              className="px-4 py-2 text-[13px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
             >
               Add Country
             </button>

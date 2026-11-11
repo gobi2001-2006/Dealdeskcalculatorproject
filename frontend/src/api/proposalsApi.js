@@ -129,6 +129,21 @@ export async function getLatestCalculation(proposalId) {
   return res.data
 }
 
+/** GET /api/proposals/{proposalId}/export?format=docx|pdf — download proposal document blob. */
+export async function exportProposal(proposalId, format = 'docx') {
+  const res = await apiClient.get(`/proposals/${proposalId}/export`, {
+    params: { format },
+    responseType: 'blob',
+  })
+  return res
+}
+
+/** GET /api/proposals/{proposalId}/export/commercials — preview extracted commercial figures. */
+export async function getProposalExportCommercials(proposalId) {
+  const res = await apiClient.get(`/proposals/${proposalId}/export/commercials`)
+  return res.data
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================

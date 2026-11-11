@@ -188,10 +188,10 @@ export function AddFeatureRateModal({
               <Layers className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
-              <h2 id="add-feature-rate-title" className="text-sm font-bold text-slate-900">
+              <h2 id="add-feature-rate-title" className="text-[16px] font-bold text-slate-900">
                 Add À la Carte Feature Rate
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] text-slate-500">
                 {targetFamilyObj ? `${targetFamilyObj.name} • ` : ''}Configure dynamic tier rates for an individual catalogue feature ({activeDeployment})
               </p>
             </div>
@@ -209,22 +209,22 @@ export function AddFeatureRateModal({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="flex items-start gap-2 p-3 text-xs rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
+            <div className="flex items-start gap-2 p-3 text-[11px] rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           <div>
-            <label htmlFor="feature-product-select" className="block text-xs font-semibold text-slate-700 mb-1">
-              Select Feature (from Product Catalogue L2/L3) <span className="text-rose-500">*</span>
+            <label htmlFor="feature-product-select" className="block text-[13px] font-semibold text-slate-700 mb-1">
+              Select Feature <span className="text-rose-500">*</span>
             </label>
             {availableFeatures.length > 0 ? (
               <select
                 id="feature-product-select"
                 value={effectiveFeatureId}
                 onChange={(e) => setSelectedFeatureId(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3.5 py-2 text-[14px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
                 {availableFeatures.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -233,7 +233,7 @@ export function AddFeatureRateModal({
                 ))}
               </select>
             ) : (
-              <div className="p-3 text-xs rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
+              <div className="p-3 text-[11px] rounded-lg bg-slate-50 text-slate-600 border border-slate-200">
                 All catalogue features for this family already have rates configured for {activeDeployment} / {activePricing}.
               </div>
             )}
@@ -241,7 +241,7 @@ export function AddFeatureRateModal({
 
           {/* Active feature details badge */}
           {activeFeature && (
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between text-[11px]">
               <div>
                 <span className="font-semibold text-slate-800">{activeFeature.name}</span>
                 <span className="font-mono text-[10px] text-slate-500 ml-2">Code: {activeFeature.code}</span>
@@ -253,7 +253,7 @@ export function AddFeatureRateModal({
           )}
 
           <div>
-            <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="uom-input" className="block text-[13px] font-semibold text-slate-700 mb-1">
               Unit of Measure {lockedUomId && <span className="text-slate-400 font-normal">(fixed by the pricing model)</span>}
             </label>
             <select
@@ -298,7 +298,7 @@ export function AddFeatureRateModal({
           ) : (
           /* Dynamic Tiers Grid */
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">
               Configured Customer Tier Rates ({activeCurrencySymbol})
             </label>
             <div className={`grid gap-3 ${tiersToRender.length <= 2 ? 'grid-cols-2' : tiersToRender.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
@@ -325,7 +325,7 @@ export function AddFeatureRateModal({
                       value={tierRates[tier.id] ?? ''}
                       onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
                       placeholder="0.00"
-                      className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                      className="w-full pl-6 pr-2.5 py-1.5 text-[13px] sm:text-[14px] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
                     />
                   </div>
                 </div>
@@ -338,14 +338,14 @@ export function AddFeatureRateModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              className="px-4 py-2 text-[13px] font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={availableFeatures.length === 0}
-              className="px-4 py-2 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-colors cursor-pointer"
+              className="px-4 py-2 text-[13px] font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
               Add Feature Rate
             </button>

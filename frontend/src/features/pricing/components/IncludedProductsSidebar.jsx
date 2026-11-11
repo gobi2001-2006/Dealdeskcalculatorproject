@@ -24,14 +24,14 @@ export function IncludedProductsSidebar({
         <div className="space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
             <Layers className="w-4 h-4 text-orange-600" aria-hidden="true" />
-            <h2 className="text-xs font-bold text-slate-900 tracking-tight uppercase">
+            <h2 className="text-[12px] font-bold text-slate-900 tracking-tight uppercase">
               Included Products
             </h2>
           </div>
 
           <div className="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center space-y-2">
             <Globe className="w-6 h-6 text-slate-400 mx-auto" aria-hidden="true" />
-            <h3 className="text-xs font-semibold text-slate-800">
+            <h3 className="text-[13px] font-semibold text-slate-800">
               No Proposal Scope Configured
             </h3>
             <p className="text-[11px] text-slate-500">
@@ -40,10 +40,10 @@ export function IncludedProductsSidebar({
             <div className="pt-2">
               <Link
                 to="/calculator"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-[12px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors"
               >
                 <span>Configure Proposal</span>
-                <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
               </Link>
             </div>
           </div>
@@ -61,17 +61,17 @@ export function IncludedProductsSidebar({
       <div className="flex items-center justify-between pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <Layers className="w-4 h-4 text-orange-600" aria-hidden="true" />
-          <h2 className="text-xs font-bold text-slate-900 tracking-tight uppercase">
+          <h2 className="text-[12px] font-bold text-slate-900 tracking-tight uppercase">
             Included Products
           </h2>
         </div>
-        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
           {countryConfigs.length} {countryConfigs.length === 1 ? 'Country' : 'Countries'}
         </span>
       </div>
 
       <p className="text-[11px] text-slate-500 mt-2 mb-3 leading-relaxed">
-        Select a country or family to view and adjust line-item rates and discounts.
+        Select a country or family to adjust rates and discounts.
       </p>
 
       {/* Country & Families Tree */}
@@ -95,7 +95,7 @@ export function IncludedProductsSidebar({
                   onSelectCountry(country.id)
                   onSelectFamily(null)
                 }}
-                className={`w-full text-left p-3 flex items-center justify-between transition-colors ${
+                className={`w-full text-left p-3.5 flex items-center justify-between transition-colors cursor-pointer ${
                   isCountryFocused
                     ? 'bg-[#0B1528] text-white'
                     : 'bg-slate-100 text-slate-800 hover:bg-slate-200/60'
@@ -104,17 +104,17 @@ export function IncludedProductsSidebar({
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <Globe
-                    className={`w-3.5 h-3.5 shrink-0 ${
+                    className={`w-4 h-4 shrink-0 ${
                       isCountryFocused ? 'text-orange-400' : 'text-slate-500'
                     }`}
                     aria-hidden="true"
                   />
-                  <span className="text-xs font-bold truncate">
+                  <span className="text-[13px] font-bold truncate">
                     {country.countryName}
                   </span>
                 </div>
                 <span
-                  className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${
+                  className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded ${
                     isCountryFocused
                       ? 'bg-slate-800 text-orange-300 border border-slate-700'
                       : 'bg-white text-slate-700 border border-slate-200'
@@ -125,17 +125,17 @@ export function IncludedProductsSidebar({
               </button>
 
               {/* Country Context Badges */}
-              <div className="px-3 py-2 border-b border-slate-100 text-[10px] text-slate-600 flex flex-wrap gap-1 bg-white">
-                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium">
+              <div className="px-3 py-2 border-b border-slate-100 text-[10px] text-slate-600 flex flex-wrap gap-1.5 bg-white">
+                <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">
                   {lookup.tierName(country.pricingTierId)}
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium">
+                <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">
                   {lookup.deploymentName(country.deploymentModelId)}
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-orange-100/70 text-orange-800 font-semibold">
+                <span className="px-2 py-0.5 rounded bg-orange-100/70 text-orange-800 font-semibold">
                   {lookup.pricingModelName(country.pricingModelId)}
                 </span>
-                <span className="px-1.5 py-0.5 rounded bg-slate-100 font-medium">
+                <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">
                   {country.contractTerm ? `${country.contractTerm}m` : 'term not set'}
                 </span>
               </div>
@@ -143,7 +143,7 @@ export function IncludedProductsSidebar({
               {/* Families List under this Country */}
               <div className="p-2 space-y-1.5 bg-white">
                 {country.families.length === 0 ? (
-                  <div className="text-[11px] text-slate-400 italic p-1.5 text-center">
+                  <div className="text-[11px] text-slate-400 italic p-2 text-center">
                     No families attached
                   </div>
                 ) : (
@@ -162,27 +162,27 @@ export function IncludedProductsSidebar({
                           onSelectCountry(country.id)
                           onSelectFamily(fam.id)
                         }}
-                        className={`w-full text-left p-2 rounded-lg text-xs transition-all flex items-start gap-2 ${
+                        className={`w-full text-left p-2.5 rounded-lg text-[12px] transition-all flex items-start gap-2 cursor-pointer ${
                           isFamilyFocused
                             ? 'bg-orange-50 text-orange-950 font-semibold border border-orange-200 shadow-2xs'
                             : 'hover:bg-slate-50 text-slate-700'
                         }`}
                       >
                         <FamilyIcon
-                          className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
+                          className={`w-4 h-4 shrink-0 mt-0.5 ${
                             isFamilyFocused ? 'text-orange-600' : 'text-slate-400'
                           }`}
                           aria-hidden="true"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-1">
-                            <span className="truncate">{familyMaster.name}</span>
-                            <span className="text-[9px] font-mono text-slate-400">
+                            <span className="truncate font-semibold">{familyMaster.name}</span>
+                            <span className="text-[10px] font-mono text-slate-400">
                               {familyMaster.code}
                             </span>
                           </div>
                           {pack ? (
-                            <div className="text-[10px] text-slate-500 truncate mt-0.5 flex items-center gap-1">
+                            <div className="text-[11px] text-slate-500 truncate mt-0.5 flex items-center gap-1.5">
                               <span
                                 className="w-1.5 h-1.5 rounded-full shrink-0"
                                 style={{ backgroundColor: '#F26522' }}
@@ -191,12 +191,12 @@ export function IncludedProductsSidebar({
                               <span className="truncate">{pack.name}</span>
                             </div>
                           ) : (
-                            <div className="text-[10px] text-slate-400 italic mt-0.5">
+                            <div className="text-[11px] text-slate-400 italic mt-0.5">
                               À la carte only
                             </div>
                           )}
                           {fam.selectedFeatureIds?.length > 0 && (
-                            <div className="text-[9px] text-orange-700 mt-0.5">
+                            <div className="text-[10px] text-orange-700 mt-0.5 font-medium">
                               +{fam.selectedFeatureIds.length} à la carte item(s)
                             </div>
                           )}
@@ -215,7 +215,7 @@ export function IncludedProductsSidebar({
       <div className="pt-3 border-t border-slate-100 mt-2">
         <Link
           to="/calculator"
-          className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+          className="w-full inline-flex items-center justify-center gap-1.5 py-2 text-[12px] font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
         >
           <span>Edit Configurator Scope</span>
         </Link>

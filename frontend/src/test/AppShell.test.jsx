@@ -186,13 +186,13 @@ describe('Deal Desk Application Shell Smoke Tests', () => {
     expect(activePricingLink.className).toContain('border-orange-500')
   })
 
-  it('renders saved proposals placeholder route', () => {
+  it('renders saved proposals route', () => {
     renderWithProviders(['/proposals'])
 
     expect(
       screen.getByRole('heading', { name: /Saved Proposals/i, level: 1 }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/Saved Proposals Placeholder/i)).toBeInTheDocument()
+    expect(screen.getByText(/Proposal repository/i)).toBeInTheDocument()
   })
 
   it('renders 404 page for unknown routes with link to Product Catalogue', () => {

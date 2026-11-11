@@ -75,7 +75,7 @@ function mapBackendPacks(backendPacks, backendFeatures) {
       productIds,
       requiredProductIds,
       packFeatureIds: (ver?.pack_items || []).map((i) => i.feature_id),
-      notes: `Saved pack [ID: ${bp.id}, Code: ${bp.code}].`,
+      notes: '',
       createdAt: bp.created_at,
       updatedAt: bp.updated_at,
     }
@@ -134,7 +134,7 @@ export function PacksPage() {
       code: bf.code,
       name: bf.name,
       iconName: 'Layers',
-      description: `Backend Family [ID: ${bf.id}, Code: ${bf.code}]`,
+      description: '',
       status: bf.status,
     }))
     return {
@@ -255,7 +255,7 @@ export function PacksPage() {
   const handleSavePack = async (savedData) => {
     const trimmedName = savedData.name.trim()
     if (!isLiveBackendData) {
-      setMutationNotice('Cannot save pack: the backend is not available.')
+      setMutationNotice('Cannot save pack: service is unavailable.')
       return
     }
     if (!isNewPack && ['locked', 'superseded'].includes(savedData.versionStatus)) {
@@ -304,7 +304,7 @@ export function PacksPage() {
     }
 
     setDuplicatedTemplate(null)
-    setToastMessage(`Pack "${savedData.name}" saved successfully.`)
+    setToastMessage(`Pack "${savedData.name}" saved.`)
     setTimeout(() => {
       setToastMessage('')
     }, 3500)
@@ -332,7 +332,7 @@ export function PacksPage() {
   const handleCreateVersion = async (pack) => {
     if (!pack) return
     if (!isLiveBackendData || typeof pack.id !== 'number') {
-      setMutationNotice('Cannot create a version: the pack is not saved or the backend is unavailable.')
+      setMutationNotice('Cannot create a version: the pack is not saved or service is unavailable.')
       return
     }
     const nextVersionNo = (pack.versionNo || 0) + 1
@@ -356,7 +356,7 @@ export function PacksPage() {
   const handleActivateVersion = async (pack) => {
     if (!pack) return
     if (!isLiveBackendData || typeof pack.versionId !== 'number') {
-      setMutationNotice('Cannot activate: the version is not saved or the backend is unavailable.')
+      setMutationNotice('Cannot activate: the version is not saved or service is unavailable.')
       return
     }
     try {
@@ -374,7 +374,7 @@ export function PacksPage() {
   // Handle Delete Pack
   const handleConfirmDelete = async (packId) => {
     if (!isLiveBackendData || typeof packId !== 'number') {
-      setMutationNotice('Cannot delete: the pack is not saved or the backend is unavailable.')
+      setMutationNotice('Cannot delete: the pack is not saved or service is unavailable.')
       setPackToDelete(null)
       return
     }
@@ -383,7 +383,7 @@ export function PacksPage() {
       await handleRefresh()
       setSelectedPackId(null)
       setPackToDelete(null)
-      setToastMessage('Pack deleted successfully.')
+      setToastMessage('Pack deleted.')
       setTimeout(() => setToastMessage(''), 3000)
     } catch (err) {
       const detail = err.response?.data?.detail || err.message || 'Error deleting pack'
@@ -403,29 +403,29 @@ export function PacksPage() {
       />
 
       {/* Backend Integration Status Banner */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-1.5 flex items-center justify-between text-xs text-slate-300">
+      <div className="bg-slate-900 border-b border-slate-800 px-4 sm:px-6 py-2 flex items-center justify-between text-[11px] text-slate-300">
         <div className="flex items-center gap-2">
           {isLoading ? (
             <span className="flex items-center gap-1.5 text-orange-400">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-              <span>Connecting to PostgreSQL...</span>
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+              <span>Loading packs...</span>
             </span>
           ) : isLiveBackendData ? (
             <span className="flex items-center gap-1.5 text-emerald-400">
-              <Database className="w-3.5 h-3.5" aria-hidden="true" />
+              <Database className="w-4 h-4" aria-hidden="true" />
               <span>
-                Connected to PostgreSQL &bull; Live Packs &amp; Catalogue ({packs.length} packs, {products.length} products)
+                Live Packs &amp; Catalogue ({packs.length} packs, {products.length} products)
               </span>
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-amber-400">
-              <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Backend unavailable &bull; {apiError || 'no data loaded'}</span>
+              <AlertCircle className="w-4 h-4" aria-hidden="true" />
+              <span>Service unavailable &bull; {apiError || 'no data loaded'}</span>
             </span>
           )}
 
           {mutationNotice && (
-            <span className="hidden md:inline-block ml-3 px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[11px]">
+            <span className="hidden md:inline-block ml-3 px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px]">
               {mutationNotice}
             </span>
           )}
@@ -435,10 +435,10 @@ export function PacksPage() {
           type="button"
           onClick={handleRefresh}
           disabled={isLoading}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50 text-[11px]"
-          title="Refresh packs and catalogue from backend"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50 text-[10px]"
+          title="Refresh packs and catalogue"
         >
-          <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
           <span>Refresh</span>
         </button>
       </div>
@@ -499,7 +499,7 @@ export function PacksPage() {
               <div className="w-16 h-16 rounded-2xl bg-orange-50 border border-orange-200/80 flex items-center justify-center text-orange-600 mb-4 shadow-xs">
                 <Package className="w-8 h-8" aria-hidden="true" />
               </div>
-              <p className="text-sm font-semibold text-slate-700 mb-4 max-w-sm">
+              <p className="text-[14px] font-semibold text-slate-700 mb-4 max-w-sm">
                 Select a pack to edit, or create your first pack.
               </p>
               <button
@@ -508,7 +508,7 @@ export function PacksPage() {
                   setDuplicatedTemplate(null)
                   setSelectedPackId('new')
                 }}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-lg bg-[#F26522] hover:bg-orange-600 active:bg-orange-700 text-white shadow-xs transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-[13px] font-semibold rounded-lg bg-[#F26522] hover:bg-orange-600 active:bg-orange-700 text-white shadow-xs transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
               >
                 <Plus className="w-4 h-4" aria-hidden="true" />
                 <span>Create First Pack</span>

@@ -258,7 +258,7 @@ export function PricingPage() {
   }
 
   const totals = calcApiResult?.status === 'success' ? readCalculationTotals(calcApiResult.data) : null
-  const pending = 'Pending backend calculation'
+  const pending = 'Pending calculation'
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-100 overflow-hidden text-slate-800 antialiased font-sans">
@@ -277,7 +277,7 @@ export function PricingPage() {
         <div
           role="status"
           aria-live="polite"
-          className={`px-4 sm:px-6 py-2 text-xs font-medium flex items-center justify-between border-b transition-all shrink-0 ${
+          className={`px-4 sm:px-6 py-2.5 text-[11px] font-medium flex items-center justify-between border-b transition-all shrink-0 ${
             toastType === 'success'
               ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
               : toastType === 'warning'
@@ -299,7 +299,7 @@ export function PricingPage() {
       )}
 
       {(loadError || catalogue.loadErrors.length > 0 || !effectiveProposalId) && (
-        <div role="alert" className="px-4 sm:px-6 py-2 text-xs border-b bg-amber-50 text-amber-900 border-amber-200 space-y-0.5">
+        <div role="alert" className="px-4 sm:px-6 py-2.5 text-[11px] border-b bg-amber-50 text-amber-900 border-amber-200 space-y-0.5">
           {!effectiveProposalId && (
             <div>
               No saved proposal is open. <Link className="underline font-semibold" to="/calculator">Configure and save a proposal</Link> first.

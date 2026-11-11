@@ -47,18 +47,18 @@ export function SummaryMetricCard({
     >
       <div className="flex items-start justify-between gap-2 pb-2">
         <div>
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+          <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400 block">
             {title}
           </span>
           {currencyCode && (
-            <span className="text-[9px] font-mono text-slate-400">
+            <span className="text-[10px] font-mono text-slate-400">
               ({currencyCode})
             </span>
           )}
         </div>
         {Icon && (
           <div
-            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${selectedTheme.iconBox}`}
+            className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${selectedTheme.iconBox}`}
           >
             <Icon className="w-4 h-4" aria-hidden="true" />
           </div>
@@ -67,13 +67,13 @@ export function SummaryMetricCard({
 
       <div className="mt-1">
         <div
-          className={`text-base font-bold font-mono tracking-tight truncate ${selectedTheme.value}`}
+          className={`text-[18px] sm:text-[20px] font-bold font-mono tracking-tight truncate ${selectedTheme.value}`}
           title={typeof value === 'string' ? value : undefined}
         >
           {value}
         </div>
         {subtitle && (
-          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+          <p className="text-[11px] text-slate-500 mt-1 truncate">
             {subtitle}
           </p>
         )}

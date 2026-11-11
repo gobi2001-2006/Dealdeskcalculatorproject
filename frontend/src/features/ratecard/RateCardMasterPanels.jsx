@@ -288,7 +288,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <Globe className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">A. Countries & Currencies</span>
+              <span className="text-[12px] font-bold text-slate-800">A. Countries & Currencies</span>
               <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
                 {countries.length}
               </span>
@@ -391,7 +391,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <Tag className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">B. Pricing Tiers</span>
+              <span className="text-[12px] font-bold text-slate-800">B. Pricing Tiers</span>
               <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
                 {pricingTiers.length}
               </span>
@@ -418,7 +418,7 @@ export function RateCardMasterPanels({
                         type="text"
                         value={editTierDesc}
                         onChange={(e) => setEditTierDesc(e.target.value)}
-                        className="w-full px-1.5 py-0.5 text-[11px] border border-slate-300 rounded"
+                        className="w-full px-1.5 py-0.5 text-[10px] border border-slate-300 rounded"
                         placeholder="Description"
                       />
                       <div className="flex items-center justify-end gap-1 pt-1">
@@ -466,7 +466,7 @@ export function RateCardMasterPanels({
                           </button>
                         </div>
                       </div>
-                      <p className="text-[11px] text-slate-500 leading-tight">
+                      <p className="text-[10px] text-slate-500 leading-tight">
                         {t.description}
                       </p>
                     </>
@@ -479,7 +479,7 @@ export function RateCardMasterPanels({
                   onSubmit={handleAddTierSubmit}
                   className="p-2.5 rounded-lg bg-orange-50/50 border border-orange-200 text-xs space-y-2"
                 >
-                  <div className="font-semibold text-slate-800 text-[11px] flex items-center justify-between">
+                  <div className="font-semibold text-slate-800 text-[10px] flex items-center justify-between">
                     <span>Add New Pricing Tier</span>
                     <span className="font-mono text-[10px] text-orange-600 bg-orange-100/60 px-1.5 py-0.2 rounded font-bold">
                       Tier {pricingTiers.length + 1}
@@ -520,14 +520,14 @@ export function RateCardMasterPanels({
                       placeholder="e.g. For global multi-region deployments"
                       value={newTierDesc}
                       onChange={(e) => setNewTierDesc(e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none"
+                      className="w-full px-2 py-1 text-[10px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none"
                     />
                   </div>
 
                   {addTierError && (
                     <p
                       role="alert"
-                      className="text-[11px] text-rose-600 font-medium"
+                      className="text-[10px] text-rose-600 font-medium"
                     >
                       {addTierError}
                     </p>
@@ -542,13 +542,13 @@ export function RateCardMasterPanels({
                         setNewTierDesc('')
                         setAddTierError('')
                       }}
-                      className="px-2.5 py-1 text-[11px] rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
+                      className="px-2.5 py-1 text-[10px] rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-2.5 py-1 text-[11px] rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold cursor-pointer shadow-2xs"
+                      className="px-2.5 py-1 text-[10px] rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold cursor-pointer shadow-2xs"
                     >
                       Save Tier
                     </button>
@@ -581,7 +581,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <Server className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">C. Deployment Models</span>
+              <span className="text-[12px] font-bold text-slate-800">C. Deployment Models</span>
               <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
                 {deploymentModels.length}
               </span>
@@ -606,7 +606,7 @@ export function RateCardMasterPanels({
                       </button>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-tight">
+                  <p className="text-[10px] text-slate-500 leading-tight">
                     {m.description}
                   </p>
                 </div>
@@ -617,7 +617,7 @@ export function RateCardMasterPanels({
                   onSubmit={handleAddDeploymentSubmit}
                   className="p-2.5 rounded-lg bg-orange-50/50 border border-orange-200 text-xs space-y-2 animate-fade-in"
                 >
-                  <div className="font-semibold text-slate-800 text-[11px] flex items-center justify-between">
+                  <div className="font-semibold text-slate-800 text-[10px] flex items-center justify-between">
                     <span>Add Deployment Model</span>
                     <span className="font-mono text-[10px] text-orange-600 bg-orange-100/60 px-1.5 py-0.2 rounded font-bold">
                       Model {deploymentModels.length + 1}
@@ -658,14 +658,14 @@ export function RateCardMasterPanels({
                       placeholder="e.g. Customer-isolated hybrid architecture with local gateway"
                       value={newDeploymentDesc}
                       onChange={(e) => setNewDeploymentDesc(e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none"
+                      className="w-full px-2 py-1 text-[10px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none"
                     />
                   </div>
 
                   {addDeploymentError && (
                     <p
                       role="alert"
-                      className="text-[11px] text-rose-600 font-medium"
+                      className="text-[10px] text-rose-600 font-medium"
                     >
                       {addDeploymentError}
                     </p>
@@ -680,13 +680,13 @@ export function RateCardMasterPanels({
                         setNewDeploymentDesc('')
                         setAddDeploymentError('')
                       }}
-                      className="px-2.5 py-1 text-[11px] rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
+                      className="px-2.5 py-1 text-[10px] rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-2.5 py-1 text-[11px] rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold cursor-pointer shadow-2xs"
+                      className="px-2.5 py-1 text-[10px] rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold cursor-pointer shadow-2xs"
                     >
                       Save Model
                     </button>
@@ -719,7 +719,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <CreditCard className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">D. Pricing Models</span>
+              <span className="text-[12px] font-bold text-slate-800">D. Pricing Models</span>
               <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
                 {pricingModels.length}
               </span>
@@ -749,7 +749,7 @@ export function RateCardMasterPanels({
                       </button>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-tight">
+                  <p className="text-[10px] text-slate-500 leading-tight">
                     {pm.description}
                   </p>
                 </div>
@@ -760,7 +760,7 @@ export function RateCardMasterPanels({
                   onSubmit={handleAddPricingModelSubmit}
                   className="p-2.5 rounded-lg bg-orange-50/50 border border-orange-200 text-xs space-y-2 animate-fade-in"
                 >
-                  <div className="font-semibold text-slate-800 text-[11px] flex items-center justify-between">
+                  <div className="font-semibold text-slate-800 text-[10px] flex items-center justify-between">
                     <span>Add Pricing Model</span>
                     <span className="font-mono text-[10px] text-orange-600 bg-orange-100/60 px-1.5 py-0.2 rounded font-bold">
                       Model {pricingModels.length + 1}
@@ -818,14 +818,14 @@ export function RateCardMasterPanels({
                       placeholder="e.g. Metered pricing model based on monthly API event volume"
                       value={newPricingModelDesc}
                       onChange={(e) => setNewPricingModelDesc(e.target.value)}
-                      className="w-full px-2 py-1 text-[11px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none"
+                      className="w-full px-2 py-1 text-[10px] border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none"
                     />
                   </div>
 
                   {addPricingModelError && (
                     <p
                       role="alert"
-                      className="text-[11px] text-rose-600 font-medium"
+                      className="text-[10px] text-rose-600 font-medium"
                     >
                       {addPricingModelError}
                     </p>
@@ -841,13 +841,13 @@ export function RateCardMasterPanels({
                         setNewPricingModelDesc('')
                         setAddPricingModelError('')
                       }}
-                      className="px-2.5 py-1 text-[11px] rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
+                      className="px-2.5 py-1 text-[10px] rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-2.5 py-1 text-[11px] rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold cursor-pointer shadow-2xs"
+                      className="px-2.5 py-1 text-[10px] rounded bg-orange-600 hover:bg-orange-700 text-white font-semibold cursor-pointer shadow-2xs"
                     >
                       Save Model
                     </button>
@@ -866,10 +866,6 @@ export function RateCardMasterPanels({
                   <span>Add Model</span>
                 </button>
               )}
-
-              <div className="p-2 rounded bg-amber-50/70 border border-amber-200 text-[10px] text-amber-800">
-                Commercial totals and discount calculations are executed by the FastAPI engine.
-              </div>
             </div>
           )}
         </section>
@@ -884,7 +880,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">E. Hourly Rate Card</span>
+              <span className="text-[12px] font-bold text-slate-800">E. Hourly Rate Card</span>
               <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
                 {hourlyRates.length}
               </span>
@@ -894,7 +890,7 @@ export function RateCardMasterPanels({
 
           {openSections.hourly && (
             <div className="px-4 pb-3 space-y-2">
-              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+              <div className="flex items-center justify-between text-[10px] text-slate-500 px-1">
                 <span>Standard Working Day:</span>
                 <span className="font-semibold text-slate-700">8.0 Hours</span>
               </div>
@@ -906,7 +902,7 @@ export function RateCardMasterPanels({
                     className="p-2 rounded-lg bg-slate-50 border border-slate-100 text-xs space-y-1"
                   >
                     <div className="flex items-start justify-between">
-                      <div className="font-semibold text-slate-800 text-[11px]">
+                      <div className="font-semibold text-slate-800 text-[10px]">
                         {hr.serviceLine}
                       </div>
                       <div className="flex items-center gap-1">
@@ -929,7 +925,7 @@ export function RateCardMasterPanels({
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-600 pt-0.5">
+                    <div className="flex items-center justify-between text-[10px] text-slate-600 pt-0.5">
                       <span className="text-[10px] text-slate-400">
                         {hr.country} ({hr.currency})
                       </span>
@@ -966,7 +962,7 @@ export function RateCardMasterPanels({
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-amber-700 font-medium">
-                          <Clock className="w-3 h-3" /> Pending backend calculation
+                          <Clock className="w-3 h-3" /> Pending calculation
                         </span>
                       )}
                     </div>
@@ -996,7 +992,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <ArrowRightLeft className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">F. Currency Exchange Rates</span>
+              <span className="text-[12px] font-bold text-slate-800">F. Currency Exchange Rates</span>
               <span className="text-[10px] font-mono bg-slate-100 text-slate-500 px-1.5 py-0.2 rounded-full">
                 {exchangeRates.length}
               </span>
@@ -1006,8 +1002,8 @@ export function RateCardMasterPanels({
 
           {openSections.exchange && (
             <div className="px-4 pb-3 space-y-2">
-              <p className="text-[11px] text-slate-500">
-                Reporting & consolidation exchange rates. Conversion arithmetic is evaluated by backend.
+              <p className="text-[10px] text-slate-500">
+                Exchange rates used for multi-currency proposal consolidation.
               </p>
 
               <div className="space-y-1 max-h-44 overflow-y-auto">
@@ -1058,7 +1054,7 @@ export function RateCardMasterPanels({
           >
             <div className="flex items-center gap-2">
               <PieChart className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span className="text-xs font-bold text-slate-800">G. Rate Card Coverage</span>
+              <span className="text-[12px] font-bold text-slate-800">G. Rate Card Coverage</span>
               {coveragePercent !== null && (
                 <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.2 rounded-full">
                   {coveragePercent}%
@@ -1123,7 +1119,7 @@ export function RateCardMasterPanels({
       </div>
 
       {/* Footer Info */}
-      <div className="p-3 border-t border-slate-200 bg-slate-50/70 text-[11px] text-slate-500 flex items-center justify-between shrink-0">
+      <div className="p-3 border-t border-slate-200 bg-slate-50/70 text-[10px] text-slate-500 flex items-center justify-between shrink-0">
         <span className="font-medium text-slate-600">Master Data Status</span>
         <span className="inline-flex items-center gap-1 text-emerald-700 font-semibold font-mono text-[10px]">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />

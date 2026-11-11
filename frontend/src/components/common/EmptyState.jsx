@@ -14,9 +14,9 @@ export function EmptyState({
           <Icon className="w-6 h-6" aria-hidden="true" />
         </div>
       )}
-      <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+      <h3 className="text-[16px] font-semibold text-slate-900">{title}</h3>
       {description && (
-        <p className="mt-1 text-sm text-slate-500 max-w-md">{description}</p>
+        <p className="mt-1 text-[13px] text-slate-500 max-w-md">{description}</p>
       )}
       {action && <div className="mt-4">{action}</div>}
     </div>

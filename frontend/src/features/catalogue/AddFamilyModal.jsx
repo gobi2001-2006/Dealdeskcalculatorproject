@@ -76,11 +76,11 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
         <div>
           <h2
             id="add-family-title"
-            className="text-base font-bold text-slate-900"
+            className="text-[16px] font-bold text-slate-900"
           >
             Add Product Family
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-0.5">
             Define a top-level L1 product category in the master catalogue.
           </p>
         </div>
@@ -101,7 +101,7 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
           <div>
             <label
               htmlFor="family-name-input"
-              className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1"
+              className="block text-[13px] font-semibold text-slate-700 mb-1"
             >
               Family Name <span className="text-red-500">*</span>
             </label>
@@ -115,7 +115,7 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
                 if (error) setError('')
               }}
               placeholder="e.g. Learning & Development"
-              className={`w-full px-3 py-2 text-sm bg-slate-50 border rounded-lg focus:outline-none focus:ring-2 focus:bg-white text-slate-900 ${
+              className={`w-full px-3.5 py-2 text-[14px] bg-slate-50 border rounded-lg focus:outline-none focus:ring-2 focus:bg-white text-slate-900 ${
                 error
                   ? 'border-red-400 focus:ring-red-500 bg-red-50/30'
                   : 'border-slate-300 focus:ring-emerald-600'
@@ -126,7 +126,7 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
             {error && (
               <p
                 id="family-name-error"
-                className="mt-1.5 text-xs text-red-600 font-medium flex items-center gap-1"
+                className="mt-1.5 text-[11px] text-red-600 font-medium flex items-center gap-1"
               >
                 {error}
               </p>
@@ -137,9 +137,9 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
           <div>
             <label
               htmlFor="family-desc-input"
-              className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1"
+              className="block text-[13px] font-semibold text-slate-700 mb-1"
             >
-              Description <span className="text-slate-400 font-normal">(Optional)</span>
+              Description <span className="text-slate-400 font-normal text-[11px]">(Optional)</span>
             </label>
             <textarea
               id="family-desc-input"
@@ -147,13 +147,13 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Brief summary of modules and capabilities grouped under this family..."
-              className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white text-slate-900 resize-none"
+              className="w-full px-3.5 py-2 text-[14px] bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600 focus:bg-white text-slate-900 resize-none"
             />
           </div>
 
           {/* Icon Selector */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+            <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">
               Family Icon
             </label>
             <div
@@ -187,17 +187,17 @@ function AddFamilyForm({ onClose, onAddFamily, existingFamilies = [] }) {
         </div>
 
         {/* Modal Actions */}
-        <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-end gap-2.5">
+        <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="px-4 py-1.5 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 cursor-pointer"
+            className="px-4 py-2 text-[13px] font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 cursor-pointer"
           >
             Create Family
           </button>

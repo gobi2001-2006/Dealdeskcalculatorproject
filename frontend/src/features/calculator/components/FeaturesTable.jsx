@@ -114,9 +114,9 @@ export function FeaturesTable({
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-orange-600" aria-hidden="true" />
-          <h4 className="text-xs font-bold text-slate-900 tracking-tight">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-orange-600" aria-hidden="true" />
+          <h4 className="text-[14px] sm:text-[15px] font-bold text-slate-900 tracking-tight">
             À la Carte Features & Add-ons
           </h4>
           <span className="text-[10px] text-slate-500">
@@ -130,15 +130,15 @@ export function FeaturesTable({
 
       <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs" aria-label="À la carte features">
-            <thead className="bg-slate-50 text-[10px] font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
+          <table className="w-full text-left text-[12px] sm:text-[13px]" aria-label="À la carte features">
+            <thead className="bg-slate-50 text-[11px] font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <tr>
-                <th scope="col" className="py-2 px-3 w-10 text-center">Select</th>
-                <th scope="col" className="py-2 px-3">Feature</th>
-                <th scope="col" className="py-2 px-3">Code</th>
-                <th scope="col" className="py-2 px-3">Product</th>
-                <th scope="col" className="py-2 px-3">Pack Status</th>
-                <th scope="col" className="py-2 px-3 text-right">Rate Card</th>
+                <th scope="col" className="py-2.5 px-3 w-10 text-center">Select</th>
+                <th scope="col" className="py-2.5 px-3">Feature</th>
+                <th scope="col" className="py-2.5 px-3">Code</th>
+                <th scope="col" className="py-2.5 px-3">Product</th>
+                <th scope="col" className="py-2.5 px-3">Pack Status</th>
+                <th scope="col" className="py-2.5 px-3 text-right">Rate Card</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -181,9 +181,9 @@ export function FeaturesTable({
                     </td>
 
                     <td className="py-2.5 px-3 font-medium text-slate-900 align-top">
-                      <div className="font-semibold text-slate-900">{feat.name}</div>
+                      <div className="font-semibold text-slate-900 text-[13px]">{feat.name}</div>
                       {isSelectedAlaCarte && (
-                        <div className="mt-2.5 pt-2 border-t border-orange-200/60 space-y-2 text-xs">
+                        <div className="mt-2.5 pt-2 border-t border-orange-200/60 space-y-2 text-[11px]">
                           <div className="flex items-center gap-2">
                             <label
                               htmlFor={`feat-qty-${feat.id}`}
@@ -201,10 +201,10 @@ export function FeaturesTable({
                                   onUpdateFeatureHeadcount(feat.id, e.target.value === '' ? '' : Number(e.target.value))
                                 }
                               }}
-                              className="w-24 px-2 py-0.5 text-xs font-mono rounded border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+                              className="w-28 px-2.5 py-1 text-[13px] sm:text-[14px] font-mono rounded border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
                             />
                             <span className="text-[11px] text-slate-500">
-                              {rate ? quantityUnitLabel(rate) : 'units (unit of measure from the rate card)'}
+                              {rate ? quantityUnitLabel(rate) : 'units'}
                             </span>
                           </div>
 
@@ -227,7 +227,7 @@ export function FeaturesTable({
                                   setFeatureRates((prev) => ({ ...prev, [Number(feat.id)]: { ...prev[Number(feat.id)], status: 'pending' } }))
                                   onUpdateFeatureUom?.(feat.id, e.target.value ? Number(e.target.value) : null)
                                 }}
-                                className="px-2 py-0.5 text-xs rounded border border-slate-300 bg-white"
+                                className="px-3 py-1 text-[12px] rounded border border-slate-300 bg-white"
                               >
                                 <option value="">-- Choose unit of measure --</option>
                                 {resolved.uomOptions.map((u) => (
@@ -246,8 +246,8 @@ export function FeaturesTable({
                       )}
                     </td>
 
-                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600 align-top">{feat.code}</td>
-                    <td className="py-2.5 px-3 text-[11px] text-slate-500 align-top">{product?.name || '—'}</td>
+                    <td className="py-2.5 px-3 font-mono text-[10px] text-slate-600 align-top">{feat.code}</td>
+                    <td className="py-2.5 px-3 text-[11px] text-slate-600 align-top">{product?.name || '—'}</td>
 
                     <td className="py-2.5 px-3 align-top">
                       {isIncludedInPack ? (

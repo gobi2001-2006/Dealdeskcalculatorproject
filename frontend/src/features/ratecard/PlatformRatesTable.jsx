@@ -31,7 +31,7 @@ export function PlatformRatesTable({
   const periodLabel = unitRateBasisLabel(unitRateBasis)
   const lockedUom = lockedUomId ? allowedUoms.find((u) => String(u.id) === String(lockedUomId)) : null
   const inputClass =
-    'px-2 py-1 text-right font-mono text-xs border rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white'
+    'px-2.5 py-1.5 text-right font-mono text-[13px] sm:text-[14px] border rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white'
 
   return (
     <div className="space-y-2">
@@ -41,14 +41,14 @@ export function PlatformRatesTable({
           : `Platform = ${currencySymbol} ${fixedFeeBasisLabel(fixedFeeBasis)} (by tier). Subscription = ${currencySymbol} per unit${periodLabel ? ` per ${periodLabel}` : ''}.`}
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs">
+        <table className="w-full text-left border-collapse text-[12px] sm:text-[13px]">
           <thead>
-            <tr className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 tracking-wider border-b border-slate-200">
+            <tr className="bg-slate-50 text-[11px] uppercase font-bold text-slate-600 tracking-wider border-b border-slate-200">
               <th className="py-2.5 px-4 font-semibold min-w-[200px]">{nameHeader}</th>
               {pricingTiers.map((tier, idx) => (
                 <th
                   key={tier.id}
-                  className="py-2.5 px-3 font-semibold text-right whitespace-nowrap min-w-[104px] bg-amber-50/70 text-amber-900 border-l border-amber-200/70"
+                  className="py-2.5 px-3 font-semibold text-right whitespace-nowrap min-w-[110px] bg-amber-50/70 text-amber-900 border-l border-amber-200/70"
                   title={tier.description || tier.name}
                 >
                   <div>{tier.code || `Tier ${idx + 1}`}</div>
@@ -80,7 +80,7 @@ export function PlatformRatesTable({
               return (
                 <tr key={row.key || row.id} className="hover:bg-slate-50/70 transition-colors align-top">
                   <td className="py-3 px-4">
-                    <div className="font-semibold text-slate-900">{row.name}</div>
+                    <div className="font-semibold text-slate-900 text-[13px]">{row.name}</div>
                     {row.code && (
                       <span className="inline-block mt-1 font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                         {row.code}
@@ -107,7 +107,7 @@ export function PlatformRatesTable({
                     return (
                       <td key={tier.id} className="py-3 px-3 text-right bg-amber-50/20 border-l border-amber-100">
                         {isLicense ? (
-                          <div className="flex flex-col items-end gap-1">
+                          <div className="flex flex-col items-end gap-1.5">
                             <div className="inline-flex items-center gap-1">
                               <span className="text-[11px] text-amber-600 font-mono">{currencySymbol}</span>
                               <input
@@ -119,7 +119,7 @@ export function PlatformRatesTable({
                                 value={row.tierRates?.[tier.id] ?? ''}
                                 onChange={(e) => onChange(row.id, { tierId: tier.id, unitRate: e.target.value })}
                                 placeholder="—"
-                                className={`w-24 border-amber-200 ${inputClass}`}
+                                className={`w-28 border-amber-200 ${inputClass}`}
                               />
                             </div>
                             <div className="inline-flex items-center gap-1">
@@ -133,7 +133,7 @@ export function PlatformRatesTable({
                                 value={row.tierAmc?.[tier.id] ?? ''}
                                 onChange={(e) => onChange(row.id, { tierId: tier.id, amcPercentage: e.target.value })}
                                 placeholder="—"
-                                className={`w-16 border-amber-200 ${inputClass}`}
+                                className={`w-20 border-amber-200 ${inputClass}`}
                               />
                               <span className="text-[11px] text-amber-600 font-mono">%</span>
                             </div>
@@ -150,7 +150,7 @@ export function PlatformRatesTable({
                               value={row.tierFees?.[tier.id] ?? ''}
                               onChange={(e) => onChange(row.id, { tierId: tier.id, fixedFee: e.target.value })}
                               placeholder="—"
-                              className={`w-24 border-amber-200 ${inputClass}`}
+                              className={`w-28 border-amber-200 ${inputClass}`}
                             />
                           </div>
                         )}
@@ -164,7 +164,7 @@ export function PlatformRatesTable({
                       value={uomValue}
                       disabled={isVersionLocked || Boolean(lockedUomId)}
                       onChange={(e) => onChange(row.id, { uomId: e.target.value ? Number(e.target.value) : null })}
-                      className="w-full pl-2 pr-6 py-1 text-xs border border-sky-200 rounded bg-white focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
+                      className="w-full pl-2.5 pr-6 py-1.5 text-[13px] border border-sky-200 rounded bg-white focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-600 disabled:cursor-not-allowed"
                     >
                       <option value="">{allowedUoms.length ? 'Select UOM' : 'No UOMs available'}</option>
                       {!uomIsAllowed && (
@@ -178,13 +178,13 @@ export function PlatformRatesTable({
                     </select>
                     {lockedUomId && (
                       <div className="mt-1 flex items-center gap-1 text-[10px] text-slate-500">
-                        <Lock className="w-3 h-3" aria-hidden="true" />
+                        <Lock className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>Locked by pricing model{lockedUom ? `: ${lockedUom.name}` : ''}</span>
                       </div>
                     )}
                     {!uomIsAllowed && (
                       <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-700">
-                        <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                        <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>This UOM is not allowed for the pricing model. Choose another.</span>
                       </div>
                     )}
@@ -193,10 +193,10 @@ export function PlatformRatesTable({
                   {!isLicense && (
                     <td className="py-3 px-3 text-right bg-sky-50/20">
                       {row.perTierRates ? (
-                        <div className="flex flex-col items-end gap-1">
+                        <div className="flex flex-col items-end gap-1.5">
                           {pricingTiers.map((tier, idx) => (
                             <label key={tier.id} className="inline-flex items-center gap-1 text-[10px] text-sky-800">
-                              <span className="w-10 text-right">{tier.code || `Tier ${idx + 1}`}</span>
+                              <span className="w-12 text-right">{tier.code || `Tier ${idx + 1}`}</span>
                               <input
                                 type="number"
                                 min="0"
@@ -206,7 +206,7 @@ export function PlatformRatesTable({
                                 value={row.tierRates?.[tier.id] ?? ''}
                                 onChange={(e) => onChange(row.id, { tierId: tier.id, unitRate: e.target.value })}
                                 placeholder="—"
-                                className={`w-20 border-sky-200 ${inputClass}`}
+                                className={`w-24 border-sky-200 ${inputClass}`}
                               />
                             </label>
                           ))}
@@ -223,7 +223,7 @@ export function PlatformRatesTable({
                             value={row.subscriptionRate ?? ''}
                             onChange={(e) => onChange(row.id, { subscriptionRate: e.target.value })}
                             placeholder="—"
-                            className={`w-24 border-sky-200 ${inputClass}`}
+                            className={`w-28 border-sky-200 ${inputClass}`}
                           />
                         </div>
                       )}

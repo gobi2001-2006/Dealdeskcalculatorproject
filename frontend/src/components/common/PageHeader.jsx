@@ -35,13 +35,13 @@ export function PageHeader({
           </nav>
         )}
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-[26px] sm:text-[28px] font-bold tracking-tight text-slate-900 leading-tight">
             {title}
           </h1>
           {badge}
         </div>
         {description && (
-          <p className="mt-1 text-sm text-slate-600 max-w-3xl">{description}</p>
+          <p className="mt-1 text-[14px] text-slate-600 max-w-3xl leading-relaxed">{description}</p>
         )}
       </div>
 

@@ -163,12 +163,12 @@ export function FamilyConfigCard({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold text-slate-900 tracking-tight">{familyMaster.name}</h3>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200/80 text-slate-700">
+              <h3 className="text-[16px] font-bold text-slate-900 tracking-tight">{familyMaster.name}</h3>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-200/80 text-slate-700">
                 {familyMaster.code}
               </span>
             </div>
-            <p className="text-[10px] text-slate-500">Pack and standalone feature selection.</p>
+            <p className="text-[11px] text-slate-500">Pack and standalone feature selection.</p>
           </div>
         </div>
 
@@ -186,8 +186,8 @@ export function FamilyConfigCard({
       {/* Pack Selection & Quantity Grid */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
         <div className="md:col-span-8">
-          <div className="flex items-center justify-between mb-1.5 h-4">
-            <label htmlFor={`pack-select-${familyConfig.id}`} className="block text-xs font-semibold text-slate-700">
+          <div className="flex items-center justify-between mb-1.5 h-5">
+            <label htmlFor={`pack-select-${familyConfig.id}`} className="block text-[13px] font-semibold text-slate-700">
               Pack Selection (active pack versions from Pack Builder)
             </label>
           </div>
@@ -195,7 +195,7 @@ export function FamilyConfigCard({
             id={`pack-select-${familyConfig.id}`}
             value={familyConfig.selectedPackId || ''}
             onChange={(e) => handlePackChange(e.target.value)}
-            className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+            className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
           >
             <option value="">-- No Pack (À la Carte Features Only) --</option>
             {/* Keep a saved selection visible even if that version is no longer active. */}
@@ -219,14 +219,14 @@ export function FamilyConfigCard({
 
           {familyConfig.selectedPackId && (packUomOptions.length > 1 || familyConfig.packUomId) && (
             <div className="mt-2">
-              <label htmlFor={`pack-uom-${familyConfig.id}`} className="block text-[11px] font-semibold text-slate-700 mb-1">
+              <label htmlFor={`pack-uom-${familyConfig.id}`} className="block text-[13px] font-semibold text-slate-700 mb-1">
                 Rate schedule (unit of measure)
               </label>
               <select
                 id={`pack-uom-${familyConfig.id}`}
                 value={familyConfig.packUomId || ''}
                 onChange={(e) => onUpdateFamily({ ...familyConfig, packUomId: e.target.value ? Number(e.target.value) : null })}
-                className="w-full h-9 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
+                className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500"
               >
                 <option value="">-- Choose the unit of measure this pack is priced in --</option>
                 {packUomOptions.map((u) => (
@@ -248,7 +248,7 @@ export function FamilyConfigCard({
               )}
               {rateResolution.status === 'resolved' && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" />
                   <span>{rateResolution.message}</span>
                 </span>
               )}
@@ -263,8 +263,8 @@ export function FamilyConfigCard({
         </div>
 
         <div className="md:col-span-4">
-          <div className="flex items-center justify-between mb-1.5 h-4">
-            <label htmlFor={`headcount-${familyConfig.id}`} className="block text-xs font-semibold text-slate-700">
+          <div className="flex items-center justify-between mb-1.5 h-5">
+            <label htmlFor={`headcount-${familyConfig.id}`} className="block text-[13px] font-semibold text-slate-700">
               Default feature quantity
             </label>
           </div>
@@ -279,9 +279,9 @@ export function FamilyConfigCard({
                 headcount: e.target.value === '' ? '' : Number(e.target.value),
               })
             }
-            className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+            className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
           />
-          <p className="mt-1 text-[10px] text-slate-500">
+          <p className="mt-1 text-[11px] text-slate-500">
             {packUomName
               ? `The pack quantity is the country volume (${packUomName}${packPeriod ? ` / ${packPeriod}` : ''}). `
               : 'The pack quantity is the country volume. '}
@@ -320,8 +320,7 @@ export function FamilyConfigCard({
       />
 
       <p className="text-[11px] text-slate-500">
-        Subscription amounts for this family are calculated by the backend engine (Calculate Pricing) from the
-        saved rate card; they are not estimated in the browser.
+        Subscription amounts calculate from the saved rate card when you run Calculate Pricing.
       </p>
     </div>
   )

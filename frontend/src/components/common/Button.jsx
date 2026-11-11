@@ -18,9 +18,9 @@ export function Button({
     'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-emerald-600 disabled:opacity-50 disabled:pointer-events-none cursor-pointer select-none'
 
   const sizeStyles = {
-    sm: 'text-xs px-2.5 py-1.5 gap-1.5',
-    md: 'text-sm px-3.5 py-2 gap-2',
-    lg: 'text-base px-4 py-2.5 gap-2.5',
+    sm: 'text-[12px] px-3 py-1.5 gap-1.5',
+    md: 'text-[13px] px-4 py-2 gap-2',
+    lg: 'text-[14px] px-5 py-2.5 gap-2.5',
   }
 
   const variantStyles = {

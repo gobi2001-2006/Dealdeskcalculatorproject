@@ -61,10 +61,10 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
               <ArrowRightLeft className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
-              <h2 id="add-fx-rate-title" className="text-sm font-bold text-slate-900">
+              <h2 id="add-fx-rate-title" className="text-[16px] font-bold text-slate-900">
                 Add FX Exchange Rate
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] text-slate-500">
                 Consolidation and reporting conversion benchmark
               </p>
             </div>
@@ -82,7 +82,7 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="flex items-start gap-2 p-3 text-xs rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
+            <div className="flex items-start gap-2 p-3 text-[11px] rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -90,14 +90,14 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="source-currency" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="source-currency" className="block text-[13px] font-semibold text-slate-700 mb-1">
                 From Currency <span className="text-rose-500">*</span>
               </label>
               <select
                 id="source-currency"
                 value={sourceCurrency}
                 onChange={(e) => setSourceCurrency(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3.5 py-2 text-[14px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
                 <option value="">Select currency</option>
                 {currencies.map((c) => (
@@ -108,14 +108,14 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
               </select>
             </div>
             <div>
-              <label htmlFor="target-currency" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="target-currency" className="block text-[13px] font-semibold text-slate-700 mb-1">
                 To Currency <span className="text-rose-500">*</span>
               </label>
               <select
                 id="target-currency"
                 value={targetCurrency}
                 onChange={(e) => setTargetCurrency(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3.5 py-2 text-[14px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
                 <option value="">Select currency</option>
                 {currencies.map((c) => (
@@ -128,7 +128,7 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
           </div>
 
           <div>
-            <label htmlFor="rate-per-unit" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="rate-per-unit" className="block text-[13px] font-semibold text-slate-700 mb-1">
               Rate per Unit (1 {sourceCurrency} = ? {targetCurrency}) <span className="text-rose-500">*</span>
             </label>
             <input
@@ -139,14 +139,14 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
               value={ratePerUnit}
               onChange={(e) => setRatePerUnit(e.target.value)}
               placeholder="e.g. 83.25"
-              className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              className="w-full px-3.5 py-2 text-[14px] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               autoFocus
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="rate-source" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="rate-source" className="block text-[13px] font-semibold text-slate-700 mb-1">
                 Rate Source
               </label>
               <input
@@ -155,11 +155,11 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder="e.g. OANDA, Central Bank"
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3.5 py-2 text-[14px] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
             <div>
-              <label htmlFor="effective-date" className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="effective-date" className="block text-[13px] font-semibold text-slate-700 mb-1">
                 Effective Date
               </label>
               <input
@@ -167,26 +167,22 @@ export function AddFxRateModal({ isOpen, onClose, onSave, currencies = [] }) {
                 type="date"
                 value={effectiveDate}
                 onChange={(e) => setEffectiveDate(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3.5 py-2 text-[14px] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
-          </div>
-
-          <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-800">
-            Conversion formulas and consolidated financial calculations are computed on the backend.
           </div>
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              className="px-4 py-2 text-[13px] font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
+              className="px-4 py-2 text-[13px] font-semibold text-white bg-orange-600 hover:bg-orange-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
               Save Exchange Rate
             </button>

@@ -52,26 +52,20 @@ export function ClientConfigCard({
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm font-bold text-slate-900 tracking-tight">
+              <h2 className="text-[16px] font-bold text-slate-900 tracking-tight">
                 Client & Commercial Specifications
               </h2>
               {clientInfo.proposalId && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                  <CheckCircle2 className="w-3 h-3 text-blue-600" aria-hidden="true" />
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" />
                   <span>ID: {clientInfo.proposalId} ({clientInfo.proposalCode || 'DRAFT'})</span>
                 </span>
               )}
             </div>
             <p className="text-[11px] text-slate-500">
-              Customer entity, commercial deal code, and global financial consolidation currency.
+              Customer entity, deal code, and consolidation currency.
             </p>
           </div>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
-            Step 1 of 4
-          </span>
         </div>
       </div>
 
@@ -81,10 +75,10 @@ export function ClientConfigCard({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-start">
             {/* Existing Customer Dropdown */}
             <div className="lg:col-span-4">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="client-select"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Customer Record
                 </label>
@@ -97,7 +91,7 @@ export function ClientConfigCard({
                 aria-label="Select Existing Customer"
                 value={clientInfo.customerId || ''}
                 onChange={(e) => handleCustomerSelect(e.target.value)}
-                className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-slate-50 text-slate-800 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
+                className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 bg-slate-50 text-slate-800 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
               >
                 <option value="">-- Choose Existing or Enter Name --</option>
                 {customers.map((c) => (
@@ -110,10 +104,10 @@ export function ClientConfigCard({
 
             {/* Client / Customer Name Input */}
             <div className="lg:col-span-3">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="client-name-input"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Client / Customer Name <span className="text-rose-500">*</span>
                 </label>
@@ -127,8 +121,8 @@ export function ClientConfigCard({
                   onChangeClientInfo('customerId', null)
                   onChangeClientInfo('dealId', null)
                 }}
-                placeholder="e.g. Demo Technologies"
-                className={`w-full h-10 px-3 text-xs rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
+                placeholder="Enter client name"
+                className={`w-full h-10 px-3.5 text-[14px] rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
                   errors.clientName
                     ? 'border-rose-400 focus:ring-rose-200'
                     : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
@@ -149,10 +143,10 @@ export function ClientConfigCard({
 
             {/* Deal Reference / Code */}
             <div className="lg:col-span-2">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="deal-code-input"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Deal Reference Code
                 </label>
@@ -162,17 +156,17 @@ export function ClientConfigCard({
                 type="text"
                 value={clientInfo.dealCode}
                 onChange={(e) => onChangeClientInfo('dealCode', e.target.value)}
-                placeholder="e.g. DEV-DEAL-001"
-                className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                placeholder="Enter deal code"
+                className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
               />
             </div>
 
             {/* Reporting (Consolidation) Currency */}
             <div className="lg:col-span-3">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="reporting-currency-select"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Reporting Currency <span className="text-rose-500">*</span>
                 </label>
@@ -181,7 +175,7 @@ export function ClientConfigCard({
                 id="reporting-currency-select"
                 value={selectedCurrencyObj?.id || ''}
                 onChange={(e) => handleCurrencySelect(e.target.value)}
-                className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+                className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
               >
                 <option value="">
                   {currencyList.length === 0 ? '-- No currencies loaded --' : '-- Select currency --'}
@@ -198,10 +192,10 @@ export function ClientConfigCard({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4 items-start">
             {/* Client / Customer Name Input */}
             <div className="lg:col-span-5">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="client-name-input"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Client / Customer Name <span className="text-rose-500">*</span>
                 </label>
@@ -211,8 +205,8 @@ export function ClientConfigCard({
                 type="text"
                 value={clientInfo.clientName}
                 onChange={(e) => onChangeClientInfo('clientName', e.target.value)}
-                placeholder="e.g. Demo Technologies"
-                className={`w-full h-10 px-3 text-xs rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
+                placeholder="Enter client name"
+                className={`w-full h-10 px-3.5 text-[14px] rounded-lg border transition-colors bg-white text-slate-900 focus:outline-none focus:ring-2 ${
                   errors.clientName
                     ? 'border-rose-400 focus:ring-rose-200'
                     : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
@@ -233,10 +227,10 @@ export function ClientConfigCard({
 
             {/* Deal Reference / Code */}
             <div className="lg:col-span-3">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="deal-code-input"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Deal Reference Code
                 </label>
@@ -246,17 +240,17 @@ export function ClientConfigCard({
                 type="text"
                 value={clientInfo.dealCode}
                 onChange={(e) => onChangeClientInfo('dealCode', e.target.value)}
-                placeholder="e.g. DEV-DEAL-001"
-                className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                placeholder="Enter deal code"
+                className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
               />
             </div>
 
             {/* Reporting (Consolidation) Currency */}
             <div className="lg:col-span-4">
-              <div className="flex items-center justify-between mb-1.5 h-4">
+              <div className="flex items-center justify-between mb-1.5 h-5">
                 <label
                   htmlFor="reporting-currency-select"
-                  className="block text-xs font-semibold text-slate-700"
+                  className="block text-[13px] font-semibold text-slate-700"
                 >
                   Reporting Currency <span className="text-rose-500">*</span>
                 </label>
@@ -265,7 +259,7 @@ export function ClientConfigCard({
                 id="reporting-currency-select"
                 value={selectedCurrencyObj?.id || ''}
                 onChange={(e) => handleCurrencySelect(e.target.value)}
-                className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
+                className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium"
               >
                 <option value="">
                   {currencyList.length === 0 ? '-- No currencies loaded --' : '-- Select currency --'}
@@ -287,31 +281,30 @@ export function ClientConfigCard({
           aria-live="polite"
         >
           <Globe2 className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="text-xs text-slate-700 space-y-1">
+          <div className="text-[11px] text-slate-700 space-y-1">
             {selectedCurrencyObj ? (
               <>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-slate-900">
                     Consolidation Currency:
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-orange-600 text-white font-mono shadow-2xs">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-600 text-white font-mono shadow-2xs">
                     {selectedCurrencyObj.code}{selectedCurrencyObj.symbol ? ` (${selectedCurrencyObj.symbol})` : ''}
                   </span>
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-[10px] text-slate-500">
                     ({selectedCurrencyObj.name})
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Rate cards stay in their native currencies. Consolidated totals are converted to{' '}
-                  <strong className="text-slate-900">{selectedCurrencyObj.code}</strong> by the backend calculation engine
-                  using the FX rates saved on the Rate Card &amp; Masters page.
+                  Rate cards stay in their native currencies. Consolidated totals convert to{' '}
+                  <strong className="text-slate-900">{selectedCurrencyObj.code}</strong> using FX rates from Rate Card &amp; Masters.
                 </p>
               </>
             ) : (
               <p className="text-[11px] text-slate-600 leading-relaxed">
                 {currencyList.length === 0
-                  ? 'No currencies could be loaded from the backend. Add currencies on the Rate Card & Masters page.'
-                  : 'Select the reporting currency the proposal totals will be converted to.'}
+                  ? 'No currencies available. Add currencies on the Rate Card & Masters page.'
+                  : 'Select the reporting currency for consolidated proposal totals.'}
               </p>
             )}
           </div>
@@ -321,10 +314,10 @@ export function ClientConfigCard({
         <div>
           <label
             htmlFor="client-notes-input"
-            className="block text-xs font-semibold text-slate-700 mb-1.5"
+            className="block text-[13px] font-semibold text-slate-700 mb-1.5"
           >
             Internal Deal Notes & Commercial Terms
-            <span className="ml-1 font-normal text-slate-400">(kept on this screen only - the backend has no notes field yet)</span>
+            <span className="ml-1 font-normal text-slate-400 text-[11px]">(session only — not saved)</span>
           </label>
           <textarea
             id="client-notes-input"
@@ -332,7 +325,7 @@ export function ClientConfigCard({
             value={clientInfo.notes || ''}
             onChange={(e) => onChangeClientInfo('notes', e.target.value)}
             placeholder="Add internal deal desk notes, scope restrictions, or contract requirements..."
-            className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 resize-none leading-relaxed"
+            className="w-full px-3.5 py-2 text-[14px] rounded-lg border border-slate-300 transition-colors bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 resize-none leading-relaxed"
           />
         </div>
       </div>

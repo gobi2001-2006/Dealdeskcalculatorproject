@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+:root {
+  --font-page-title: 26px;
+  --font-section-heading: 19px;
+  --font-card-heading: 16px;
+  --font-body: 14px;
+  --font-form-label: 13px;
+  --font-input: 14px;
+  --font-button: 13px;
+  --font-table: 12px;
+  --font-helper: 11px;
+}
+
 @layer base {
   *,
   *::before,
@@ -16,6 +28,8 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     background-color: #f1f5f9;
     color: #0f172a;
+    font-size: 14px;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -26,5 +40,87 @@
     display: flex;
     flex-direction: column;
     background-color: #f1f5f9;
+    font-size: 14px;
   }
+
+  label {
+    font-size: 13px;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 14px;
+  }
+
+  button {
+    font-size: 13px;
+  }
+
+  table th,
+  table td {
+    font-size: 12px;
+  }
+}
+
+/* Reusable Typography System */
+.ui-page-title,
+.page-title {
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ui-section-heading,
+.section-heading {
+  font-size: 19px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.ui-card-heading,
+.card-heading {
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.ui-body-text,
+.body-text {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ui-form-label,
+.form-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ui-input,
+.input-field {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ui-btn,
+.btn-text {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ui-table-text,
+.table-content {
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ui-helper-text,
+.helper-text {
+  font-size: 11px;
+  line-height: 1.4;
 }

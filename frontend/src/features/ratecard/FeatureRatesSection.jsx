@@ -109,10 +109,10 @@ export function FeatureRatesSection({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+              <h3 className="text-[16px] font-bold text-slate-900 tracking-tight">
                 {familyName} — À la Carte Feature Rates
               </h3>
-              <span className="px-2 py-0.2 rounded-full text-[10px] font-mono font-medium bg-slate-100 text-slate-600">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-slate-100 text-slate-600">
                 {configuredCount} configured
               </span>
               {isVersionLocked && (
@@ -136,7 +136,7 @@ export function FeatureRatesSection({
           <button
             type="button"
             onClick={onOpenAddFeatureRate}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[12px] sm:text-[13px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Add Feature</span>
@@ -145,14 +145,14 @@ export function FeatureRatesSection({
       </div>
 
       {/* Catalogue summary line */}
-      <div className="px-5 py-2.5 bg-slate-50/80 border-b border-slate-200/70 text-xs text-slate-600">
-        <span className="font-semibold text-slate-700">From Product Catalog (L2/L3 items): </span>
-        <span className="font-mono text-[11px] text-slate-600">{catalogueSummaryText}</span>
+      <div className="px-5 py-2.5 bg-slate-50/80 border-b border-slate-200/70 text-[11px] text-slate-600">
+        <span className="font-semibold text-slate-700">Catalogue items: </span>
+        <span className="font-mono text-[10px] text-slate-600">{catalogueSummaryText}</span>
       </div>
 
       {/* PEPM Formula Banner */}
       <div className="px-5 py-2 bg-sky-50/70 border-b border-sky-100 text-[11px] text-sky-900 flex items-center gap-2">
-        <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" aria-hidden="true" />
+        <Info className="w-4 h-4 text-sky-600 shrink-0" aria-hidden="true" />
         <div>
           <span className="font-semibold text-sky-950">Pricing Structure: </span>
           <code className="bg-sky-100 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold text-sky-900">
@@ -169,7 +169,7 @@ export function FeatureRatesSection({
       {apiError && (
         <div className="px-5 py-3 bg-rose-50 border-b border-rose-200 text-xs text-rose-800 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>Failed to load feature rates from database: {apiError}</span>
+          <span>Unable to load feature rates: {apiError}</span>
         </div>
       )}
 
@@ -205,9 +205,9 @@ export function FeatureRatesSection({
         />
       ) : combinedFeatures.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse text-[12px] sm:text-[13px]">
             <thead>
-              <tr className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 tracking-wider border-b border-slate-200">
+              <tr className="bg-slate-50 text-[11px] uppercase font-bold text-slate-600 tracking-wider border-b border-slate-200">
                 <th className="py-2.5 px-4 font-semibold min-w-[240px]">Feature / Product</th>
                 <th className="py-2.5 px-3 font-semibold">Classification</th>
                 <th className="py-2.5 px-3 font-semibold">Deployment</th>
@@ -252,7 +252,7 @@ export function FeatureRatesSection({
                     {/* Feature Details */}
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900">
+                        <span className="font-semibold text-slate-900 text-[13px]">
                           {rate.featureName}
                         </span>
                       </div>
@@ -316,7 +316,7 @@ export function FeatureRatesSection({
                                   onUpdateRate(rate.id, fixedKey, e.target.value)
                                 }
                                 placeholder="0.00"
-                                className="w-24 px-2 py-1 text-right font-mono text-xs border border-amber-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
+                                className="w-28 px-2.5 py-1.5 text-right font-mono text-[13px] sm:text-[14px] border border-amber-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
                               />
                             </div>
                           </td>
@@ -356,7 +356,7 @@ export function FeatureRatesSection({
                                 onUpdateRate(rate.id, fieldKey, e.target.value)
                               }
                               placeholder="0.00"
-                              className="w-24 px-2 py-1 text-right font-mono text-xs border border-slate-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
+                              className="w-28 px-2.5 py-1.5 text-right font-mono text-[13px] sm:text-[14px] border border-slate-200 rounded focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed bg-white"
                             />
                           </div>
                         </td>
@@ -389,17 +389,17 @@ export function FeatureRatesSection({
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
             <Layers className="w-5 h-5" />
           </div>
-          <p className="text-xs font-semibold text-slate-700">
+          <p className="text-[13px] font-semibold text-slate-700">
             No catalogue features available for {familyName}
           </p>
           <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-            Standalone modules and AI agent copilot features can be registered in Page 1 — Product Catalogue.
+            Add standalone modules and AI features in Product Catalogue.
           </p>
           {!isVersionLocked && (
             <div className="pt-1">
               <a
                 href="/catalogue"
-                className="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 underline cursor-pointer"
+                className="inline-flex items-center gap-1 text-[12px] font-semibold text-orange-600 hover:text-orange-700 underline cursor-pointer"
               >
                 Go to Product Catalogue &rarr;
               </a>

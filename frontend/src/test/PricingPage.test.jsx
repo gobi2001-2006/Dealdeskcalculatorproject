@@ -59,7 +59,7 @@ describe('Page 5 — Pricing & Discounts', () => {
     expect(within(table).getByText('TA Premium')).toBeInTheDocument()
     expect(within(table).getByText('Standalone Add-on')).toBeInTheDocument()
     // Native-currency amounts straight from the snapshot
-    expect(within(table).getAllByText('₹620,000.00')).toHaveLength(2) // gross and net (no line discount)
+    expect(within(table).getAllByText('₹6,20,000.00')).toHaveLength(2) // gross and net (no line discount)
     expect(within(table).getByText('₹55,800.00')).toBeInTheDocument()
     // Saved line discount (10%) restored from the line item; overall/service from the snapshot
     expect(screen.getByLabelText('Discount for Standalone Add-on')).toHaveValue(10)
@@ -126,7 +126,7 @@ describe('Page 5 — Pricing & Discounts', () => {
     await waitFor(() => expect(within(card).getByText('$16,963.44')).toBeInTheDocument())
     expect(within(card).getByText('$1,555.20')).toBeInTheDocument()
     expect(screen.getByText(/Outdated calculation/i)).toBeInTheDocument()
-    expect(within(card).getByText(/Not calculated \(no cost-rate engine yet\)/)).toBeInTheDocument()
+    expect(within(card).getByText('Not available')).toBeInTheDocument()
   })
 
   it('labels approval thresholds as demo settings that are not enforced', async () => {

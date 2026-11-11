@@ -18,11 +18,11 @@ export function AppShell() {
 
         {/* Global Demo Notice Banner */}
         <div className="bg-emerald-50/70 border-b border-emerald-100 px-4 sm:px-6 py-2">
-          <div className="max-w-7xl mx-auto flex items-center justify-between text-xs text-emerald-900 gap-2">
+          <div className="max-w-7xl mx-auto flex items-center justify-between text-[11px] text-emerald-900 gap-2">
             <div className="flex items-center gap-2">
-              <Info className="w-3.5 h-3.5 text-emerald-700 shrink-0" aria-hidden="true" />
+              <Info className="w-4 h-4 text-emerald-700 shrink-0" aria-hidden="true" />
               <span>
-                <strong>DEMO DATA:</strong> Figures, metrics, and records shown are illustrative presentation data and do not come from PostgreSQL.
+                <strong>DEMO DATA:</strong> Illustrative sample data.
               </span>
             </div>
             <span className="hidden md:inline-block font-mono text-[10px] text-emerald-700 uppercase tracking-wider font-semibold">

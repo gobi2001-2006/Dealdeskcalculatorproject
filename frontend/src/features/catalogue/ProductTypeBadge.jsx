@@ -25,7 +25,7 @@ export function ProductTypeBadge({ type }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-medium border text-xs ${config.pillBg}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md font-medium border text-[11px] ${config.pillBg}`}
     >
       <span
         className={`w-1.5 h-1.5 rounded-full shrink-0 ${config.dotBg}`}

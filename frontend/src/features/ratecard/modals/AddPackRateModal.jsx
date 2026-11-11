@@ -210,10 +210,10 @@ export function AddPackRateModal({
               <Package className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
-              <h2 id="add-pack-rate-title" className="text-sm font-bold text-slate-900">
+              <h2 id="add-pack-rate-title" className="text-[16px] font-bold text-slate-900">
                 Add Pack Rate ({activeDeployment})
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] text-slate-500">
                 {targetFamilyObj ? `${targetFamilyObj.name} • ` : ''}Configure dynamic tier pricing for a Pack Builder suite
               </p>
             </div>
@@ -231,29 +231,29 @@ export function AddPackRateModal({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
-            <div className="flex items-start gap-2 p-3 text-xs rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
+            <div className="flex items-start gap-2 p-3 text-[11px] rounded-lg bg-rose-50 text-rose-800 border border-rose-200">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           <div>
-            <label htmlFor="pack-select" className="block text-xs font-semibold text-slate-700 mb-1">
-              Select Pack (from Pack Builder) <span className="text-rose-500">*</span>
+            <label htmlFor="pack-select" className="block text-[13px] font-semibold text-slate-700 mb-1">
+              Pack <span className="text-rose-500">*</span>
             </label>
             {familyPacks.length === 0 ? (
-              <div className="p-4 rounded-lg bg-amber-50/70 border border-amber-200 text-xs text-amber-900 space-y-1.5">
+              <div className="p-4 rounded-lg bg-amber-50/70 border border-amber-200 text-[11px] text-amber-900 space-y-1.5">
                 <div className="font-semibold flex items-center gap-1.5">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>No Saved Packs in Pack Builder</span>
+                  <span>No Saved Packs</span>
                 </div>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  No saved packs exist for {targetFamilyObj?.name || 'this product family'} in Page 2 — Pack Builder. Please build and save a pack first before configuring its rates.
+                <p className="text-[10px] text-amber-800 leading-relaxed">
+                  No packs exist for {targetFamilyObj?.name || 'this product family'}. Create and save a pack in Pack Builder first.
                 </p>
                 <div className="pt-1">
                   <a
                     href="/packs"
-                    className="inline-flex items-center gap-1 font-semibold text-orange-600 hover:text-orange-700 underline text-xs"
+                    className="inline-flex items-center gap-1 font-semibold text-orange-600 hover:text-orange-700 underline text-[11px]"
                   >
                     Go to Pack Builder &rarr;
                   </a>
@@ -264,7 +264,7 @@ export function AddPackRateModal({
                 id="pack-select"
                 value={effectivePackId}
                 onChange={(e) => setSelectedPackId(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full px-3.5 py-2 min-h-[40px] text-[14px] border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               >
                 {availablePacks.map((p) => {
                   const reqCount = (p.items || []).filter((it) => it.is_required !== false).length
@@ -277,9 +277,9 @@ export function AddPackRateModal({
                 })}
               </select>
             ) : (
-              <div className="p-4 text-xs rounded-lg bg-slate-50 text-slate-700 border border-slate-200 space-y-1">
+              <div className="p-4 text-[11px] rounded-lg bg-slate-50 text-slate-700 border border-slate-200 space-y-1">
                 <div className="font-semibold text-slate-900">All Packs Configured</div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
+                <p className="text-[10px] text-slate-600 leading-relaxed">
                   All {familyPacks.length} saved packs in {targetFamilyObj?.name || 'this family'} already have rates configured for {activeDeployment} / {activePricing}. You can edit their tier rates directly in the rate matrix table.
                 </p>
               </div>
@@ -296,7 +296,7 @@ export function AddPackRateModal({
                 {activePack.items.map((it) => (
                   <span
                     key={it.id || it.feature_id}
-                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${
                       it.is_required !== false
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : 'bg-indigo-50 text-indigo-700 border-indigo-200'
@@ -315,7 +315,7 @@ export function AddPackRateModal({
           )}
 
           <div>
-            <label htmlFor="uom-input" className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="uom-input" className="block text-[13px] font-semibold text-slate-700 mb-1">
               Unit of Measure {lockedUomId && <span className="text-slate-400 font-normal">(fixed by the pricing model)</span>}
             </label>
             <select
@@ -323,7 +323,7 @@ export function AddPackRateModal({
               value={effectiveUomId || ''}
               onChange={(e) => setUomId(e.target.value)}
               disabled={Boolean(lockedUomId)}
-              className={`w-full px-3 py-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
+              className={`w-full px-3.5 py-2 min-h-[40px] text-[14px] border rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 ${
                 lockedUomId ? 'bg-slate-100 text-slate-500 border-slate-200 cursor-not-allowed font-medium' : 'bg-white border-slate-300'
               }`}
             >
@@ -360,14 +360,14 @@ export function AddPackRateModal({
           ) : (
           /* Dynamic Tiers Grid */
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label className="block text-[13px] font-semibold text-slate-700 mb-1.5">
               Configured Customer Tier Rates ({activeCurrencySymbol})
             </label>
             <div className={`grid gap-3 ${tiersToRender.length <= 2 ? 'grid-cols-2' : tiersToRender.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4'}`}>
               {tiersToRender.map((tier) => (
                 <div key={tier.id} className="space-y-2">
                   <span
-                    className="block text-[11px] font-bold text-slate-700 truncate"
+                    className="block text-[10px] font-bold text-slate-700 truncate"
                     title={tier.name || tier.code}
                   >
                     {tier.name && tier.name !== tier.code
@@ -384,7 +384,7 @@ export function AddPackRateModal({
                         {fixedFeeLabel}
                       </label>
                       <div className="relative">
-                        <span className="absolute left-2.5 top-2 text-[10px] font-mono text-amber-600">
+                        <span className="absolute left-2.5 top-2.5 text-[11px] font-mono text-amber-600">
                           {activeCurrencySymbol}
                         </span>
                         <input
@@ -395,7 +395,7 @@ export function AddPackRateModal({
                           value={fixedTierRates[tier.id] ?? ''}
                           onChange={(e) => handleFixedTierRateChange(tier.id, e.target.value)}
                           placeholder="0.00"
-                          className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono bg-amber-50/20"
+                          className="w-full pl-6 pr-2.5 py-1.5 text-[13px] sm:text-[14px] border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 font-mono bg-amber-50/20"
                         />
                       </div>
                     </div>
@@ -409,7 +409,7 @@ export function AddPackRateModal({
                       {isDualComponent ? unitRateLabel : 'Rate'}
                     </label>
                     <div className="relative">
-                      <span className="absolute left-2.5 top-2 text-[10px] font-mono text-slate-400">
+                      <span className="absolute left-2.5 top-2.5 text-[11px] font-mono text-slate-400">
                         {activeCurrencySymbol}
                       </span>
                       <input
@@ -421,7 +421,7 @@ export function AddPackRateModal({
                         value={tierRates[tier.id] ?? ''}
                         onChange={(e) => handleTierRateChange(tier.id, e.target.value)}
                         placeholder="0.00"
-                        className="w-full pl-6 pr-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                        className="w-full pl-6 pr-2.5 py-1.5 text-[13px] sm:text-[14px] border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
                       />
                     </div>
                   </div>
@@ -435,14 +435,14 @@ export function AddPackRateModal({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              className="px-4 py-2 text-[13px] font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={availablePacks.length === 0}
-              className="px-4 py-2 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-colors cursor-pointer"
+              className="px-4 py-2 text-[13px] font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
               Add Pack Rate
             </button>

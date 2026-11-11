@@ -120,7 +120,7 @@ describe('Page 4 — Proposal Configurator', () => {
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
 
     // Pack and feature rates are described with their own unit and period
-    expect(await screen.findByText(/platform fee INR 300,000 \/ year \+ INR 85\.00 per Interviews \/ month/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(await screen.findByText(/platform fee INR 3,00,000 \/ year \+ INR 85\.00 per Interviews \/ month/, {}, { timeout: 5000 })).toBeInTheDocument()
     const table = screen.getByRole('table', { name: /À la carte features/i })
     expect(await within(table).findByText('GB of Data / month', {}, { timeout: 5000 })).toBeInTheDocument()
     expect(within(table).getByText('INR 10.00 per GB of Data / month')).toBeInTheDocument()

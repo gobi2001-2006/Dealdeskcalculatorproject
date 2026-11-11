@@ -43,11 +43,11 @@ export function DeleteConfirmModal({
             <div className="flex-1 min-w-0">
               <h3
                 id="delete-dialog-title"
-                className="text-sm font-bold text-slate-900"
+                className="text-[16px] font-bold text-slate-900"
               >
                 Delete Product
               </h3>
-              <p className="mt-1 text-xs text-slate-600 leading-relaxed">
+              <p className="mt-1.5 text-[13px] text-slate-600 leading-relaxed">
                 Are you sure you want to remove{' '}
                 <span className="font-semibold text-slate-900 font-mono">
                   {product.code}
@@ -66,11 +66,11 @@ export function DeleteConfirmModal({
           </div>
         </div>
 
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
+            className="px-4 py-2 text-[13px] font-medium text-slate-700 hover:bg-slate-200/70 rounded-lg transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -80,7 +80,7 @@ export function DeleteConfirmModal({
               onConfirmDelete(product.id)
               onClose()
             }}
-            className="px-4 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 cursor-pointer"
+            className="px-4 py-2 text-[13px] font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600 cursor-pointer"
           >
             Confirm Delete
           </button>

@@ -62,7 +62,7 @@ describe('Page 1 — Product Catalogue', () => {
   it('renders saved families and products from the backend', async () => {
     catalogueBackend()
     renderPage()
-    expect(await screen.findByText('Live Database Connected (FastAPI / PostgreSQL)')).toBeInTheDocument()
+    expect(await screen.findByText('Live Catalogue Connected')).toBeInTheDocument()
     const sidebar = screen.getByRole('complementary', { name: /L1 Product Families/i })
     expect(within(sidebar).getByText('Talent Acquisition')).toBeInTheDocument()
     expect(within(sidebar).getByText('Payroll & Benefits')).toBeInTheDocument()
@@ -78,7 +78,7 @@ describe('Page 1 — Product Catalogue', () => {
       'GET /catalogue/features': () => [],
     })
     renderPage()
-    expect(await screen.findByText(/Catalogue backend unavailable \(Database connection failed\)/)).toBeInTheDocument()
+    expect(await screen.findByText(/Catalogue service unavailable \(Database connection failed\)/)).toBeInTheDocument()
     expect(screen.queryByText('TA-ATS-001')).not.toBeInTheDocument()
     expect(screen.queryByText(/Applicant Tracking System/)).not.toBeInTheDocument()
   })

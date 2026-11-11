@@ -215,10 +215,10 @@ export function CountryConfigCard({
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-white tracking-wide">
+              <h3 className="text-[16px] font-bold text-white tracking-wide">
                 {countryMaster.name}
               </h3>
-              <span className="px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-800 text-orange-400 border border-slate-700">
+              <span className="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-slate-800 text-orange-400 border border-slate-700">
                 {countryCurrencyCode || 'No currency'}{countryCurrencySymbol ? ` (${countryCurrencySymbol})` : ''}
               </span>
             </div>
@@ -253,7 +253,7 @@ export function CountryConfigCard({
             <button
               type="button"
               onClick={onRemoveCountry}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg text-rose-300 hover:text-white hover:bg-rose-950/80 border border-rose-800/60 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-500"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium rounded-lg text-rose-300 hover:text-white hover:bg-rose-950/80 border border-rose-800/60 transition-colors focus:outline-none focus:ring-2 focus:ring-rose-500"
               title={`Remove ${countryMaster.name} deployment`}
               aria-label={`Remove country ${countryMaster.name}`}
             >
@@ -269,10 +269,10 @@ export function CountryConfigCard({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3.5 items-start">
           {/* Country Selector */}
           <div className="lg:col-span-3">
-            <div className="flex items-center justify-between mb-1.5 h-4">
+            <div className="flex items-center justify-between mb-1.5 h-5">
               <label
                 htmlFor={`country-select-${countryConfig.id}`}
-                className="block text-xs font-semibold text-slate-700"
+                className="block text-[13px] font-semibold text-slate-700"
               >
                 Country / Jurisdiction <span className="text-rose-500">*</span>
               </label>
@@ -281,7 +281,7 @@ export function CountryConfigCard({
               id={`country-select-${countryConfig.id}`}
               value={countryConfig.countryId ?? ''}
               onChange={(e) => handleCountryChange(e.target.value)}
-              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
+              className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               <option value="">{countryList.length ? '-- Select country --' : '-- No countries loaded --'}</option>
               {countryList.map((c) => {
@@ -297,10 +297,10 @@ export function CountryConfigCard({
 
           {/* Pricing Tier Selector */}
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-1.5 h-4">
+            <div className="flex items-center justify-between mb-1.5 h-5">
               <label
                 htmlFor={`tier-select-${countryConfig.id}`}
-                className="block text-xs font-semibold text-slate-700"
+                className="block text-[13px] font-semibold text-slate-700"
               >
                 Pricing Tier <span className="text-rose-500">*</span>
               </label>
@@ -309,7 +309,7 @@ export function CountryConfigCard({
               id={`tier-select-${countryConfig.id}`}
               value={countryConfig.pricingTierId ?? ''}
               onChange={(e) => handleTierChange(e.target.value)}
-              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
+              className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               <option value="">{tierList.length ? '-- Select tier --' : '-- No tiers loaded --'}</option>
               {tierList.map((tier) => (
@@ -322,10 +322,10 @@ export function CountryConfigCard({
 
           {/* Deployment Model Selector */}
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-1.5 h-4">
+            <div className="flex items-center justify-between mb-1.5 h-5">
               <label
                 htmlFor={`deployment-select-${countryConfig.id}`}
-                className="block text-xs font-semibold text-slate-700"
+                className="block text-[13px] font-semibold text-slate-700"
               >
                 Deployment Model <span className="text-rose-500">*</span>
               </label>
@@ -334,7 +334,7 @@ export function CountryConfigCard({
               id={`deployment-select-${countryConfig.id}`}
               value={countryConfig.deploymentModelId ?? ''}
               onChange={(e) => handleDeploymentChange(e.target.value)}
-              className="w-full h-10 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
+              className="w-full h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 font-medium transition-colors"
             >
               <option value="">{deploymentList.length ? '-- Select deployment --' : '-- None loaded --'}</option>
               {deploymentList.map((dep) => (
@@ -347,10 +347,10 @@ export function CountryConfigCard({
 
           {/* Pricing Model Selector */}
           <div className="lg:col-span-3">
-            <div className="flex items-center justify-between mb-1.5 h-4">
+            <div className="flex items-center justify-between mb-1.5 h-5">
               <label
                 htmlFor={`pricing-model-select-${countryConfig.id}`}
-                className="block text-xs font-semibold text-slate-700"
+                className="block text-[13px] font-semibold text-slate-700"
               >
                 Pricing Model <span className="text-rose-500">*</span>
               </label>
@@ -359,7 +359,7 @@ export function CountryConfigCard({
               id={`pricing-model-select-${countryConfig.id}`}
               value={countryConfig.pricingModelId ?? ''}
               onChange={(e) => handlePricingModelChange(e.target.value)}
-              className={`w-full h-10 px-3 text-xs rounded-lg border bg-white text-slate-900 focus:outline-none focus:ring-2 font-medium transition-colors ${
+              className={`w-full h-10 px-3.5 text-[14px] rounded-lg border bg-white text-slate-900 focus:outline-none focus:ring-2 font-medium transition-colors ${
                 pricingModelError
                   ? 'border-rose-400 focus:ring-rose-200'
                   : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
@@ -396,10 +396,10 @@ export function CountryConfigCard({
 
           {/* Contract Term (Months) Input */}
           <div className="lg:col-span-2">
-            <div className="flex items-center justify-between mb-1.5 h-4">
+            <div className="flex items-center justify-between mb-1.5 h-5">
               <label
                 htmlFor={`term-input-${countryConfig.id}`}
-                className="block text-xs font-semibold text-slate-700"
+                className="block text-[13px] font-semibold text-slate-700"
               >
                 Contract Term (Mo) <span className="text-rose-500">*</span>
               </label>
@@ -411,7 +411,7 @@ export function CountryConfigCard({
               max="120"
               value={countryConfig.contractTerm}
               onChange={(e) => handleTermChange(e.target.value)}
-              className={`w-full h-10 px-3 text-xs rounded-lg border transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:ring-2 ${
+              className={`w-full h-10 px-3.5 text-[14px] rounded-lg border transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:ring-2 ${
                 termError
                   ? 'border-rose-400 focus:ring-rose-200'
                   : 'border-slate-300 focus:border-orange-500 focus:ring-orange-100'
@@ -433,7 +433,7 @@ export function CountryConfigCard({
           <div>
             <label
               htmlFor={`country-headcount-input-${countryConfig.id}`}
-              className="block text-xs font-bold text-slate-900"
+              className="block text-[13px] font-bold text-slate-900"
             >
               {volumeLabel.heading}
             </label>
@@ -458,9 +458,9 @@ export function CountryConfigCard({
                   })),
                 })
               }}
-              className="w-36 h-9 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 font-mono font-bold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-right shadow-2xs"
+              className="w-40 h-10 px-3.5 text-[14px] rounded-lg border border-slate-300 bg-white text-slate-900 font-mono font-bold focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100 text-right shadow-2xs"
             />
-            <span className="text-xs font-semibold text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+            <span className="text-[12px] font-semibold text-slate-600 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 shadow-2xs">
               {volumeLabel.unit}
             </span>
           </div>
@@ -471,7 +471,7 @@ export function CountryConfigCard({
       <div className="p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
           <div>
-            <h4 className="text-xs font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+            <h4 className="text-[16px] font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
               <Layers className="w-4 h-4 text-orange-600" aria-hidden="true" />
               <span>Configured Product Families ({(countryConfig.families || []).length})</span>
             </h4>
@@ -496,7 +496,7 @@ export function CountryConfigCard({
                   handleAddFamily(e.target.value)
                   e.target.value = ''
                 }}
-                className="h-8 px-3 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold focus:outline-none focus:border-orange-500 shadow-2xs hover:bg-slate-50 transition-colors"
+                className="h-9 px-3.5 text-[12px] rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold focus:outline-none focus:border-orange-500 shadow-2xs hover:bg-slate-50 transition-colors"
               >
                 <option value="" disabled>
                   + Add Product Family...
