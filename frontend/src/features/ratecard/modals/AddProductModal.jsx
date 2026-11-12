@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Plus, AlertCircle, Info } from 'lucide-react'
+import { X, Plus, AlertCircle } from 'lucide-react'
 import { PRODUCT_TYPES } from '../../../data/catalogueData'
 
 export function AddProductModal({ isOpen, onClose, onSave, families = [], selectedFamilyId = 'all' }) {

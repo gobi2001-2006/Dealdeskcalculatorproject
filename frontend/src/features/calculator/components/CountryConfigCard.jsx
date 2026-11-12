@@ -10,6 +10,7 @@ import { ServiceLinesSection } from './ServiceLinesSection'
 import { validateContractTerm, countryCurrencyCode as getCountryCurrencyCode } from '../calculatorData'
 import { getCurrencySymbol } from '../../ratecard/rateCardFormatters'
 import { describeCountryVolume } from '../rateUnits'
+import { formatYears } from '../../../utils/contractDuration'
 
 function getCountryCurrencySymbol(country, currencyCode = null) {
   const code = currencyCode || getCountryCurrencyCode(country)
@@ -128,13 +129,12 @@ export function CountryConfigCard({
     })
   }
 
-  // Handle contract term change with validation
+  // Contract duration is entered in whole years (saved on the proposal in months).
   const handleTermChange = (value) => {
-    const err = validateContractTerm(value)
-    setTermError(err)
+    setTermError(validateContractTerm(value))
     onUpdateCountry({
       ...countryConfig,
-      contractTerm: value === '' ? '' : Number(value) || value,
+      contractYears: value === '' ? '' : Number.isNaN(Number(value)) ? value : Number(value),
     })
   }
 
@@ -241,7 +241,7 @@ export function CountryConfigCard({
               </span>
               <span className="text-slate-600">•</span>
               <span className="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/80 font-medium text-slate-200">
-                {countryConfig.contractTerm || '—'} Months
+                {formatYears(countryConfig.contractYears)}
               </span>
             </div>
           </div>
@@ -394,22 +394,22 @@ export function CountryConfigCard({
             )}
           </div>
 
-          {/* Contract Term (Months) Input */}
+          {/* Contract Duration (Years) Input */}
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between mb-1.5 h-5">
               <label
                 htmlFor={`term-input-${countryConfig.id}`}
                 className="block text-[13px] font-semibold text-slate-700"
               >
-                Contract Term (Mo) <span className="text-rose-500">*</span>
+                Contract Duration (Years) <span className="text-rose-500">*</span>
               </label>
             </div>
             <input
               id={`term-input-${countryConfig.id}`}
               type="number"
               min="1"
-              max="120"
-              value={countryConfig.contractTerm}
+              step="1"
+              value={countryConfig.contractYears}
               onChange={(e) => handleTermChange(e.target.value)}
               className={`w-full h-10 px-3.5 text-[14px] rounded-lg border transition-colors bg-white text-slate-900 font-mono focus:outline-none focus:ring-2 ${
                 termError
@@ -527,7 +527,6 @@ export function CountryConfigCard({
                 pricingTierId={countryConfig.pricingTierId}
                 deploymentModelId={countryConfig.deploymentModelId}
                 pricingModelId={countryConfig.pricingModelId}
-                contractTerm={countryConfig.contractTerm}
                 currencyCode={countryCurrencyCode}
                 currencySymbol={countryCurrencySymbol}
                 onPackUnitChange={handlePackUnitChange}

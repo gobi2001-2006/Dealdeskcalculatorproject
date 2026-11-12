@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { Package, Sparkles, Briefcase } from 'lucide-react'
 import { formatMoney } from '../../../utils/calculationView'
+import { formatContractYears } from '../../../utils/contractDuration'
 
 /**
  * Proposal Summary table, rendered entirely from the saved calculation snapshot.
@@ -29,7 +30,7 @@ export function ProposalFinancialTable({ snapshotPayload = null, showDiscounts =
             <tr>
               <th scope="col" className="py-3.5 px-4 min-w-[280px]">Product / Line</th>
               <th scope="col" className="py-3.5 px-3 text-right min-w-[150px]">Subscription (annual)</th>
-              <th scope="col" className="py-3.5 px-3 text-right min-w-[150px]">Subscription ({term ?? '—'} mo)</th>
+              <th scope="col" className="py-3.5 px-3 text-right min-w-[150px]">Subscription ({formatContractYears(term)})</th>
               <th scope="col" className="py-3.5 px-3 text-right min-w-[130px]">Services (one-time)</th>
               <th scope="col" className="py-3.5 px-3 text-right min-w-[170px]">Total (FCV)</th>
             </tr>
@@ -107,8 +108,12 @@ export function ProposalFinancialTable({ snapshotPayload = null, showDiscounts =
                   {showDiscounts && (Number(p.subscription_discount_pct) > 0 || Number(p.service_discount_pct) > 0) && (
                     <tr className="bg-orange-50/60 text-[11px] text-orange-900 font-medium">
                       <td className="py-2.5 px-4" colSpan={5}>
-                        Overall subscription discount {p.subscription_discount_pct}% (−{formatMoney(p.subscription_discount_amount, native)} annual)
+                        {/* Overall discounts are set per country (stored on the country block). */}
+                        {p.country_name ? `${p.country_name} overall subscription discount` : 'Overall subscription discount'}{' '}
+                        {p.subscription_discount_pct}% (−{formatMoney(p.subscription_discount_amount, native)} annual)
+                        {p.subscription_discount_reason && <span className="italic"> — {p.subscription_discount_reason}</span>}
                         {' · '}Services discount {p.service_discount_pct}% (−{formatMoney(p.service_discount_amount, native)})
+                        {p.service_discount_reason && <span className="italic"> — {p.service_discount_reason}</span>}
                       </td>
                     </tr>
                   )}

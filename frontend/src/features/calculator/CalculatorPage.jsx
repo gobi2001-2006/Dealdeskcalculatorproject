@@ -23,13 +23,14 @@ import {
   deserializeBackendProposal,
 } from './calculatorData'
 import {
-  requestProposalCalculation,
+  requestBasePricing,
+  calculateBasePricing,
+  proposalTermMonths,
   saveFullProposal,
   getProposal,
   getLatestCalculation,
   getCustomers,
   describeApiError,
-  discountsFromSnapshot,
 } from '../../api/proposalsApi'
 import {
   getCountries,
@@ -104,7 +105,9 @@ export function CalculatorPage() {
   // API Integration States
   const [isSaving, setIsSaving] = useState(false)
   const [isCalculating, setIsCalculating] = useState(false)
-  const { calcApiResult, setCalcApiResult } = useProposal()
+  // Page 4 shows BASE pricing only: its own result, never the discounted calculation that
+  // Pricing & Discounts and the Proposal Summary use (that one stays in the shared context).
+  const [baseResult, setBaseResult] = useState(null)
   const [calculatedInputsSignature, setCalculatedInputsSignature] = useState(null)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState('success') // 'success' | 'warning' | 'error'
@@ -118,7 +121,7 @@ export function CalculatorPage() {
         tier: c.pricingTierId,
         dep: c.deploymentModelId,
         pm: c.pricingModelId,
-        term: c.contractTerm,
+        years: c.contractYears,
         headcount: c.headcount,
         families: (c.families || []).map((f) => ({
           famId: f.familyId,
@@ -145,7 +148,7 @@ export function CalculatorPage() {
   }, [captureSignature, currentInputsSignature])
 
   // Replace screen state with what the database now holds (new ids for countries/service lines).
-  // The contract term is kept from the screen: the backend stores it only on calculation snapshots.
+  // The contract duration on screen is kept (it was just saved on the proposal).
   const applySavedProposal = (savedDetail, ids) => {
     if (!savedDetail) return
     const reloaded = deserializeBackendProposal(savedDetail, { masters })
@@ -157,12 +160,12 @@ export function CalculatorPage() {
       proposalCode: savedDetail.code || prev.proposalCode,
     }))
     setCountryConfigs((prev) =>
-      reloaded.countryConfigs.map((c, i) => ({ ...c, contractTerm: prev[i]?.contractTerm ?? c.contractTerm })),
+      reloaded.countryConfigs.map((c, i) => ({ ...c, contractYears: prev[i]?.contractYears ?? c.contractYears })),
     )
   }
 
   const isCalculationStale = Boolean(
-    calcApiResult?.status === 'success' &&
+    baseResult?.status === 'success' &&
     calculatedInputsSignature &&
     currentInputsSignature !== calculatedInputsSignature
   )
@@ -222,17 +225,27 @@ export function CalculatorPage() {
         )
         setClientInfo((prev) => ({ ...prev, ...loadedClient }))
         setCountryConfigs(loadedConfigs)
-        setCalcApiResult(
-          latestCalc ? { status: 'success', proposalId: idToLoad, data: latestCalc, isBackendCalculation: true } : null,
-        )
         setCalculatedInputsSignature(null)
-        if (latestCalc) setCaptureSignature(true)
+        // Base (undiscounted) pricing of the saved lines; saved discounts are not applied here.
+        let base = null
+        const hasLines = (backendProposal.versions || []).some((v) => (v.line_items || []).length > 0)
+        if (hasLines) {
+          const term = proposalTermMonths(backendProposal, latestCalc)
+          try {
+            const data = await calculateBasePricing(idToLoad, term ? { contract_term_months: term } : {})
+            base = { status: 'success', proposalId: idToLoad, data, isBackendCalculation: true }
+          } catch (err) {
+            base = { status: 'error', proposalId: idToLoad, message: describeApiError(err), data: null }
+          }
+        }
+        setBaseResult(base)
+        if (base?.status === 'success') setCaptureSignature(true)
         showToast(`Loaded saved proposal #${idToLoad}.`, 'success')
       } catch (err) {
         showToast(`Failed to load proposal #${idToLoad}: ${describeApiError(err)}`, 'error')
       }
     },
-    [urlProposalId, clientInfo.proposalId, masters, setClientInfo, setCountryConfigs, setCalcApiResult]
+    [urlProposalId, clientInfo.proposalId, masters, setClientInfo, setCountryConfigs]
   )
 
   // Load the proposal named in the URL once the masters (needed to map families/currencies) are in.
@@ -335,9 +348,8 @@ export function CalculatorPage() {
     }
   }
 
-  // Calculate: the proposal is saved (synchronised) first, so the backend prices what is on screen.
-  // Product-level overall/services discounts are applied on Pricing & Discounts; saved line
-  // discounts are always included.
+  // Calculate: the proposal is saved (synchronised) first, then priced at BASE level. No discount
+  // is applied or saved here: discounts belong to Pricing & Discounts (Page 5).
   const handleTriggerCalculation = async () => {
     const clientErr = validateClientName(clientInfo.clientName)
     if (clientErr) {
@@ -355,15 +367,13 @@ export function CalculatorPage() {
     setIsCalcModalOpen(true)
 
     try {
-      // Keep the product-level discounts applied on Pricing & Discounts (recorded on the last snapshot).
-      const res = await requestProposalCalculation({
+      const res = await requestBasePricing({
         proposalId: clientInfo.proposalId,
         clientInfo,
         countryConfigs,
-        discounts: calcApiResult?.status === 'success' ? discountsFromSnapshot(calcApiResult.data) : {},
       })
 
-      setCalcApiResult(res)
+      setBaseResult(res)
 
       if (res.status === 'success') {
         applySavedProposal(res.savedProposal, res)
@@ -371,11 +381,7 @@ export function CalculatorPage() {
         if (String(res.proposalId) !== String(urlProposalId)) {
           setSearchParams({ proposalId: String(res.proposalId) })
         }
-        if (res.discountsDropped) {
-          showToast('Proposal priced, but the products changed, so overall/services discounts were not applied. Re-apply them on Pricing & Discounts.', 'warning')
-        } else {
-          showToast('Proposal saved and calculated.', 'success')
-        }
+        showToast('Proposal saved. Base pricing shown (no discounts); apply discounts on Pricing & Discounts.', 'success')
       } else {
         showToast(`Calculation failed: ${res.message}`, 'error')
       }
@@ -385,7 +391,7 @@ export function CalculatorPage() {
   }
 
   // Summary strip values come straight from the backend result (no browser-side conversion).
-  const calcTotals = calcApiResult?.status === 'success' ? readCalculationTotals(calcApiResult.data) : null
+  const calcTotals = baseResult?.status === 'success' ? readCalculationTotals(baseResult.data) : null
   const summaryStripValues = useMemo(() => {
     if (!calcTotals) {
       return {
@@ -394,14 +400,15 @@ export function CalculatorPage() {
         grandTotal: 'Pending calculation',
       }
     }
-    const staleSuffix = isCalculationStale || calcTotals.isStale ? ' (Outdated)' : ''
+    // Base (undiscounted) figures: Page 4 never shows discounted amounts.
+    const suffix = isCalculationStale ? ' (Outdated)' : ' (base)'
     return {
-      fcv: `${formatMoney(calcTotals.subscriptionContract, calcTotals.currency)}${staleSuffix}`,
-      services: `${formatMoney(calcTotals.services, calcTotals.currency)}${staleSuffix}`,
-      grandTotal: `${formatMoney(calcTotals.contractTotal, calcTotals.currency)}${staleSuffix}`,
+      fcv: `${formatMoney(calcTotals.baseSubscriptionContract ?? calcTotals.subscriptionContract, calcTotals.currency)}${suffix}`,
+      services: `${formatMoney(calcTotals.baseServices ?? calcTotals.services, calcTotals.currency)}${suffix}`,
+      grandTotal: `${formatMoney(calcTotals.baseContractTotal ?? calcTotals.contractTotal, calcTotals.currency)}${suffix}`,
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calcApiResult, isCalculationStale])
+  }, [baseResult, isCalculationStale])
 
   return (
     <div className="h-screen h-[100dvh] max-h-screen w-full flex flex-col bg-slate-100 overflow-hidden text-slate-800 antialiased font-sans">
@@ -473,14 +480,14 @@ export function CalculatorPage() {
                 ) : isCalculationStale ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-900 border border-amber-300 shadow-2xs" title="Parameters were modified after calculation. Click 'Calculate Pricing' to refresh.">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>
-                    <span>Recalculation required (Snapshot #{calcApiResult.data?.snapshot_id})</span>
+                    <span>Inputs Modified — Recalculate Base Pricing</span>
                   </span>
-                ) : calcApiResult?.status === 'success' ? (
+                ) : baseResult?.status === 'success' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
-                    <span>Calculated (Snapshot #{calcApiResult.data?.snapshot_id})</span>
+                    <span>Base Pricing Calculated (no discounts)</span>
                   </span>
-                ) : calcApiResult?.status === 'error' ? (
+                ) : baseResult?.status === 'error' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-800 border border-rose-200 shadow-2xs">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500" aria-hidden="true"></span>
                     <span>Calculation failed</span>
@@ -662,7 +669,7 @@ export function CalculatorPage() {
         isOpen={isCalcModalOpen}
         clientInfo={clientInfo}
         countryConfigs={countryConfigs}
-        apiResult={calcApiResult}
+        apiResult={baseResult}
         isLoading={isCalculating}
         onClose={() => setIsCalcModalOpen(false)}
         onRetryCalculation={handleTriggerCalculation}

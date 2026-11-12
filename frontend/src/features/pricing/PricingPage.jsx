@@ -18,16 +18,20 @@ import {
   calculateProposal,
   getLatestCalculation,
   updateProposalLineItem,
+  updateProposalCountry,
   lineTargetKey,
   lineCountryIdOf,
+  primaryCountryBlock,
+  proposalTermMonths,
   describeApiError,
 } from '../../api/proposalsApi'
+import { yearsToMonths } from '../../utils/contractDuration'
 import { deserializeBackendProposal } from '../calculator/calculatorData'
+import { getApprovalThresholds } from '../../api/ratesApi'
 import { buildCatalogueLookup, loadCatalogueMasters } from '../../utils/catalogueLookup'
 import {
   formatMoney,
   readCalculationTotals,
-  uniformProductDiscount,
   validateDiscountPct,
 } from '../../utils/calculationView'
 
@@ -44,21 +48,57 @@ function targetKeysOf(lines) {
   )
 }
 
-/** Product-level discounts for the calculation request, keyed by the product keys in `calcData`. */
-function productDiscounts(calcData, overallPct, servicePct) {
-  const product_subscription_discounts = {}
-  const product_service_discounts = {}
-  ;(calcData?.snapshot_payload?.products || []).forEach((p) => {
-    // "<code>@<country>" when a product is sold in more than one country; older snapshots have only product_code.
-    const key = p.product_key || p.product_code
-    if (overallPct > 0 && Number(p.subscription_subtotal_before_discount) > 0) {
-      product_subscription_discounts[key] = overallPct
+// Overall discounts are set per country (business decision 2026-11-06) and stored on each
+// country block. Screen state is keyed by the country master id.
+const DISCOUNT_KINDS = {
+  subscription: { pct: 'subscription_discount_pct', reason: 'subscription_discount_reason', subtotal: 'subscription_subtotal_before_discount' },
+  service: { pct: 'service_discount_pct', reason: 'service_discount_reason', subtotal: 'service_subtotal_before_discount' },
+}
+
+const toPct = (v) => (v === '' || v === null || v === undefined || Number(v) === 0 ? null : Number(v))
+const toText = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+
+/**
+ * Each country's stored overall discount. Proposals priced before country-level storage sent the
+ * discount with the calculation only: for a country with nothing stored, the % its products got in
+ * the latest snapshot is shown (when they all got the same one), and saving stores it on the country.
+ */
+function countryDiscountsFrom(detail, latest, kind) {
+  const f = DISCOUNT_KINDS[kind]
+  const primaryCountryId = primaryCountryBlock(detail?.countries)?.country_id
+  const products = latest?.snapshot_payload?.products || []
+  const out = {}
+  ;(detail?.countries || []).forEach((block) => {
+    const key = String(block.country_id)
+    if (block[f.pct] !== null && block[f.pct] !== undefined) {
+      out[key] = { value: String(Number(block[f.pct])), reason: block[f.reason] || '' }
+      return
     }
-    if (servicePct > 0 && Number(p.service_subtotal_before_discount) > 0) {
-      product_service_discounts[key] = servicePct
-    }
+    const pcts = [
+      ...new Set(
+        products
+          .filter((p) => Number(p.country_id ?? primaryCountryId) === Number(block.country_id))
+          .filter((p) => Number(p[f.subtotal]) > 0)
+          .map((p) => Number(p[f.pct]) || 0),
+      ),
+    ]
+    out[key] = { value: pcts.length === 1 && pcts[0] > 0 ? String(pcts[0]) : '', reason: block[f.reason] || '' }
   })
-  return { product_subscription_discounts, product_service_discounts }
+  return out
+}
+
+/** The PATCH body that makes a country block hold the discounts on screen ({} when nothing changed). */
+function countryDiscountPatch(block, subscription = {}, service = {}) {
+  const patch = {}
+  const wanted = { subscription, service }
+  Object.entries(DISCOUNT_KINDS).forEach(([kind, f]) => {
+    const pct = toPct(wanted[kind].value)
+    const stored = block[f.pct] === null || block[f.pct] === undefined ? null : Number(block[f.pct])
+    if (pct !== stored) patch[f.pct] = pct
+    const reason = toText(wanted[kind].reason)
+    if (reason !== (block[f.reason] || null)) patch[f.reason] = reason
+  })
+  return patch
 }
 
 export function PricingPage() {
@@ -78,7 +118,6 @@ export function PricingPage() {
     setOverallDiscounts,
     serviceDiscounts,
     setServiceDiscounts,
-    approvalPolicies,
     calcApiResult,
     setCalcApiResult,
   } = useProposal()
@@ -95,6 +134,12 @@ export function PricingPage() {
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState('success')
   const [isSaving, setIsSaving] = useState(false)
+  // Discount state on screen belongs to exactly one proposal: saving is allowed only once that
+  // proposal's own saved discounts have loaded (never with another proposal's values).
+  const [discountsLoadedFor, setDiscountsLoadedFor] = useState(null)
+  // Approval thresholds come from the approval_thresholds table (display only, not enforced).
+  const [thresholds, setThresholds] = useState(null)
+  const [thresholdError, setThresholdError] = useState('')
 
   const showToast = (msg, type = 'success') => {
     setToastMessage(msg)
@@ -102,15 +147,29 @@ export function PricingPage() {
     setTimeout(() => setToastMessage(''), 6000)
   }
 
-  // Load the catalogue, the saved proposal and its latest calculation snapshot.
+  // Load the catalogue, approval thresholds, the saved proposal and its latest calculation snapshot.
   useEffect(() => {
     let isMounted = true
+
+    getApprovalThresholds()
+      .then((rows) => isMounted && setThresholds(rows))
+      .catch((err) => isMounted && setThresholdError(describeApiError(err)))
 
     async function load() {
       const masters = await loadCatalogueMasters()
       if (!isMounted) return
       setCatalogue(masters)
       if (!effectiveProposalId) return
+
+      // The shared context still holds the previous proposal's discounts when another one opens:
+      // clear them before loading, so nothing (values or screen-only reasons) carries over.
+      const sameProposal = String(clientInfo?.proposalId) === String(effectiveProposalId)
+      setDiscountsLoadedFor(null)
+      if (!sameProposal) {
+        setLineItemDiscounts({})
+        setOverallDiscounts({})
+        setServiceDiscounts({})
+      }
 
       try {
         const detail = await getProposal(effectiveProposalId)
@@ -129,28 +188,26 @@ export function PricingPage() {
           if (restored.countryConfigs[0]) setFocusedCountryId(restored.countryConfigs[0].id)
         }
         setSavedLineItems(restored.lineItems)
-        // Line discounts come from the saved line items (reasons are screen-only).
+        // Line discounts come from the saved line items (reasons are screen-only, kept only while
+        // the same proposal stays open).
         setLineItemDiscounts((prev) => {
           const next = {}
           Object.entries(restored.lineDiscountsByTarget).forEach(([key, pct]) => {
-            next[key] = { value: String(pct), reason: prev[key]?.reason || '' }
+            next[key] = { value: String(pct), reason: sameProposal ? prev[key]?.reason || '' : '' }
           })
           return next
         })
+        // Overall subscription / services discounts are stored on each country block.
+        setOverallDiscounts(countryDiscountsFrom(detail, latest, 'subscription'))
+        setServiceDiscounts(countryDiscountsFrom(detail, latest, 'service'))
+
         if (latest) {
           setCalcApiResult({ status: 'success', proposalId: effectiveProposalId, data: latest, isBackendCalculation: true })
-          // Product-level discounts are recorded on the snapshot.
-          const overall = uniformProductDiscount(latest, 'subscription_discount_pct')
-          const service = uniformProductDiscount(latest, 'service_discount_pct')
-          setOverallDiscounts((prev) => ({ proposal: { value: overall.value, reason: prev.proposal?.reason || '' } }))
-          setServiceDiscounts((prev) => ({ proposal: { value: service.value, reason: prev.proposal?.reason || '' } }))
-          if (overall.mixed || service.mixed) {
-            showToast('The last calculation used different discounts per product; recalculating applies one value to all products.', 'warning')
-          }
         } else {
           setCalcApiResult(null)
         }
         setLoadError('')
+        setDiscountsLoadedFor(String(effectiveProposalId))
       } catch (err) {
         if (isMounted) setLoadError(`Could not load proposal #${effectiveProposalId}: ${describeApiError(err)}`)
       }
@@ -183,33 +240,41 @@ export function PricingPage() {
     return { countriesCount: countryConfigs?.length || 0, totalFamilies, totalPacks, totalFeatures }
   }, [countryConfigs])
 
-  const overall = overallDiscounts.proposal || { value: '', reason: '' }
-  const service = serviceDiscounts.proposal || { value: '', reason: '' }
+  const emptyDiscount = { value: '', reason: '' }
+  const activeKey = activeCountry ? String(activeCountry.countryId) : ''
+  const overall = overallDiscounts[activeKey] || emptyDiscount
+  const service = serviceDiscounts[activeKey] || emptyDiscount
 
-  // Save line discounts, then recalculate with the product-level discounts.
+  // Save line discounts and each country's overall discounts, then recalculate.
   const handleSavePricing = async () => {
     if (!effectiveProposalId) {
       showToast('Save the proposal on the Proposal Configurator first; discounts are applied to a saved proposal.', 'warning')
       return
     }
+    if (discountsLoadedFor !== String(effectiveProposalId)) {
+      showToast(`The saved discounts of proposal #${effectiveProposalId} have not loaded; reload the page before saving.`, 'error')
+      return
+    }
     const invalid =
       Object.values(lineItemDiscounts).some((d) => validateDiscountPct(d?.value)) ||
-      validateDiscountPct(overall.value) ||
-      validateDiscountPct(service.value)
+      Object.values(overallDiscounts).some((d) => validateDiscountPct(d?.value)) ||
+      Object.values(serviceDiscounts).some((d) => validateDiscountPct(d?.value))
     if (invalid) {
       showToast('Please fix invalid discount values (0% to 100%) before saving.', 'error')
       return
     }
-    const term = Number(countryConfigs?.[0]?.contractTerm ?? calcApiResult?.data?.contract_term_months)
-    if (!Number.isInteger(term) || term <= 0) {
-      showToast('Set the contract term (months) on the Proposal Configurator before calculating.', 'error')
-      return
-    }
-
     setIsSaving(true)
     try {
       // 1. Line discounts are stored on the proposal line items.
       const detail = await getProposal(effectiveProposalId)
+      // Contract term: saved on the proposal (months); older proposals: the latest calculation's
+      // term or the duration on screen. It is sent only when the proposal has none saved.
+      const term =
+        proposalTermMonths(detail, calcApiResult?.data) ?? yearsToMonths(countryConfigs?.[0]?.contractYears)
+      if (!term) {
+        showToast('Set the contract duration (years) on the Proposal Configurator before calculating.', 'error')
+        return
+      }
       const lines = (draftVersionOf(detail)?.line_items || []).map((li) => ({
         ...li,
         country_id: lineCountryIdOf(li, detail.countries),
@@ -224,29 +289,21 @@ export function PricingPage() {
         }
       }
 
-      // 2. Product-level discounts are keyed by product code, taken from a calculation of the
-      //    same set of lines. If the lines changed since the last snapshot, price once to learn them.
-      const overallPct = Number(overall.value) || 0
-      const servicePct = Number(service.value) || 0
-      let codesFrom = calcApiResult?.data
-      // Snapshots written before multi-region support have no country on their lines: they were
-      // priced in the primary country, which lineCountryIdOf falls back to.
-      const snapshotKeys = targetKeysOf(
-        (codesFrom?.snapshot_payload?.all_subscription_line_items || []).map((li) => ({
-          ...li,
-          country_id: lineCountryIdOf(li, detail.countries),
-        })),
-      )
-      const currentKeys = targetKeysOf(lines)
-      const sameLines = snapshotKeys.size === currentKeys.size && [...currentKeys].every((k) => snapshotKeys.has(k))
-      if ((overallPct > 0 || servicePct > 0) && !sameLines) {
-        codesFrom = await calculateProposal(effectiveProposalId, { contract_term_months: term })
+      // 2. Each country's overall subscription / services discount (and justification) is stored
+      //    on its country block; the backend applies it to that country's products only.
+      for (const block of detail.countries || []) {
+        const key = String(block.country_id)
+        const patch = countryDiscountPatch(block, overallDiscounts[key], serviceDiscounts[key])
+        if (Object.keys(patch).length > 0) {
+          await updateProposalCountry(effectiveProposalId, block.id, patch)
+        }
       }
 
-      const result = await calculateProposal(effectiveProposalId, {
-        ...productDiscounts(codesFrom, overallPct, servicePct),
-        contract_term_months: term,
-      })
+      // 3. Recalculate: the backend reads every discount from the saved proposal.
+      const result = await calculateProposal(
+        effectiveProposalId,
+        detail.contract_term_months ? {} : { contract_term_months: term },
+      )
       setCalcApiResult({ status: 'success', proposalId: effectiveProposalId, data: result, isBackendCalculation: true })
       setSavedLineItems(lines)
       showToast(`Discounts saved and proposal recalculated (snapshot #${result.snapshot_id}).`, 'success')
@@ -336,10 +393,10 @@ export function PricingPage() {
             calculationSnapshot={calcApiResult?.data}
             onUpdateLineDiscount={updateLineItemDiscount}
             onUpdateOverallDiscount={(patch) =>
-              setOverallDiscounts((prev) => ({ proposal: { ...(prev.proposal || { value: '', reason: '' }), ...patch } }))
+              setOverallDiscounts((prev) => ({ ...prev, [activeKey]: { ...(prev[activeKey] || emptyDiscount), ...patch } }))
             }
             onUpdateServiceDiscount={(patch) =>
-              setServiceDiscounts((prev) => ({ proposal: { ...(prev.proposal || { value: '', reason: '' }), ...patch } }))
+              setServiceDiscounts((prev) => ({ ...prev, [activeKey]: { ...(prev[activeKey] || emptyDiscount), ...patch } }))
             }
           />
         </main>
@@ -356,7 +413,7 @@ export function PricingPage() {
             isCalculating={isSaving}
             onSavePrototype={handleSavePricing}
           />
-          <ApprovalPoliciesCard policies={approvalPolicies} />
+          <ApprovalPoliciesCard thresholds={thresholds} loadError={thresholdError} />
         </aside>
       </div>
     </div>

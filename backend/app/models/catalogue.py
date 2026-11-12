@@ -572,6 +572,8 @@ class PackVersion(Base):
     pack_items: Mapped[list["PackItem"]] = relationship(
         "PackItem",
         back_populates="pack_version",
+        # A fixed order keeps pack contents (and anything derived from them) stable between reads.
+        order_by="PackItem.feature_id",
     )
 
 

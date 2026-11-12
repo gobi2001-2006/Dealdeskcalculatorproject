@@ -9,6 +9,25 @@ import {
 } from 'lucide-react'
 import { CalculationNotices } from '../../../components/common/CalculationNotices'
 import { formatMoney, readCalculationTotals } from '../../../utils/calculationView'
+import { formatContractYears } from '../../../utils/contractDuration'
+
+/** Per-product figures to show: base pricing (Proposal Configurator) or net (saved calculation). */
+function productCells(prod, isBase, termMonths) {
+  if (isBase) {
+    return [
+      ['Subscription — Year 1 (base)', prod.subscription_base_annual ?? prod.subscription_subtotal_before_discount],
+      [`Subscription — ${formatContractYears(termMonths)} (base)`, prod.contract_subscription_base ?? prod.contract_subscription_subtotal_before_discount],
+      ['Services — one-time (base)', prod.service_base ?? prod.service_subtotal_before_discount],
+      ['Contract Value (base)', prod.contract_product_base_native_total ?? prod.contract_product_native_total],
+    ]
+  }
+  return [
+    ['Subscription Subtotal', prod.subscription_subtotal_before_discount],
+    ['Subscription Total (Net)', prod.subscription_total_after_discount],
+    ['Service Subtotal', prod.service_subtotal_before_discount],
+    ['Service Total (Net)', prod.service_total_after_discount],
+  ]
+}
 
 export function CalculationModal({
   isOpen,
@@ -25,6 +44,8 @@ export function CalculationModal({
   const calcData = apiResult?.data || {}
   const totals = readCalculationTotals(apiResult?.data)
   const products = totals?.products || []
+  // 'base' = Proposal Configurator pricing without discounts; otherwise a saved (discounted) snapshot.
+  const isBase = totals?.pricingStage === 'base'
 
   return (
     <div
@@ -45,7 +66,9 @@ export function CalculationModal({
                 Commercial Calculation Breakdown
               </h2>
               <p className="text-[11px] text-slate-300">
-                Itemized pricing and calculation summary.
+                {isBase
+                  ? 'Base pricing from the rate cards: no discounts applied, nothing saved as a snapshot.'
+                  : 'Itemized pricing and calculation summary.'}
               </p>
             </div>
           </div>
@@ -99,17 +122,24 @@ export function CalculationModal({
               {/* Grand Total Hero Box */}
               <div className="p-5 rounded-xl bg-gradient-to-r from-[#0B1528] to-[#1E293B] text-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-md">
                 <div>
-                  <div className="text-[11px] font-semibold tracking-wider text-orange-400 uppercase">
-                    Full Contract Value ({totals.currency}, {totals.termMonths} months)
+                  {/* Base results (Proposal Configurator) show undiscounted pricing only; saved results
+                      (Proposal Summary) show the net figures, with the base total alongside. */}
+                  <div className="text-[11px] font-semibold tracking-wider text-orange-400 uppercase" data-testid="fcv-label">
+                    Full Contract Value ({totals.currency}, {formatContractYears(totals.termMonths)}){isBase ? '' : ' — net'}
                   </div>
-                  <div className="text-[22px] sm:text-[28px] font-black font-mono tracking-tight mt-0.5">
-                    {formatMoney(totals.contractTotal, totals.currency)}
+                  <div className="text-[22px] sm:text-[28px] font-black font-mono tracking-tight mt-0.5" data-testid="fcv-value">
+                    {formatMoney(isBase ? totals.baseContractTotal ?? totals.contractTotal : totals.contractTotal, totals.currency)}
                   </div>
-                  <div className="text-[11px] text-orange-200 font-mono mt-0.5">
-                    Year 1 (annual subscription + one-time services): {formatMoney(totals.annualTotal, totals.currency)}
+                  <div className="text-[11px] text-orange-200 font-mono mt-0.5" data-testid="year1-value">
+                    Year 1 (annual subscription + one-time services): {formatMoney(isBase ? totals.baseAnnualTotal ?? totals.annualTotal : totals.annualTotal, totals.currency)}
                   </div>
+                  {!isBase && totals.baseContractTotal != null && (
+                    <div className="text-[11px] text-slate-300 font-mono mt-0.5">
+                      Before discounts: {formatMoney(totals.baseContractTotal, totals.currency)} (Year 1 {formatMoney(totals.baseAnnualTotal, totals.currency)})
+                    </div>
+                  )}
                   <div className="text-[11px] text-slate-300 mt-1 flex items-center gap-2">
-                    <span>Audit Snapshot #{calcData.snapshot_id}</span>
+                    <span>{calcData.snapshot_id ? `Snapshot #${calcData.snapshot_id}` : 'Preview — not saved as a snapshot'}</span>
                     <span>•</span>
                     <span>Version {calcData.version_no}</span>
                     <span>•</span>
@@ -120,7 +150,7 @@ export function CalculationModal({
                 <div className="flex items-center gap-2 sm:self-center">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
-                    <span>Verified Snapshot</span>
+                    <span>{isBase ? 'Base pricing — before discounts' : 'Saved snapshot — discounts applied'}</span>
                   </span>
                 </div>
               </div>
@@ -157,45 +187,34 @@ export function CalculationModal({
                         <div className="text-right">
                           <div className="font-bold font-mono text-slate-900 text-[14px]">
                             {prod.reporting_currency_code}{' '}
-                            {Number(prod.product_reporting_total).toLocaleString(undefined, {
+                            {Number(
+                              isBase
+                                ? prod.contract_product_base_reporting_total ?? prod.contract_product_reporting_total
+                                : prod.contract_product_reporting_total,
+                            ).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })}
+                            <span className="ml-1 font-sans font-normal text-[10px] text-slate-500">{isBase ? 'contract, base' : 'contract, net'}</span>
                           </div>
                           {prod.native_currency_code !== prod.reporting_currency_code && (
                             <div className="text-[10px] text-slate-500 font-mono">
                               Native: {prod.native_currency_code}{' '}
-                              {Number(prod.product_native_total).toLocaleString()} (FX: {prod.fx_rate_multiplier})
+                              {Number(isBase ? prod.contract_product_base_native_total ?? prod.contract_product_native_total : prod.contract_product_native_total).toLocaleString()} (FX: {prod.fx_rate_multiplier})
                             </div>
                           )}
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                        <div className="p-2.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-500 block text-[10px]">Subscription Subtotal</span>
-                          <span className="font-semibold text-slate-800 font-mono text-[12px]">
-                            {prod.native_currency_code} {Number(prod.subscription_subtotal_before_discount).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="p-2.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-500 block text-[10px]">Subscription Total (Net)</span>
-                          <span className="font-semibold text-slate-800 font-mono text-[12px]">
-                            {prod.native_currency_code} {Number(prod.subscription_total_after_discount).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="p-2.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-500 block text-[10px]">Service Subtotal</span>
-                          <span className="font-semibold text-slate-800 font-mono text-[12px]">
-                            {prod.native_currency_code} {Number(prod.service_subtotal_before_discount).toLocaleString()}
-                          </span>
-                        </div>
-                        <div className="p-2.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-500 block text-[10px]">Service Total (Net)</span>
-                          <span className="font-semibold text-slate-800 font-mono text-[12px]">
-                            {prod.native_currency_code} {Number(prod.service_total_after_discount).toLocaleString()}
-                          </span>
-                        </div>
+                        {productCells(prod, isBase, totals.termMonths).map(([label, value]) => (
+                          <div key={label} className="p-2.5 rounded bg-white border border-slate-200">
+                            <span className="text-slate-500 block text-[10px]">{label}</span>
+                            <span className="font-semibold text-slate-800 font-mono text-[12px]">
+                              {prod.native_currency_code} {Number(value ?? 0).toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
                       </div>
 
                       {/* Line items details */}
@@ -213,7 +232,7 @@ export function CalculationModal({
                                   <th className="py-1.5 px-3 text-right">Unit Rate</th>
                                   <th className="py-1.5 px-3 text-right">Consumption Fee</th>
                                   <th className="py-1.5 px-3 text-right">Fixed Fee</th>
-                                  <th className="py-1.5 px-3 text-right">Net Sub Total</th>
+                                  <th className="py-1.5 px-3 text-right">{isBase ? 'Year 1 Subtotal (base)' : 'Year 1 Subtotal (net)'}</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 bg-white font-mono">
@@ -228,7 +247,9 @@ export function CalculationModal({
                                     <td className="py-1.5 px-3 text-right font-mono">{Number(li.annual_consumption_fee ?? li.total_base ?? 0).toLocaleString()}</td>
                                     <td className="py-1.5 px-3 text-right font-mono">{Number(li.platform_fee ?? 0).toLocaleString()}</td>
                                     <td className="py-1.5 px-3 text-right font-mono font-bold text-slate-900">
-                                      {Number(li.item_subscription_after_discount ?? li.total_base ?? 0).toLocaleString()}
+                                      {Number(
+                                        (isBase ? li.item_subscription_before_discount : li.item_subscription_after_discount) ?? li.total_base ?? 0,
+                                      ).toLocaleString()}
                                     </td>
                                   </tr>
                                 ))}
@@ -257,7 +278,11 @@ export function CalculationModal({
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
             <ShieldCheck className="w-4 h-4 text-slate-400" aria-hidden="true" />
-            <span>Saved calculation snapshot</span>
+            <span>
+              {isBase
+                ? 'Base pricing from the backend engine. Discounts are applied on Pricing & Discounts.'
+                : 'Saved calculation snapshot'}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">

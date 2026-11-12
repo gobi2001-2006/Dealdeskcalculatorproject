@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { validateContractYears, yearsToMonths } from '../utils/contractDuration'
 import { resolveRateCard } from './ratesApi'
 
 /**
@@ -117,10 +118,30 @@ export async function deleteProposalServiceLine(proposalId, serviceLineId) {
   await apiClient.delete(`/proposals/${proposalId}/service-lines/${serviceLineId}`)
 }
 
-/** POST /api/proposals/{proposalId}/calculate — authoritative backend calculation. */
+/** POST /api/proposals/{proposalId}/calculate — authoritative calculation with every saved discount (Page 5). */
 export async function calculateProposal(proposalId, payload = {}) {
   const res = await apiClient.post(`/proposals/${proposalId}/calculate`, payload)
   return res.data
+}
+
+/**
+ * POST /api/proposals/{proposalId}/calculate/base — base (undiscounted) pricing for the Proposal
+ * Configurator. No discount is applied and nothing is saved (no snapshot).
+ */
+export async function calculateBasePricing(proposalId, payload = {}) {
+  const res = await apiClient.post(`/proposals/${proposalId}/calculate/base`, payload)
+  return res.data
+}
+
+/**
+ * Contract term (months) to price a proposal with: the term saved on the proposal, else (older
+ * proposals) the term of its latest calculation. null when neither exists.
+ */
+export function proposalTermMonths(detail, latestCalc) {
+  const saved = Number(detail?.contract_term_months)
+  if (Number.isInteger(saved) && saved > 0) return saved
+  const fromSnapshot = Number(latestCalc?.contract_term_months ?? latestCalc?.snapshot_payload?.contract_term_months)
+  return Number.isInteger(fromSnapshot) && fromSnapshot > 0 ? fromSnapshot : null
 }
 
 /** GET /api/proposals/{proposalId}/calculations/latest — latest saved snapshot (404 if none). */
@@ -269,8 +290,8 @@ export function collectProposalErrors(clientInfo, countryConfigs) {
     if (!positiveId(c.pricingModelId)) errors.push(`${label}: select a pricing model.`)
     const headcount = Number(c.headcount)
     if (!Number.isInteger(headcount) || headcount <= 0) errors.push(`${label}: headcount must be a positive whole number.`)
-    const term = Number(c.contractTerm)
-    if (!Number.isInteger(term) || term <= 0) errors.push(`${label}: contract term (months) must be a positive whole number.`)
+    const durationError = validateContractYears(c.contractYears)
+    if (durationError) errors.push(`${label}: ${durationError}`)
     ;(c.families || []).forEach((f) => {
       if (f.selectedPackId && !positiveId(f.selectedPackId)) errors.push(`${label}: the selected pack is not a saved pack version.`)
       ;(f.selectedFeatureIds || []).forEach((fid) => {
@@ -413,6 +434,9 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
     }
   }
 
+  // Contract duration: entered in years, stored on the proposal in months.
+  const termMonths = yearsToMonths(countryConfigs[0]?.contractYears)
+
   // 3. Proposal header.
   let proposalId = positiveId(existingProposalId) || positiveId(clientInfo.proposalId)
   if (proposalId) {
@@ -420,6 +444,7 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
       deal_id: dealId,
       customer_id: customerId,
       currency_id: currencyId,
+      contract_term_months: termMonths,
       ...(clientInfo.proposalCode?.trim() ? { code: clientInfo.proposalCode.trim() } : {}),
     })
   } else {
@@ -432,6 +457,7 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
       currency_id: currencyId,
       created_by_user_id: userId,
       status: 'draft',
+      contract_term_months: termMonths,
     }
     let created
     try {
@@ -493,6 +519,10 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
       user_headcount: Number(cfg.headcount),
       is_primary_deployment: i === 0,
     }
+    if (cfg.subscription_discount_pct !== undefined) wanted.subscription_discount_pct = cfg.subscription_discount_pct
+    if (cfg.subscription_discount_reason !== undefined) wanted.subscription_discount_reason = cfg.subscription_discount_reason
+    if (cfg.service_discount_pct !== undefined) wanted.service_discount_pct = cfg.service_discount_pct
+    if (cfg.service_discount_reason !== undefined) wanted.service_discount_reason = cfg.service_discount_reason
     const block = blocksByCountry.get(Number(cfg.countryId))
     if (!block) {
       const created = await addProposalCountry(proposalId, { country_id: Number(cfg.countryId), ...wanted })
@@ -574,48 +604,21 @@ export async function saveFullProposal({ clientInfo, countryConfigs, existingPro
 }
 
 /**
- * Save (synchronise) the proposal first, then run the backend calculation, so the result
- * always reflects what is on screen.
- *
- * `discounts` = { product_subscription_discounts, product_service_discounts } keyed by product code.
+ * Proposal Configurator (Page 4): save (synchronise) the proposal first, then price it at BASE
+ * level: no line, country or overall discount is applied and no snapshot is written. Discounts are
+ * configured and applied on Pricing & Discounts only.
  */
-export async function requestProposalCalculation({ proposalId, clientInfo, countryConfigs, discounts = {} }) {
+export async function requestBasePricing({ proposalId, clientInfo, countryConfigs }) {
   try {
     const saved = await saveFullProposal({ clientInfo, countryConfigs, existingProposalId: proposalId })
-    const term = Number(countryConfigs[0].contractTerm)
-    const request = {
-      product_subscription_discounts: discounts.product_subscription_discounts || {},
-      product_service_discounts: discounts.product_service_discounts || {},
-      contract_term_months: term,
-    }
-    let discountsDropped = false
-    let calculationResult
-    try {
-      calculationResult = await calculateProposal(saved.proposalId, request)
-    } catch (err) {
-      // Product-level discounts are keyed by product code. If the lines changed so a product is
-      // no longer on the proposal, price without them and tell the user to re-apply them.
-      const hasProductDiscounts =
-        Object.keys(request.product_subscription_discounts).length + Object.keys(request.product_service_discounts).length > 0
-      if (hasProductDiscounts && err.response?.status === 400 && /not on this proposal/i.test(describeApiError(err))) {
-        discountsDropped = true
-        calculationResult = await calculateProposal(saved.proposalId, {
-          product_subscription_discounts: {},
-          product_service_discounts: {},
-          contract_term_months: term,
-        })
-      } else {
-        throw err
-      }
-    }
+    const data = await calculateBasePricing(saved.proposalId, {})
     return {
       status: 'success',
       proposalId: saved.proposalId,
       customerId: saved.customerId,
       dealId: saved.dealId,
       savedProposal: saved.data,
-      data: calculationResult,
-      discountsDropped,
+      data,
       isBackendCalculation: true,
     }
   } catch (error) {
@@ -638,8 +641,14 @@ export function discountsFromSnapshot(calcData) {
     // more than one country); snapshots written before multi-region support only have product_code.
     const key = p.product_key || p.product_code
     if (!key) return
-    if (Number(p.subscription_discount_pct) > 0) product_subscription_discounts[key] = Number(p.subscription_discount_pct)
-    if (Number(p.service_discount_pct) > 0) product_service_discounts[key] = Number(p.service_discount_pct)
+    // Discounts stored on the country block (source "country") are applied by the backend from the
+    // saved proposal; repeating them in the request would be rejected as a second discount.
+    if (Number(p.subscription_discount_pct) > 0 && p.subscription_discount_source !== 'country') {
+      product_subscription_discounts[key] = Number(p.subscription_discount_pct)
+    }
+    if (Number(p.service_discount_pct) > 0 && p.service_discount_source !== 'country') {
+      product_service_discounts[key] = Number(p.service_discount_pct)
+    }
   })
   return { product_subscription_discounts, product_service_discounts }
 }

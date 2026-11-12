@@ -1,6 +1,5 @@
 import { PageHeader } from '../../components/common/PageHeader'
 import { Card } from '../../components/common/Card'
-import { Badge } from '../../components/common/Badge'
 import { FileText, ArrowRight } from 'lucide-react'
 import { Button } from '../../components/common/Button'
 

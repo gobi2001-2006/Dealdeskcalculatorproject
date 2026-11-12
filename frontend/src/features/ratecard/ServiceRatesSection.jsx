@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Briefcase, Plus, Trash2, Clock, Check, AlertCircle, Info } from 'lucide-react'
+import { Briefcase, Plus, Trash2, Clock, Check, AlertCircle } from 'lucide-react'
 
 export function ServiceRatesSection({
   serviceRates = [],

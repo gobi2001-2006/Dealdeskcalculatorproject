@@ -34,8 +34,10 @@ import {
   getProposal,
   exportProposal,
   discountsFromSnapshot,
+  proposalTermMonths,
   describeApiError,
 } from '../../api/proposalsApi'
+import { formatContractYears, yearsToMonths } from '../../utils/contractDuration'
 import { deserializeBackendProposal, serializeProposalToBackendSchema } from '../calculator/calculatorData'
 import { useProposal } from '../../context/ProposalContext'
 import { loadCatalogueMasters } from '../../utils/catalogueLookup'
@@ -151,16 +153,19 @@ export function ProposalSummaryPage() {
       setModalCalcResult({ status: 'error', message: 'Save the proposal on the Proposal Configurator first.', data: null })
       return
     }
-    const term = Number(totals?.termMonths ?? countryConfigs?.[0]?.contractTerm)
-    if (!Number.isInteger(term) || term <= 0) {
-      setModalCalcResult({ status: 'error', message: 'Set the contract term on the Proposal Configurator first.', data: null })
-      return
-    }
     setIsCalculating(true)
     try {
+      // The term saved on the proposal is used by the backend; older proposals send the term of
+      // their latest calculation (or the duration on screen).
+      const detail = await getProposal(effectiveProposalId)
+      const term = proposalTermMonths(detail, calcApiResult?.data) ?? yearsToMonths(countryConfigs?.[0]?.contractYears)
+      if (!term) {
+        setModalCalcResult({ status: 'error', message: 'Set the contract duration (years) on the Proposal Configurator first.', data: null })
+        return
+      }
       const rawResult = await calculateProposal(effectiveProposalId, {
         ...discountsFromSnapshot(calcApiResult?.data),
-        contract_term_months: term,
+        ...(detail.contract_term_months ? {} : { contract_term_months: term }),
       })
       const result = { status: 'success', proposalId: effectiveProposalId, data: rawResult, isBackendCalculation: true }
       setModalCalcResult(result)
@@ -400,7 +405,7 @@ export function ProposalSummaryPage() {
                 <SummaryMetricCard title="Countries" value={summaryCounts.countriesCount} subtitle={summaryCounts.countriesCount === 1 ? '1 Configured Country' : `${summaryCounts.countriesCount} Configured Countries`} icon={Globe} colorVariant="slate" />
                 <SummaryMetricCard title="Product Lines" value={summaryCounts.totalFamilies} subtitle={`${summaryCounts.totalPacks} Packs, ${summaryCounts.totalFeatures} Add-ons`} icon={Package} colorVariant="slate" />
                 <SummaryMetricCard title="Subscription (Annual)" value={totals ? formatMoney(totals.subscriptionAnnual, currencyCode) : 'Pending calculation'} subtitle="Platform + consumption, after discounts" icon={Key} colorVariant="blue" currencyCode={currencyCode} />
-                <SummaryMetricCard title={`Subscription (${totals?.termMonths ?? '—'} mo)`} value={totals ? formatMoney(totals.subscriptionContract, currencyCode) : 'Pending calculation'} subtitle="Over the contract term" icon={Calendar} colorVariant="slate" currencyCode={currencyCode} />
+                <SummaryMetricCard title={`Subscription (${formatContractYears(totals?.termMonths)})`} value={totals ? formatMoney(totals.subscriptionContract, currencyCode) : 'Pending calculation'} subtitle="Over the contract term" icon={Calendar} colorVariant="slate" currencyCode={currencyCode} />
                 <SummaryMetricCard title="Service Fees" value={totals ? formatMoney(totals.services, currencyCode) : 'Pending calculation'} subtitle="One-time professional services" icon={Briefcase} colorVariant="teal" currencyCode={currencyCode} />
                 <SummaryMetricCard title="Grand Total (FCV)" value={totals ? formatMoney(totals.contractTotal, currencyCode) : 'Pending calculation'} subtitle={totals ? `Year 1: ${formatMoney(totals.annualTotal, currencyCode)} · ${currencyCode}` : `Consolidated in ${currencyCode}`} icon={DollarSign} colorVariant="orange" isGrandTotal={true} currencyCode={currencyCode} />
               </section>

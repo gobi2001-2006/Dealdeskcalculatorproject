@@ -147,8 +147,10 @@ describe('Frontend Utilities — Isolated Unit Tests', () => {
     expect(validateClientName('Acme Corp')).toBe('')
 
     expect(validateContractTerm('')).toMatch(/required/)
-    expect(validateContractTerm('12.5')).toMatch(/positive whole number/)
-    expect(validateContractTerm('36')).toBe('')
+    // Contract duration is entered in whole years (stored as years x 12 months).
+    expect(validateContractTerm('1.5')).toMatch(/whole number of years/)
+    expect(validateContractTerm('0')).toMatch(/at least 1 year/)
+    expect(validateContractTerm('3')).toBe('')
 
     expect(validateHeadcount('0')).toMatch(/positive whole number/)
     expect(validateHeadcount('250')).toBe('')

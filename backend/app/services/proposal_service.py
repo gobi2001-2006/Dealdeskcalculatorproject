@@ -344,6 +344,7 @@ def create_proposal(*, db: Session, data: ProposalCreate) -> Proposal:
             currency_id=data.currency_id,
             status=data.status or "draft",
             created_by_user_id=data.created_by_user_id,
+            contract_term_months=data.contract_term_months,
         )
         db.add(new_proposal)
         db.flush()
@@ -526,6 +527,10 @@ def add_proposal_country(
             pricing_model_id=data.pricing_model_id,
             user_headcount=data.user_headcount,
             is_primary_deployment=data.is_primary_deployment,
+            subscription_discount_pct=data.subscription_discount_pct,
+            subscription_discount_reason=data.subscription_discount_reason,
+            service_discount_pct=data.service_discount_pct,
+            service_discount_reason=data.service_discount_reason,
         )
         db.add(new_pc)
         db.commit()

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.proposals import (
+    BasePricingRequest,
     CalculationRequest,
     ProposalCalculationResponse,
     ProposalCountryCreate,
@@ -62,6 +63,7 @@ from app.services.proposal_service import (
 )
 from app.services.pricing_engine import (
     AmbiguousRateCardMatchError,
+    ContractTermConflictError,
     InvalidDiscountError,
     MissingCatalogueReferenceError,
     MissingConfigurationError,
@@ -441,41 +443,12 @@ def delete_proposal_service_line_endpoint(
         raise http_error(exc) from exc
 
 
-# ---------------------------------------------------------------------------
-# 10. Trigger pricing calculation (Phase D)
-# ---------------------------------------------------------------------------
-@router.post(
-    "/{proposal_id}/calculate",
-    response_model=ProposalCalculationResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Calculate pricing for a proposal and persist audit snapshot",
-    description=(
-        "Executes a full deterministic commercial calculation using the PDF-specified "
-        "formulas. Persists an immutable CalculationSnapshot (JSONB) and returns the "
-        "complete itemised result including all product, subscription, service, and FX "
-        "conversion breakdowns. Each call to this endpoint appends a new snapshot row "
-        "— existing snapshots are never mutated."
-    ),
-)
-def calculate_proposal_endpoint(
-    *,
-    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
-    db: Session = Depends(get_db),
-    payload: CalculationRequest,
-):
-    """POST /api/proposals/{proposal_id}/calculate"""
-    engine = PricingCalculationEngine(db=db)
+def _run_pricing(call):
+    """Run an engine call and map engine errors to HTTP errors (shared by both pricing endpoints)."""
     try:
-        result = engine.calculate_proposal(
-            proposal_id=proposal_id,
-            version_id=payload.version_id,
-            product_discounts=payload.product_subscription_discounts or {},
-            product_service_discounts=payload.product_service_discounts or {},
-            default_hours_per_day=payload.default_hours_per_day,
-            user_id=payload.calculated_by_user_id,
-            contract_term_months=payload.contract_term_months,
-        )
-        return result
+        return call()
+    except ContractTermConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except (PricingProposalNotFoundError, ProposalNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except MissingCatalogueReferenceError as exc:
@@ -515,6 +488,68 @@ def calculate_proposal_endpoint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Calculation error: {exc}",
         )
+
+
+# ---------------------------------------------------------------------------
+# 10. Trigger pricing calculation (Phase D)
+# ---------------------------------------------------------------------------
+@router.post(
+    "/{proposal_id}/calculate",
+    response_model=ProposalCalculationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Calculate pricing for a proposal and persist audit snapshot",
+    description=(
+        "Executes a full deterministic commercial calculation using the PDF-specified "
+        "formulas. Persists an immutable CalculationSnapshot (JSONB) and returns the "
+        "complete itemised result including all product, subscription, service, and FX "
+        "conversion breakdowns. Each call to this endpoint appends a new snapshot row "
+        "— existing snapshots are never mutated."
+    ),
+)
+def calculate_proposal_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+    payload: CalculationRequest,
+):
+    """POST /api/proposals/{proposal_id}/calculate"""
+    engine = PricingCalculationEngine(db=db)
+    return _run_pricing(lambda: engine.calculate_proposal(
+        proposal_id=proposal_id,
+        version_id=payload.version_id,
+        product_discounts=payload.product_subscription_discounts or {},
+        product_service_discounts=payload.product_service_discounts or {},
+        default_hours_per_day=payload.default_hours_per_day,
+        user_id=payload.calculated_by_user_id,
+        contract_term_months=payload.contract_term_months,
+    ))
+
+
+@router.post(
+    "/{proposal_id}/calculate/base",
+    response_model=ProposalCalculationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Base (undiscounted) pricing for the Proposal Configurator; nothing is saved",
+    description=(
+        "Same formulas and rate cards as /calculate, without any line, country or request discount. "
+        "No snapshot is written and cached line amounts are not touched. Discounts are configured and "
+        "applied on Pricing & Discounts (POST /calculate)."
+    ),
+)
+def calculate_base_pricing_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+    payload: BasePricingRequest,
+):
+    """POST /api/proposals/{proposal_id}/calculate/base"""
+    engine = PricingCalculationEngine(db=db)
+    return _run_pricing(lambda: engine.calculate_base_pricing(
+        proposal_id=proposal_id,
+        version_id=payload.version_id,
+        default_hours_per_day=payload.default_hours_per_day,
+        contract_term_months=payload.contract_term_months,
+    ))
 
 
 # ---------------------------------------------------------------------------

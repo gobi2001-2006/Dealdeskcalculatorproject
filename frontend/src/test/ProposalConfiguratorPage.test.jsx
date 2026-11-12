@@ -24,6 +24,8 @@ function masterRoutes(overrides = {}) {
     'GET /catalogue/features': () => fx.features,
     'GET /rates/service-rates': () => fx.serviceRates,
     'GET /customers/': () => [],
+    // Page 4 prices at base level (no discounts, nothing saved).
+    'POST /proposals/:id/calculate/base': () => fx.basePricingResult(),
     'POST /rates/resolve': (body) => ({
       rate_card_id: 5, uom_id: 13, currency_code: 'INR',
       fixed_fee: body.pack_version_id ? '380000' : '50000', unit_rate: body.pack_version_id ? '80' : '10',
@@ -96,8 +98,8 @@ describe('Page 4 — Proposal Configurator', () => {
     expect(screen.getByRole('columnheader', { name: /Effort \(Man-days\)/i })).toBeInTheDocument()
     expect(screen.getByText('12 days')).toBeInTheDocument()
 
-    // The contract term is restored from the latest snapshot.
-    expect(screen.getByLabelText(/Contract Term/i)).toHaveValue(24)
+    // The duration is shown in years: 24 months from the latest snapshot -> 2 years.
+    expect(screen.getByLabelText(/Contract Duration \(Years\)/i)).toHaveValue(2)
   })
 
   it('labels quantities with the rate card unit of measure and billing period, not employees', async () => {
@@ -120,7 +122,9 @@ describe('Page 4 — Proposal Configurator', () => {
     expect(screen.queryByText('Users')).not.toBeInTheDocument()
 
     // Pack and feature rates are described with their own unit and period
-    expect(await screen.findByText(/platform fee INR 3,00,000 \/ year \+ INR 85\.00 per Interviews \/ month/, {}, { timeout: 5000 })).toBeInTheDocument()
+    // Locale-independent grouping (3,00,000 in en-IN, 300,000 in en-US).
+    const fee = Number(300000).toLocaleString()
+    expect(await screen.findByText(`platform fee INR ${fee} / year + INR 85.00 per Interviews / month`, { exact: false }, { timeout: 5000 })).toBeInTheDocument()
     const table = screen.getByRole('table', { name: /À la carte features/i })
     expect(await within(table).findByText('GB of Data / month', {}, { timeout: 5000 })).toBeInTheDocument()
     expect(within(table).getByText('INR 10.00 per GB of Data / month')).toBeInTheDocument()
@@ -158,21 +162,25 @@ describe('Page 4 — Proposal Configurator', () => {
       // Lines saved before multi-region support are attached to their country block on save.
       'PATCH /proposals/:id/line-items/:lineId': (body) => body,
       'PATCH /proposals/:id/service-lines/:lineId': (body) => body,
-      'POST /proposals/:id/calculate': () => fx.calculationResult({ snapshot_id: 78 }),
     }))
     renderPage('/calculator?proposalId=900')
     await waitFor(() => expect(screen.getByLabelText(/Pack Selection/i)).toHaveValue('42'))
+    const loads = api.calls.filter((c) => c.path === '/proposals/900/calculate/base').length
 
     fireEvent.click(screen.getByRole('button', { name: /Calculate Pricing/i }))
-    await waitFor(() => expect(api.calls.some((c) => c.path === '/proposals/900/calculate')).toBe(true))
+    await waitFor(() => expect(api.calls.filter((c) => c.path === '/proposals/900/calculate/base')).toHaveLength(loads + 1))
 
     const paths = api.calls.map((c) => `${c.method} ${c.path}`)
-    expect(paths.indexOf('PATCH /proposals/900')).toBeLessThan(paths.indexOf('POST /proposals/900/calculate'))
-    expect(api.calls.find((c) => c.path === '/proposals/900/calculate').body.contract_term_months).toBe(24)
+    expect(paths.lastIndexOf('PATCH /proposals/900')).toBeLessThan(paths.lastIndexOf('POST /proposals/900/calculate/base'))
+    // The duration (2 years) is saved on the proposal in months; Page 4 never calls the discounted calculation.
+    expect(api.calls.filter((c) => c.method === 'PATCH' && c.path === '/proposals/900').at(-1).body.contract_term_months).toBe(24)
+    expect(api.calls.some((c) => c.path === '/proposals/900/calculate')).toBe(false)
 
+    // Base figures (no discounts): 18,096.00 contract, 1,728.00 services; never the net 16,963.44.
     const strip = screen.getByRole('region', { name: /Commercial Master Summary/i })
-    await waitFor(() => expect(within(strip).getByText(/16,963\.44/)).toBeInTheDocument())
-    expect(within(strip).getByText(/1,555\.20/)).toBeInTheDocument()
+    await waitFor(() => expect(within(strip).getAllByText(/18,096\.00/).length).toBeGreaterThan(0))
+    expect(within(strip).getByText(/1,728\.00/)).toBeInTheDocument()
+    expect(within(strip).queryByText(/16,963\.44/)).not.toBeInTheDocument()
   })
 
   it('does not crash when returning to Page 4 with existing country and families while masters load', async () => {
@@ -188,7 +196,7 @@ describe('Page 4 — Proposal Configurator', () => {
           deploymentModelId: 11,
           pricingModelId: 12,
           headcount: 250,
-          contractTerm: 24,
+          contractYears: 2,
           families: [
             {
               id: 'fam-cfg-1-1',
@@ -219,7 +227,7 @@ describe('Page 4 — Proposal Configurator', () => {
           deploymentModelId: 11,
           pricingModelId: null,
           headcount: 250,
-          contractTerm: 24,
+          contractYears: 2,
           families: [],
         },
       ],
@@ -230,17 +238,28 @@ describe('Page 4 — Proposal Configurator', () => {
 })
 
 describe('CalculationModal', () => {
-  it('shows backend figures with honest labels and the engine warnings', () => {
-    const result = fx.calculationResult()
+  it('shows base pricing (Page 4) with the duration in years and the engine warnings', () => {
+    const result = fx.basePricingResult()
     result.snapshot_payload.warnings = ['Line items are not country-specific: Countries [2] were NOT priced separately.']
     render(
       <CalculationModal isOpen apiResult={{ status: 'success', data: result }} isLoading={false} onClose={() => {}} />,
     )
-    expect(screen.getByText(/Full Contract Value \(USD, 24 months\)/)).toBeInTheDocument()
-    expect(screen.getByText(/\$16,963\.44/)).toBeInTheDocument()
+    expect(screen.getByTestId('fcv-label')).toHaveTextContent('Full Contract Value (USD, 2 years)')
+    expect(screen.getByTestId('fcv-value')).toHaveTextContent('$18,096.00')
+    expect(screen.getByText('Base pricing — before discounts')).toBeInTheDocument()
+    expect(screen.queryByText(/Total \(Net\)/)).not.toBeInTheDocument()
     expect(screen.getByText(/Year 1 \(annual subscription \+ one-time services\)/)).toBeInTheDocument()
     expect(screen.queryByText(/ARR/)).not.toBeInTheDocument()
     expect(screen.getByText(/were NOT priced separately/)).toBeInTheDocument()
+  })
+
+  it('shows a saved (discounted) calculation as net figures', () => {
+    render(
+      <CalculationModal isOpen apiResult={{ status: 'success', data: fx.calculationResult() }} isLoading={false} onClose={() => {}} />,
+    )
+    expect(screen.getByTestId('fcv-label')).toHaveTextContent('Full Contract Value (USD, 2 years) — net')
+    expect(screen.getByTestId('fcv-value')).toHaveTextContent('$16,963.44')
+    expect(screen.getByText('Saved snapshot — discounts applied')).toBeInTheDocument()
   })
 
   it('shows the backend error message when calculation fails', () => {

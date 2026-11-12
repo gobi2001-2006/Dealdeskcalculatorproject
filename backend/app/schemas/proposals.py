@@ -254,6 +254,11 @@ class DealResponse(DealBase):
 # 3. Proposal Schemas
 # =============================================================================
 
+# Upper bound of a contract term, in months. Existing API limit (unchanged); its business source is
+# not documented - see docs/CONTRACT_DURATION_YEARS_IMPLEMENTATION.md (open question).
+MAX_CONTRACT_TERM_MONTHS = 120
+
+
 class ProposalBase(BaseModel):
     """Base fields for Proposal container."""
 
@@ -289,6 +294,12 @@ class ProposalBase(BaseModel):
         gt=0,
         description="User ID who authored the proposal referencing users.id",
     )
+    contract_term_months: Optional[int] = Field(
+        None,
+        gt=0,
+        le=MAX_CONTRACT_TERM_MONTHS,
+        description="Contract duration in months (the UI enters whole years; months = years x 12)",
+    )
 
 
 class ProposalCreate(ProposalBase):
@@ -316,6 +327,12 @@ class ProposalUpdate(BaseModel):
     currency_id: Optional[int] = Field(None, gt=0)
     status: Optional[ProposalStatus] = None
     created_by_user_id: Optional[int] = Field(None, gt=0)
+    contract_term_months: Optional[int] = Field(
+        None,
+        gt=0,
+        le=MAX_CONTRACT_TERM_MONTHS,
+        description="Contract duration in months (the UI enters whole years; months = years x 12)",
+    )
 
     @field_validator(
         "code",
@@ -572,6 +589,28 @@ class ProposalCountryBase(BaseModel):
         False,
         description="Whether this country is the primary deployment location",
     )
+    subscription_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall subscription discount % for this country (NULL = none)",
+    )
+    subscription_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall subscription discount",
+    )
+    service_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall services discount % for this country (NULL = none)",
+    )
+    service_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall services discount",
+    )
 
     @model_validator(mode="after")
     def validate_pricing_dimensions_together(self) -> "ProposalCountryBase":
@@ -602,6 +641,28 @@ class ProposalCountryUpdate(BaseModel):
     pricing_model_id: Optional[int] = Field(None, gt=0)
     user_headcount: Optional[int] = Field(None, ge=0)
     is_primary_deployment: Optional[bool] = None
+    subscription_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall subscription discount % for this country (NULL = none)",
+    )
+    subscription_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall subscription discount",
+    )
+    service_discount_pct: Optional[Decimal] = Field(
+        None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Overall services discount % for this country (NULL = none)",
+    )
+    service_discount_reason: Optional[str] = Field(
+        None,
+        max_length=2000,
+        description="Business justification for the overall services discount",
+    )
 
     @field_validator(
         "proposal_id",
@@ -1345,8 +1406,11 @@ class CalculationRequest(BaseModel):
     contract_term_months: Optional[int] = Field(
         None,
         gt=0,
-        le=120,
-        description="Contract term in months for full-contract period calculations (default 12)",
+        le=MAX_CONTRACT_TERM_MONTHS,
+        description=(
+            "Contract term in months. Optional: the proposal's saved term is used when omitted "
+            "(default 12 when neither is set). A value different from the saved term is rejected."
+        ),
     )
     product_subscription_discounts: dict[str, Decimal] = Field(
         default_factory=dict,
@@ -1369,12 +1433,30 @@ class CalculationRequest(BaseModel):
     )
 
 
+class BasePricingRequest(BaseModel):
+    """Base (undiscounted) pricing for the Proposal Configurator: no discounts, nothing saved."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    version_id: Optional[int] = Field(None, gt=0, description="Defaults to the latest draft version")
+    contract_term_months: Optional[int] = Field(
+        None, gt=0, le=MAX_CONTRACT_TERM_MONTHS,
+        description="Optional; the proposal's saved term is used when omitted",
+    )
+    default_hours_per_day: Optional[Decimal] = Field(None, gt=Decimal("0"), le=Decimal("24"))
+
+
 class ProposalCalculationResponse(BaseModel):
     """Top-level response returned by the calculation engine."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    snapshot_id: int
+    snapshot_id: Optional[int] = Field(
+        None, description="Saved snapshot id; None for a base-pricing preview (nothing is saved)"
+    )
+    pricing_stage: Optional[str] = Field(
+        None, description="'discounted' (saved calculation) or 'base' (Proposal Configurator preview)"
+    )
     proposal_id: int
     proposal_version_id: int
     version_no: int

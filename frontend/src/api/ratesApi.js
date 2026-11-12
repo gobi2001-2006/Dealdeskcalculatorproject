@@ -131,6 +131,12 @@ export async function getAllowedUomsForPricingModel(pricingModelId) {
   return res.data
 }
 
+/** Approval thresholds in effect today (approval_thresholds table). Display only: not enforced yet. */
+export async function getApprovalThresholds() {
+  const res = await apiClient.get('/masters/approval-thresholds')
+  return res.data
+}
+
 export async function getFxRates(params) {
   const res = await apiClient.get('/masters/fx-rates', { params })
   return res.data

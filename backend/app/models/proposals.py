@@ -205,6 +205,10 @@ class Proposal(Base):
             "status IN ('draft', 'submitted', 'approved', 'rejected', 'superseded')",
             name="ck_proposals_status",
         ),
+        CheckConstraint(
+            "contract_term_months IS NULL OR contract_term_months > 0",
+            name="contract_term_months_positive",
+        ),
     )
 
     id: Mapped[int] = mapped_column(
@@ -243,6 +247,13 @@ class Proposal(Base):
         server_default=text("'draft'"),
         nullable=False,
         comment="Lifecycle status: 'draft', 'submitted', 'approved', 'rejected', 'superseded'",
+    )
+    # Contract duration, stored in months (the unit the engine and snapshots use); the UI shows years.
+    # NULL = not saved yet (older proposals: the term of the latest calculation snapshot applies).
+    contract_term_months: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Contract duration in months (UI: years x 12)",
     )
     created_by_user_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -459,6 +470,14 @@ class ProposalCountry(Base):
             "(deployment_model_id IS NULL) = (pricing_model_id IS NULL)",
             name="pricing_dims_both_or_neither",
         ),
+        CheckConstraint(
+            "subscription_discount_pct IS NULL OR (subscription_discount_pct >= 0 AND subscription_discount_pct <= 100)",
+            name="subscription_discount_pct_range",
+        ),
+        CheckConstraint(
+            "service_discount_pct IS NULL OR (service_discount_pct >= 0 AND service_discount_pct <= 100)",
+            name="service_discount_pct_range",
+        ),
         # Only a permitted deployment/pricing combination can be stored (NULLs skip the check).
         ForeignKeyConstraint(
             ["deployment_model_id", "pricing_model_id"],
@@ -508,6 +527,28 @@ class ProposalCountry(Base):
         default=False,
         server_default=text("false"),
         nullable=False,
+    )
+    # Overall discounts are set per country (business decision 2026-11-06, see
+    # docs/AUDIO_BUSINESS_RULE_DECISIONS.md). NULL = no discount set for this country.
+    subscription_discount_pct: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(7, 4),
+        nullable=True,
+        comment="Overall subscription discount % for this country (applied after line discounts)",
+    )
+    subscription_discount_reason: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Business justification for the overall subscription discount",
+    )
+    service_discount_pct: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(7, 4),
+        nullable=True,
+        comment="Overall professional-services discount % for this country",
+    )
+    service_discount_reason: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Business justification for the overall services discount",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

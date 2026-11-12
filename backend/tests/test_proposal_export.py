@@ -966,3 +966,78 @@ def test_calculation_details_multicountry_and_services_only_proposals(export_env
     docx_so = _extract_docx_linear_text(docx.Document(io.BytesIO(c.get(f"/api/proposals/{prop_so}/export?format=docx").content)))
     assert docx_so.find("Commercial Calculation Details") < docx_so.find("Final Commercial Summary")
     assert "Professional Services" in docx_so and "Architect" in docx_so
+
+
+def test_country_wise_discounts_in_docx_and_pdf_export(export_env):
+    """Regression test: DOCX and PDF exports display country-wise discounts and reasons from saved snapshot."""
+    env = export_env
+    c = env.client
+    ids = env.ids
+
+    # Set rates for India and US
+    set_rate(env, ids.india, "shared_cloud", "pepm", "ess", unit_rate="100",
+             tier_fees={str(ids.tiers[0]): {"unit_rate": "100"}})
+    set_rate(env, ids.us, "shared_cloud", "pepm", "ess", unit_rate="15",
+             tier_fees={str(ids.tiers[0]): {"unit_rate": "15"}})
+
+    cust = c.post("/api/customers/", json={"code": "CUST-CW-DISC", "name": "Enterprise Client", "country_id": ids.india, "customer_tier_id": ids.tiers[0]}).json()
+    deal = c.post("/api/deals/", json={"code": "DEAL-CW-DISC", "name": "Global Deal", "customer_id": cust["id"], "owner_user_id": ids.user}).json()
+    prop_id = c.post("/api/proposals/", json={
+        "code": "PROP-CW-DISC", "deal_id": deal["id"], "customer_id": cust["id"], "currency_id": ids.usd, "created_by_user_id": ids.user, "rate_card_version_id": ids.rcv
+    }).json()["id"]
+
+    # India country block with overall subscription & services discount
+    blk_in = c.post(f"/api/proposals/{prop_id}/countries", json={
+        "country_id": ids.india, "deployment_model_id": ids.deps["shared_cloud"], "pricing_model_id": ids.pms["pepm"],
+        "user_headcount": 500, "is_primary_deployment": True,
+        "subscription_discount_pct": "10", "subscription_discount_reason": "Strategic India Logo",
+        "service_discount_pct": "15", "service_discount_reason": "Bundle Deployment",
+    }).json()
+
+    # US country block with different subscription discount
+    blk_us = c.post(f"/api/proposals/{prop_id}/countries", json={
+        "country_id": ids.us, "deployment_model_id": ids.deps["shared_cloud"], "pricing_model_id": ids.pms["pepm"],
+        "user_headcount": 100, "is_primary_deployment": False,
+        "subscription_discount_pct": "5", "subscription_discount_reason": "Multi-Year Commitment",
+    }).json()
+
+    c.post(f"/api/proposals/{prop_id}/line-items", json={"pack_version_id": ids.pv, "uom_id": ids.uoms["ess"], "quantity": 500, "proposal_country_id": blk_in["id"]})
+    c.post(f"/api/proposals/{prop_id}/line-items", json={"pack_version_id": ids.pv, "uom_id": ids.uoms["ess"], "quantity": 100, "proposal_country_id": blk_us["id"]})
+    c.post(f"/api/proposals/{prop_id}/service-lines", json={"role_name": "Consultant", "service_rate_id": ids.sr_in, "days_or_hours": 8, "proposal_country_id": blk_in["id"]})
+
+    calc_res = c.post(f"/api/proposals/{prop_id}/calculate", json={"contract_term_months": 12, "calculated_by_user_id": ids.user})
+    assert calc_res.status_code == 200, calc_res.text
+
+    # Verify commercials payload
+    comm = c.get(f"/api/proposals/{prop_id}/export/commercials").json()
+    prods = {p["country_iso"]: p for p in comm["products_commercials"]}
+    assert prods["IN"]["sub_discount_pct"] == 10.0
+    assert prods["IN"]["sub_discount_reason"] == "Strategic India Logo"
+    assert prods["IN"]["serv_discount_pct"] == 15.0
+    assert prods["IN"]["serv_discount_reason"] == "Bundle Deployment"
+    assert prods["US"]["sub_discount_pct"] == 5.0
+    assert prods["US"]["sub_discount_reason"] == "Multi-Year Commitment"
+
+    # Verify DOCX export
+    res_docx = c.get(f"/api/proposals/{prop_id}/export?format=docx")
+    assert res_docx.status_code == 200
+    doc = docx.Document(io.BytesIO(res_docx.content))
+    docx_text = _extract_docx_linear_text(doc)
+    assert "Overall Subscription Discount (10%)" in docx_text
+    assert "Strategic India Logo" in docx_text
+    assert "Overall Service Discount (15%)" in docx_text
+    assert "Bundle Deployment" in docx_text
+    assert "Overall Subscription Discount (5%)" in docx_text
+    assert "Multi-Year Commitment" in docx_text
+
+    # Verify PDF export
+    res_pdf = c.get(f"/api/proposals/{prop_id}/export?format=pdf")
+    assert res_pdf.status_code == 200
+    pdf_doc = fitz.open(stream=res_pdf.content, filetype="pdf")
+    pdf_text = "\n".join(page.get_text() for page in pdf_doc)
+    assert "10%" in pdf_text
+    assert "Strategic India Logo" in pdf_text
+    assert "15%" in pdf_text
+    assert "Bundle Deployment" in pdf_text
+    assert "5%" in pdf_text
+    assert "Multi-Year Commitment" in pdf_text

@@ -9,7 +9,8 @@
  * must come from a saved master record.
  */
 
-import { lineCountryIdOf, lineTargetKey } from '../../api/proposalsApi'
+import { lineCountryIdOf, lineTargetKey, proposalTermMonths } from '../../api/proposalsApi'
+import { monthsToYears, validateContractYears, yearsToMonths } from '../../utils/contractDuration'
 
 /** A new, empty proposal header. */
 export const INITIAL_CLIENT_INFO = {
@@ -63,7 +64,7 @@ export function createDefaultCountryConfig(country = null, index = 1) {
     pricingTierId: null,
     deploymentModelId: null,
     pricingModelId: null,
-    contractTerm: '',
+    contractYears: '',
     headcount: '',
     families: [],
     serviceLines: [],
@@ -83,15 +84,9 @@ export function validateClientName(clientName) {
   return ''
 }
 
-export function validateContractTerm(term) {
-  const num = Number(term)
-  if (term === '' || term === null || term === undefined) {
-    return 'Contract term in months is required.'
-  }
-  if (!Number.isInteger(num) || num <= 0) {
-    return 'Contract term must be a positive whole number of months (e.g. 12, 24, 36).'
-  }
-  return ''
+/** Contract duration is entered in whole years (stored in months on the proposal). */
+export function validateContractTerm(years) {
+  return validateContractYears(years)
 }
 
 export function validateHeadcount(headcount) {
@@ -164,7 +159,7 @@ export function serializeProposalToBackendSchema(clientInfo, countryConfigs) {
       customer_tier_id: country.pricingTierId,
       deployment_model_id: country.deploymentModelId,
       pricing_model_id: country.pricingModelId,
-      contract_term_months: country.contractTerm,
+      contract_term_months: yearsToMonths(country.contractYears),
       is_primary_deployment: cIdx === 0,
     }
   })
@@ -235,7 +230,8 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
     country_id: lineCountryIdOf(li, backendProposal.countries),
   }))
   const serviceLines = draftVersion?.service_lines || []
-  const term = latestCalc?.contract_term_months ?? latestCalc?.snapshot_payload?.contract_term_months ?? ''
+  // Saved on the proposal (months); older proposals: the term of the latest calculation.
+  const contractYears = monthsToYears(proposalTermMonths(backendProposal, latestCalc))
 
   const blocks = [...(backendProposal.countries || [])].sort((a, b) => {
     if (a.is_primary_deployment !== b.is_primary_deployment) return a.is_primary_deployment ? -1 : 1
@@ -281,7 +277,7 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
       pricingTierId: backendProposal.customer?.customer_tier_id ?? null,
       deploymentModelId: c.deployment_model_id ?? null,
       pricingModelId: c.pricing_model_id ?? null,
-      contractTerm: term,
+      contractYears,
       headcount: c.user_headcount ?? '',
       families: Array.from(familyMap.values()).map((f, fIdx) => ({
         id: `fam-cfg-${c.id}-${fIdx + 1}`,

@@ -58,6 +58,15 @@ export function readCalculationTotals(calcData) {
     calculatedAt: calcData.calculated_at ?? null,
     currency: pick(calcData.reporting_currency_code, payload.reporting_currency_code),
     termMonths: pick(calcData.contract_term_months, payload.contract_term_months),
+    // 'base' = Proposal Configurator preview (no discounts); 'discounted' = saved calculation.
+    pricingStage: pick(calcData.pricing_stage, payload.pricing_stage),
+    // Base (undiscounted) figures, kept apart from the net ones (null for snapshots before Nov 2026).
+    baseAnnualTotal: pick(payload.total_proposal_base_annual_reporting_currency),
+    baseContractTotal: pick(payload.total_proposal_base_contract_reporting_currency),
+    baseSubscriptionAnnual: pick(payload.total_subscription_base_annual_reporting_currency),
+    baseSubscriptionContract: pick(payload.total_subscription_base_contract_reporting_currency),
+    baseServices: pick(payload.total_services_base_reporting_currency),
+    discountContract: pick(payload.total_discount_contract_reporting_currency),
     // Year-one view: annual subscription + one-time services.
     annualTotal: pick(calcData.total_proposal_annual_reporting_currency, payload.total_proposal_annual_reporting_currency),
     // Full contract value (FCV): subscription over the term + one-time services.

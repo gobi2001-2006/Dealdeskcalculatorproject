@@ -30,14 +30,14 @@ export function ProposalProvider({ children, initialProposal = null }) {
     initialProposal?.lineItemDiscounts || {}
   )
 
-  // Page 5: Overall subscription discount (percentage), sent to the calculation for every product.
-  // Key 'proposal' -> { value, reason }
+  // Page 5: Overall subscription discount (percentage) per country, stored on the country block.
+  // Key: country master id -> { value, reason }
   const [overallDiscounts, setOverallDiscounts] = useState(
     initialProposal?.overallDiscounts || {}
   )
 
-  // Page 5: Overall services discount (percentage, one per product - never per service line).
-  // Key 'proposal' -> { value, reason }
+  // Page 5: Overall services discount (percentage) per country - never per service line.
+  // Key: country master id -> { value, reason }
   const [serviceDiscounts, setServiceDiscounts] = useState(
     initialProposal?.serviceDiscounts || {}
   )
@@ -46,15 +46,6 @@ export function ProposalProvider({ children, initialProposal = null }) {
   const [calcApiResult, setCalcApiResult] = useState(
     initialProposal?.calcApiResult || null
   )
-
-  // Page 5: Approval policies (Demo settings - not enforced)
-  const [approvalPolicies] = useState({
-    grossMarginFloor: '30.0',
-    lineItemDiscountCeiling: '15.0',
-    overallDiscountCeiling: '20.0',
-    isEnforced: false,
-    status: 'pending_backend_configuration',
-  })
 
   // Helpers to update state
   const updateClientInfo = (field, value) => {
@@ -141,7 +132,6 @@ export function ProposalProvider({ children, initialProposal = null }) {
       updateServiceDiscount,
       calcApiResult,
       setCalcApiResult,
-      approvalPolicies,
     }),
     [
       clientInfo,
@@ -153,7 +143,6 @@ export function ProposalProvider({ children, initialProposal = null }) {
       overallDiscounts,
       serviceDiscounts,
       calcApiResult,
-      approvalPolicies,
       addCountry,
       updateCountry,
       removeCountry,
@@ -203,13 +192,6 @@ export function useProposal() {
       updateServiceDiscount: () => {},
       calcApiResult: null,
       setCalcApiResult: () => {},
-      approvalPolicies: {
-        grossMarginFloor: '30.0',
-        lineItemDiscountCeiling: '15.0',
-        overallDiscountCeiling: '20.0',
-        isEnforced: false,
-        status: 'pending_backend_configuration',
-      },
     }
   }
   return context

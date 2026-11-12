@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import process from 'node:process'
 import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
@@ -8,7 +9,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // DEALDESK_API_TARGET lets a test stack use its own backend port (default: the usual 8000).
+        target: process.env.DEALDESK_API_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
     },

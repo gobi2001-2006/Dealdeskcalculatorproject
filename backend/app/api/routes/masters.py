@@ -6,11 +6,13 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.api.errors import DOMAIN_ERRORS, http_error
 from app.db.session import get_db
+from app.models.governance import ApprovalThreshold
+from app.schemas.governance import ApprovalThresholdResponse
 from app.models.master_data import (
     Currency,
     Country,
@@ -318,6 +320,29 @@ def get_allowed_uoms_for_pricing_model(model_id: int, db: Session = Depends(get_
         return service_list_allowed_uoms_for_pricing_model(db=db, pricing_model_id=model_id)
     except DOMAIN_ERRORS as exc:
         raise http_error(exc) from exc
+
+
+@router.get(
+    "/approval-thresholds",
+    response_model=List[ApprovalThresholdResponse],
+    summary="List approval thresholds in effect today (read-only)",
+)
+def list_approval_thresholds(db: Session = Depends(get_db)):
+    """Active approval thresholds whose validity covers today, straight from approval_thresholds.
+
+    Shown on Pricing & Discounts instead of invented demo values. Nothing enforces them yet.
+    """
+    today = date.today()
+    stmt = (
+        select(ApprovalThreshold)
+        .where(
+            ApprovalThreshold.status == "active",
+            ApprovalThreshold.valid_from <= today,
+            or_(ApprovalThreshold.valid_to.is_(None), ApprovalThreshold.valid_to >= today),
+        )
+        .order_by(ApprovalThreshold.threshold_type, ApprovalThreshold.value_pct)
+    )
+    return list(db.execute(stmt).scalars().all())
 
 
 # =============================================================================

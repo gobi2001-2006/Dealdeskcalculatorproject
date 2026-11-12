@@ -287,3 +287,71 @@ def test_pack_creation_rejects_unknown_feature(pg_client, pg_seed_ids):
         "feature_ids": [pg_seed_ids.feature_recruit_id, 999999]})
     assert resp.status_code == 404, resp.text
     assert all(p["code"] != "AUDIT-BAD-PACK" for p in pg_client.get("/api/packs/").json())
+
+
+# ---------------------------------------------------------------------------
+# Proposal Summary product identity: a pack's product must not depend on row order
+# ---------------------------------------------------------------------------
+
+def test_pack_product_identity_is_deterministic(pg_client, pg_seed_ids, pg_engine):
+    from sqlalchemy.orm import Session
+
+    from app.models.catalogue import Feature, Pack, PackItem, PackVersion, Product
+    from app.models.rate_card import RateCard
+
+    ids = pg_seed_ids
+    with Session(pg_engine) as s:
+        other = Product(product_family_id=ids.family_id, code="AUDIT_OTHER", name="Audit Other Product", status="active")
+        s.add(other)
+        s.flush()
+        other_feat = Feature(product_id=other.id, code="AUDIT_OTHER_F", name="Audit Other Feature",
+                             classification="native", status="active")
+        s.add(other_feat)
+        s.flush()
+        pack = Pack(code="AUDIT_MIXED", name="Audit Mixed Pack", variant="standard",
+                    product_family_id=ids.family_id, status="active")
+        s.add(pack)
+        s.flush()
+        ver = PackVersion(pack_id=pack.id, version_no=1, status="active")
+        s.add(ver)
+        s.flush()
+        # Items inserted in reverse feature order (the other product first).
+        s.add_all([PackItem(pack_version_id=ver.id, feature_id=other_feat.id),
+                   PackItem(pack_version_id=ver.id, feature_id=ids.feature_standalone_id)])
+        base = s.get(RateCard, s.query(RateCard.id).filter(RateCard.pack_version_id == ids.pack_version_id).scalar())
+        s.add(RateCard(rate_card_version_id=base.rate_card_version_id, country_id=base.country_id,
+                       deployment_model_id=base.deployment_model_id, pricing_model_id=base.pricing_model_id,
+                       tier_id=base.tier_id, uom_id=base.uom_id, pack_version_id=ver.id,
+                       currency_id=base.currency_id, fixed_fee=Decimal("1000"), unit_rate=Decimal("1")))
+        s.commit()
+        mixed_ver = ver.id
+
+    pid = make_proposal(pg_client, ids, suffix="IDENT")["id"]
+    try:
+        assert add_pack_line(pg_client, ids, pid).status_code == 201  # single-product DEV pack
+        line = pg_client.post(f"/api/proposals/{pid}/line-items", json={
+            "pack_version_id": mixed_ver, "uom_id": ids.uom_candidate_id, "quantity": "10"})
+        assert line.status_code == 201, line.text
+
+        codes = []
+        for _ in range(2):
+            calc = pg_client.post(f"/api/proposals/{pid}/calculate", json={})
+            assert calc.status_code == 200, calc.text
+            lines = calc.json()["snapshot_payload"]["all_subscription_line_items"]
+            codes.append({li["pack_version_id"]: li["product_code"] for li in lines})
+    finally:
+        # Remove the extra catalogue rows so later tests still see only the seed catalogue.
+        from app.models.proposals import ProposalLineItem
+        with Session(pg_engine) as s:
+            s.query(ProposalLineItem).filter(ProposalLineItem.pack_version_id == mixed_ver).delete()
+            s.query(RateCard).filter(RateCard.pack_version_id == mixed_ver).delete()
+            s.query(PackItem).filter(PackItem.pack_version_id == mixed_ver).delete()
+            s.query(PackVersion).filter(PackVersion.id == mixed_ver).delete()
+            s.query(Pack).filter(Pack.code == "AUDIT_MIXED").delete()
+            s.query(Feature).filter(Feature.code == "AUDIT_OTHER_F").delete()
+            s.query(Product).filter(Product.code == "AUDIT_OTHER").delete()
+            s.commit()
+    # Same answer every time; the single-product pack keeps its product, the mixed pack is its own group.
+    assert codes[0] == codes[1]
+    assert codes[0][ids.pack_version_id] == "DEV_TA_MAX"
+    assert codes[0][mixed_ver] == "AUDIT_MIXED"

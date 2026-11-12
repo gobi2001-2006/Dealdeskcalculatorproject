@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import apiClient from '../api/client'
 import {
   saveFullProposal,
-  requestProposalCalculation,
+  requestBasePricing,
   collectProposalErrors,
   ProposalInputError,
   discountsFromSnapshot,
@@ -34,7 +34,7 @@ function newProposalState(overrides = {}) {
         pricingTierId: 7,
         deploymentModelId: 11,
         pricingModelId: 12,
-        contractTerm: 24,
+        contractYears: 2,
         headcount: 250,
         families: [
           { id: 'fam-1', familyId: 10, headcount: 100, selectedPackId: 42, selectedFeatureIds: [32], featureHeadcounts: {} },
@@ -77,7 +77,7 @@ describe('Proposal save workflow (saveFullProposal)', () => {
   it('lists every missing selection instead of guessing ids', () => {
     const errors = collectProposalErrors(
       { clientName: '', reportingCurrencyId: null },
-      [{ countryId: 'c-in', pricingTierId: 'tier-1', deploymentModelId: null, pricingModelId: null, headcount: '', contractTerm: '', families: [], serviceLines: [] }],
+      [{ countryId: 'c-in', pricingTierId: 'tier-1', deploymentModelId: null, pricingModelId: null, headcount: '', contractYears: '', families: [], serviceLines: [] }],
     )
     expect(errors).toEqual(expect.arrayContaining([
       'Client name is required.',
@@ -208,7 +208,7 @@ describe('Proposal save workflow (saveFullProposal)', () => {
     // Screen state loaded from the saved proposal, then edited.
     const restored = deserializeBackendProposal(saved, { masters: { packs: fx.packs, products: fx.products, countries: fx.countries } })
     const cfg = restored.countryConfigs[0]
-    cfg.contractTerm = 24
+    cfg.contractYears = 2
     cfg.headcount = 300 // pack quantity and country headcount change
     cfg.families[0].selectedFeatureIds = [] // standalone feature removed
     cfg.serviceLines[0].hoursOrDays = 10
@@ -229,57 +229,48 @@ describe('Proposal save workflow (saveFullProposal)', () => {
   })
 })
 
-describe('Calculation request (requestProposalCalculation)', () => {
+describe('Page 4 base pricing (requestBasePricing)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubEnv('VITE_DEALDESK_USER_ID', '4')
   })
   afterEach(() => vi.unstubAllEnvs())
 
-  it('saves the screen state first and sends the contract term from the configuration', async () => {
+  it('saves the screen state (duration in months on the proposal), then prices at base level without discounts', async () => {
     const api = newProposalBackend({
-      'POST /proposals/:id/calculate': (body) => ({ ...fx.calculationResult(), request: body }),
+      'POST /proposals/:id/calculate/base': (body) => ({ ...fx.basePricingResult(), request: body }),
     })
-    const res = await requestProposalCalculation({ proposalId: null, ...newProposalState() })
+    const res = await requestBasePricing({ proposalId: null, ...newProposalState() })
     expect(res.status).toBe('success')
+    expect(res.data.pricing_stage).toBe('base')
+    // 2 years on screen -> 24 months stored on the proposal
+    expect(api.calls.find((c) => c.method === 'POST' && c.path === '/proposals/').body.contract_term_months).toBe(24)
     const order = api.writes().map((c) => c.path)
-    expect(order.indexOf('/proposals/900/calculate')).toBeGreaterThan(order.indexOf('/proposals/900/line-items'))
-    expect(api.calls.find((c) => c.path === '/proposals/900/calculate').body).toEqual({
-      product_subscription_discounts: {},
-      product_service_discounts: {},
-      contract_term_months: 24,
-    })
+    expect(order.indexOf('/proposals/900/calculate/base')).toBeGreaterThan(order.indexOf('/proposals/900/line-items'))
+    // Base pricing sends no discounts, and the discounted (snapshot-writing) calculation is never called.
+    expect(api.calls.find((c) => c.path === '/proposals/900/calculate/base').body).toEqual({})
+    expect(api.calls.some((c) => c.path === '/proposals/900/calculate')).toBe(false)
   })
 
   it('reports a backend pricing error instead of a result', async () => {
     newProposalBackend({
-      'POST /proposals/:id/calculate': () => {
+      'POST /proposals/:id/calculate/base': () => {
         throw httpError(422, 'No saved rate card exists for Shared Cloud + Platform Subscription in India for Tier 1.')
       },
     })
-    const res = await requestProposalCalculation({ proposalId: null, ...newProposalState() })
+    const res = await requestBasePricing({ proposalId: null, ...newProposalState() })
     expect(res).toMatchObject({ status: 'error', statusCode: 422, data: null })
     expect(res.message).toMatch(/No saved rate card/)
   })
 
-  it('keeps product discounts, and prices without them (flagged) only if the product set changed', async () => {
-    const bodies = []
-    newProposalBackend({
-      'POST /proposals/:id/calculate': (body) => {
-        bodies.push(body)
-        if (Object.keys(body.product_subscription_discounts).length) {
-          throw httpError(400, "Discount supplied for product code(s) not on this proposal: ['OLD']")
-        }
-        return fx.calculationResult()
-      },
-    })
-    const res = await requestProposalCalculation({
-      proposalId: null,
-      ...newProposalState(),
-      discounts: { product_subscription_discounts: { OLD: 5 }, product_service_discounts: {} },
-    })
-    expect(res).toMatchObject({ status: 'success', discountsDropped: true })
-    expect(bodies.map((b) => b.product_subscription_discounts)).toEqual([{ OLD: 5 }, {}])
+  it('rejects a duration that is not a whole number of years before writing anything', async () => {
+    const api = newProposalBackend({})
+    const state = newProposalState()
+    state.countryConfigs[0].contractYears = 1.5
+    const res = await requestBasePricing({ proposalId: null, ...state })
+    expect(res.status).toBe('error')
+    expect(res.message).toMatch(/whole number of years/)
+    expect(api.writes()).toEqual([])
   })
 
   it('repeats the per-product discounts recorded in a snapshot', () => {
@@ -300,7 +291,7 @@ describe('Reloading a saved proposal (deserializeBackendProposal)', () => {
     const cfg = countryConfigs[0]
     expect(cfg).toMatchObject({
       backendId: 600, countryId: 1, countryName: 'India', currency: 'INR', pricingTierId: 7,
-      deploymentModelId: 11, pricingModelId: 12, contractTerm: 24, headcount: 250,
+      deploymentModelId: 11, pricingModelId: 12, contractYears: 2, headcount: 250,
     })
     expect(cfg.families).toHaveLength(1)
     expect(cfg.families[0]).toMatchObject({ familyId: 10, selectedPackId: 42, selectedFeatureIds: [32], featureHeadcounts: { 32: 100 } })
@@ -308,8 +299,16 @@ describe('Reloading a saved proposal (deserializeBackendProposal)', () => {
     expect(lineDiscountsByTarget).toEqual({ '1|feature:32': 10 }) // country 1 + feature 32
   })
 
-  it('leaves the contract term empty when no calculation exists (no invented 36 months)', () => {
+  it('leaves the contract duration empty when nothing is saved (no invented default)', () => {
     const { countryConfigs } = deserializeBackendProposal(fx.savedProposal(), { masters: {} })
-    expect(countryConfigs[0].contractTerm).toBe('')
+    expect(countryConfigs[0].contractYears).toBe('')
+  })
+
+  it('shows the duration saved on the proposal in years, ahead of the latest snapshot', () => {
+    const { countryConfigs } = deserializeBackendProposal(fx.savedProposal({ contract_term_months: 60 }), {
+      masters: {},
+      latestCalc: fx.calculationResult(), // priced with 24 months
+    })
+    expect(countryConfigs[0].contractYears).toBe(5)
   })
 })

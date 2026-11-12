@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { formatMoney, readCalculationTotals } from '../../../utils/calculationView'
+import { formatContractYears } from '../../../utils/contractDuration'
 
 export function CommercialSummaryCard({
   clientInfo,
@@ -51,7 +52,7 @@ export function CommercialSummaryCard({
         {/* Pricing FCV */}
         <div className="flex items-start justify-between gap-3">
           <span className="text-slate-400 font-medium">
-            Subscription FCV (Net, {totals?.termMonths ?? '—'} mo):
+            Subscription FCV (Net, {formatContractYears(totals?.termMonths)}):
           </span>
           {hasCalculation ? (
             <span

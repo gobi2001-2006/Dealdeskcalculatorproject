@@ -8,7 +8,6 @@ import {
   Info,
   ChevronDown,
   ShieldAlert,
-  Database,
   TableProperties,
   Layers,
   Wrench,
@@ -39,9 +38,7 @@ export function RateCardCenterEditor({
   families = [],
   onClearFamilyFilter,
   // Versions
-  versionsList = [],
   activeVersion = null,
-  onSelectVersion,
   // Service Rates
   serviceRates = [],
   onUpdateServiceRate,

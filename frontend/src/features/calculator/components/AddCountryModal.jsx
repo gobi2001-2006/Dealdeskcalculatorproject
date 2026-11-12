@@ -30,7 +30,7 @@ export function AddCountryModal({
   const [selectedTierId, setSelectedTierId] = useState('')
   const [selectedDeploymentId, setSelectedDeploymentId] = useState('')
   const [selectedPricingModelId, setSelectedPricingModelId] = useState('')
-  const [contractTerm, setContractTerm] = useState('')
+  const [contractYears, setContractYears] = useState('')
   const [headcount, setHeadcount] = useState('')
   const [formError, setFormError] = useState('')
   const [termError, setTermError] = useState('')
@@ -51,7 +51,7 @@ export function AddCountryModal({
       setSelectedTierId('')
       setSelectedDeploymentId('')
       setSelectedPricingModelId('')
-      setContractTerm('')
+      setContractYears('')
       setHeadcount('')
       setFormError('')
       setTermError('')
@@ -69,7 +69,7 @@ export function AddCountryModal({
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    const err = validateContractTerm(contractTerm)
+    const err = validateContractTerm(contractYears)
     if (err) {
       setTermError(err)
       return
@@ -96,7 +96,7 @@ export function AddCountryModal({
       pricingTierId: Number(selectedTierId),
       deploymentModelId: Number(selectedDeploymentId),
       pricingModelId: Number(selectedPricingModelId),
-      contractTerm: Number(contractTerm),
+      contractYears: Number(contractYears),
       headcount: qty,
       families: [],
       serviceLines: [],
@@ -238,16 +238,16 @@ export function AddCountryModal({
                 htmlFor="modal-term-input"
                 className="block text-[13px] font-semibold text-slate-700 mb-1"
               >
-                Contract Term (Months) <span className="text-rose-500">*</span>
+                Contract Duration (Years) <span className="text-rose-500">*</span>
               </label>
               <input
                 id="modal-term-input"
                 type="number"
                 min="1"
-                max="120"
-                value={contractTerm}
+                step="1"
+                value={contractYears}
                 onChange={(e) => {
-                  setContractTerm(e.target.value)
+                  setContractYears(e.target.value)
                   setTermError('')
                 }}
                 className={`w-full px-3.5 py-2 min-h-[40px] text-[14px] rounded-lg border ${

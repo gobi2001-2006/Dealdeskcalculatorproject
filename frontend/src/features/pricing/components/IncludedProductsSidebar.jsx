@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { buildCatalogueLookup } from '../../../utils/catalogueLookup'
+import { formatYears } from '../../../utils/contractDuration'
 
 export function IncludedProductsSidebar({
   lookup = buildCatalogueLookup(),
@@ -136,7 +137,7 @@ export function IncludedProductsSidebar({
                   {lookup.pricingModelName(country.pricingModelId)}
                 </span>
                 <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">
-                  {country.contractTerm ? `${country.contractTerm}m` : 'term not set'}
+                  {formatYears(country.contractYears, 'duration not set')}
                 </span>
               </div>
 

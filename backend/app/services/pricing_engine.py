@@ -109,6 +109,10 @@ class MissingConfigurationError(PricingCalculationError):
     pass
 
 
+class ContractTermConflictError(PricingCalculationError):
+    """The request's contract term differs from the term saved on the proposal."""
+
+
 class CurrencyMismatchError(PricingCalculationError):
     """Raised when amounts in different native currencies would be added together."""
     pass
@@ -214,8 +218,8 @@ class PricingCalculationEngine:
     ) -> Dict[str, Any]:
         """Execute full server-side calculation and persist CalculationSnapshot.
 
-        Atomic: the snapshot and the refreshed line amounts are committed together,
-        or nothing is written at all.
+        Applies every saved discount (line items and country blocks). Atomic: the snapshot and
+        the refreshed line amounts are committed together, or nothing is written at all.
         """
         try:
             return self._calculate_proposal(
@@ -231,6 +235,34 @@ class PricingCalculationEngine:
             self.db.rollback()
             raise
 
+    def calculate_base_pricing(
+        self,
+        proposal_id: int,
+        version_id: Optional[int] = None,
+        default_hours_per_day: Optional[Decimal] = None,
+        contract_term_months: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Base (undiscounted) pricing for the Proposal Configurator.
+
+        Same formulas and rate cards as calculate_proposal, but no line, country or request
+        discount is applied and nothing is written: no snapshot, no cached line amounts.
+        Discounts are configured and applied on Pricing & Discounts only.
+        """
+        try:
+            return self._calculate_proposal(
+                proposal_id=proposal_id,
+                version_id=version_id,
+                product_discounts=None,
+                product_service_discounts=None,
+                default_hours_per_day=default_hours_per_day,
+                user_id=None,
+                contract_term_months=contract_term_months,
+                apply_discounts=False,
+                persist=False,
+            )
+        finally:
+            self.db.rollback()  # read-only by design: discard anything the session may hold
+
     def _calculate_proposal(
         self,
         proposal_id: int,
@@ -240,9 +272,22 @@ class PricingCalculationEngine:
         default_hours_per_day: Optional[Decimal],
         user_id: Optional[int],
         contract_term_months: Optional[int] = None,
+        apply_discounts: bool = True,
+        persist: bool = True,
     ) -> Dict[str, Any]:
         # 1. Load proposal & active version
         proposal, version = self._load_proposal_and_version(proposal_id, version_id)
+
+        # Contract term: saved on the proposal (months). A request may repeat it but not contradict it.
+        stored_term = getattr(proposal, "contract_term_months", None)
+        if contract_term_months is not None and stored_term is not None and int(contract_term_months) != int(stored_term):
+            raise ContractTermConflictError(
+                f"The proposal's contract term is saved as {stored_term} months; the request asked for "
+                f"{contract_term_months}. Update the term on the proposal instead."
+            )
+        if contract_term_months is None:
+            contract_term_months = stored_term
+        write_line_amounts = persist and version.status == "draft"
 
         # 2. Extract context dimensions
         rate_card_version_id = version.rate_card_version_id
@@ -312,8 +357,9 @@ class PricingCalculationEngine:
                 default_tier_id=customer_tier_id,
                 deployment_model_id=block.deployment_model_id,
                 pricing_model_id=block.pricing_model_id,
-                persist_amounts=(version.status == "draft"),
+                persist_amounts=write_line_amounts,
                 contract_term_months=contract_term_months,
+                apply_discounts=apply_discounts,
             )
             item_result.update(block_fields(block))
             line_item_results.append(item_result)
@@ -340,7 +386,7 @@ class PricingCalculationEngine:
                 service_line=s_line,
                 default_country_id=block.country_id,
                 default_hours_per_day=default_hours_per_day,
-                persist_amounts=(version.status == "draft"),
+                persist_amounts=write_line_amounts,
             )
             s_result.update(block_fields(block))
             service_line_results.append(s_result)
@@ -410,6 +456,11 @@ class PricingCalculationEngine:
         total_subscription_annual_reporting = Decimal("0.00")
         total_subscription_contract_reporting = Decimal("0.00")
         total_services_reporting = Decimal("0.00")
+        total_base_annual_reporting = Decimal("0.00")
+        total_base_contract_reporting = Decimal("0.00")
+        total_subscription_base_annual_reporting = Decimal("0.00")
+        total_subscription_base_contract_reporting = Decimal("0.00")
+        total_services_base_reporting = Decimal("0.00")
         term_dec =Decimal(str(contract_term_months)) if contract_term_months and contract_term_months > 0 else Decimal("12")
 
         for prod_key in sorted(all_product_keys, key=lambda k: (block_order.get(k[0], 0), k[1])):
@@ -423,7 +474,16 @@ class PricingCalculationEngine:
                 (item["_dec_item_subscription_after_discount"] for item in p_items),
                 Decimal("0.00"),
             )
-            sub_discount_pct = Decimal(str(product_discounts.get(pub_key, Decimal("0.00"))))
+            # Overall discounts are set per country (on the product's country block). A value sent
+            # with the calculation request is still accepted for a product whose country has none,
+            # but never both: the two would otherwise stack.
+            block = blocks_by_id.get(prod_key[0])
+            if apply_discounts:
+                sub_discount_pct, sub_discount_source = self._overall_discount(
+                    block, "subscription_discount_pct", pub_key, product_discounts, "subscription"
+                )
+            else:
+                sub_discount_pct, sub_discount_source = Decimal("0.00"), None
             if sub_discount_pct < 0 or sub_discount_pct > 100:
                 raise InvalidDiscountError(
                     f"Product subscription discount % for {pub_key} must be between 0 and 100, got {sub_discount_pct}"
@@ -447,7 +507,12 @@ class PricingCalculationEngine:
                 Decimal("0.00"),
             )
             # One overall service discount per product (PDF section 4); never per service line.
-            serv_discount_pct = Decimal(str(product_service_discounts.get(pub_key, Decimal("0.00"))))
+            if apply_discounts:
+                serv_discount_pct, serv_discount_source = self._overall_discount(
+                    block, "service_discount_pct", pub_key, product_service_discounts, "services"
+                )
+            else:
+                serv_discount_pct, serv_discount_source = Decimal("0.00"), None
             if serv_discount_pct < 0 or serv_discount_pct > 100:
                 raise InvalidDiscountError(
                     f"Product service discount % for {pub_key} must be between 0 and 100, got {serv_discount_pct}"
@@ -458,6 +523,15 @@ class PricingCalculationEngine:
             # Product Native Total (Annual & Contract)
             product_native_total = sub_total_after_discount + serv_total_after_discount
             contract_product_native_total = contract_sub_total_after_discount + serv_total_after_discount
+
+            # Base (undiscounted) amounts, kept apart from the net amounts above: before any line,
+            # overall subscription or services discount. Year 1 and full contract.
+            sub_base_annual = sum((item["_dec_subscription_before_discount"] for item in p_items), Decimal("0.00"))
+            contract_sub_base = sum(
+                (item["_dec_contract_subscription_before_discount"] for item in p_items), Decimal("0.00")
+            )
+            product_base_native_total = sub_base_annual + serv_subtotal_before_discount
+            contract_product_base_native_total = contract_sub_base + serv_subtotal_before_discount
 
             # Native Currency - every amount in a product total must share one currency.
             native_curr_id = meta.get("native_currency_id") or reporting_currency_id
@@ -487,6 +561,11 @@ class PricingCalculationEngine:
             subscription_reporting_total = quantize_currency(sub_total_after_discount * fx_rate_multiplier)
             service_reporting_total = product_reporting_total - subscription_reporting_total
             contract_subscription_reporting_total = contract_product_reporting_total - service_reporting_total
+            product_base_reporting_total = quantize_currency(product_base_native_total * fx_rate_multiplier)
+            contract_product_base_reporting_total = quantize_currency(contract_product_base_native_total * fx_rate_multiplier)
+            subscription_base_reporting_total = quantize_currency(sub_base_annual * fx_rate_multiplier)
+            service_base_reporting_total = product_base_reporting_total - subscription_base_reporting_total
+            contract_subscription_base_reporting_total = contract_product_base_reporting_total - service_base_reporting_total
 
             product_results.append({
                 "product_id": meta.get("product_id"),
@@ -505,6 +584,10 @@ class PricingCalculationEngine:
                 "contract_term_months": int(term_dec),
                 "subscription_subtotal_before_discount": float(sub_subtotal_before_discount),
                 "subscription_discount_pct": float(sub_discount_pct),
+                "subscription_discount_source": sub_discount_source,
+                "subscription_discount_reason": (
+                    block.subscription_discount_reason if block is not None and sub_discount_source == "country" else None
+                ),
                 "subscription_discount_amount": float(sub_discount_amt),
                 "subscription_total_after_discount": float(sub_total_after_discount),
                 "contract_subscription_subtotal_before_discount": float(contract_sub_subtotal_before_discount),
@@ -512,6 +595,10 @@ class PricingCalculationEngine:
                 "contract_subscription_total_after_discount": float(contract_sub_total_after_discount),
                 "service_subtotal_before_discount": float(serv_subtotal_before_discount),
                 "service_discount_pct": float(serv_discount_pct),
+                "service_discount_source": serv_discount_source,
+                "service_discount_reason": (
+                    block.service_discount_reason if block is not None and serv_discount_source == "country" else None
+                ),
                 "service_discount_amount": float(serv_discount_amt),
                 "service_total_after_discount": float(serv_total_after_discount),
                 "product_native_total": float(product_native_total),
@@ -529,6 +616,17 @@ class PricingCalculationEngine:
                 "subscription_reporting_total": float(subscription_reporting_total),
                 "contract_subscription_reporting_total": float(contract_subscription_reporting_total),
                 "service_reporting_total": float(service_reporting_total),
+                # Base (undiscounted) figures: Year 1 and full contract, native and reporting currency
+                "subscription_base_annual": float(sub_base_annual),
+                "contract_subscription_base": float(contract_sub_base),
+                "service_base": float(serv_subtotal_before_discount),
+                "product_base_native_total": float(product_base_native_total),
+                "contract_product_base_native_total": float(contract_product_base_native_total),
+                "product_base_reporting_total": float(product_base_reporting_total),
+                "contract_product_base_reporting_total": float(contract_product_base_reporting_total),
+                "subscription_base_reporting_total": float(subscription_base_reporting_total),
+                "contract_subscription_base_reporting_total": float(contract_subscription_base_reporting_total),
+                "service_base_reporting_total": float(service_base_reporting_total),
                 "line_items": p_items,
                 "service_lines": p_services,
             })
@@ -539,6 +637,11 @@ class PricingCalculationEngine:
             total_proposal_annual_reporting += product_reporting_total
             total_proposal_contract_reporting += contract_product_reporting_total
             total_proposal_reporting += product_reporting_total
+            total_base_annual_reporting += product_base_reporting_total
+            total_base_contract_reporting += contract_product_base_reporting_total
+            total_subscription_base_annual_reporting += subscription_base_reporting_total
+            total_subscription_base_contract_reporting += contract_subscription_base_reporting_total
+            total_services_base_reporting += service_base_reporting_total
 
         # Strip internal _dec_ keys (Decimal) from dicts before JSON serialisation
         def _strip_dec(d: Dict[str, Any]) -> Dict[str, Any]:
@@ -570,7 +673,14 @@ class PricingCalculationEngine:
                 "deployment_model_id": deployment_model_id,
                 "pricing_model_id": pricing_model_id,
                 "country_blocks": [
-                    {k: v for k, v in block_fields(b).items()} for b in primary_first
+                    {
+                        **block_fields(b),
+                        "subscription_discount_pct": None if b.subscription_discount_pct is None else float(b.subscription_discount_pct),
+                        "subscription_discount_reason": b.subscription_discount_reason,
+                        "service_discount_pct": None if b.service_discount_pct is None else float(b.service_discount_pct),
+                        "service_discount_reason": b.service_discount_reason,
+                    }
+                    for b in primary_first
                 ],
                 "customer_tier_id": customer_tier_id,
                 "contract_term_months": int(term_dec),
@@ -583,10 +693,37 @@ class PricingCalculationEngine:
             "total_subscription_annual_reporting_currency": float(total_subscription_annual_reporting),
             "total_subscription_contract_reporting_currency": float(total_subscription_contract_reporting),
             "total_services_reporting_currency": float(total_services_reporting),
+            # Pricing stage and the four headline figures kept apart: Year 1 base / net, contract base / net.
+            "pricing_stage": "discounted" if apply_discounts else "base",
+            "contract_term_years": float(term_dec / Decimal("12")),
+            "total_proposal_base_annual_reporting_currency": float(total_base_annual_reporting),
+            "total_proposal_base_contract_reporting_currency": float(total_base_contract_reporting),
+            "total_subscription_base_annual_reporting_currency": float(total_subscription_base_annual_reporting),
+            "total_subscription_base_contract_reporting_currency": float(total_subscription_base_contract_reporting),
+            "total_services_base_reporting_currency": float(total_services_base_reporting),
+            "total_discount_contract_reporting_currency": float(total_base_contract_reporting - total_proposal_contract_reporting),
             "products": serialisable_product_results,
             "all_subscription_line_items": [_strip_dec(li) for li in line_item_results],
             "all_service_lines": service_line_results,
         }
+
+        if not persist:
+            # Base-pricing preview: nothing is saved (no snapshot, no cached line amounts).
+            return {
+                "snapshot_id": None,
+                "pricing_stage": "base",
+                "proposal_id": proposal.id,
+                "proposal_version_id": version.id,
+                "version_no": version.version_no,
+                "calculated_at": datetime.now(timezone.utc).isoformat(),
+                "reporting_currency_code": reporting_currency.code if reporting_currency else str(reporting_currency_id),
+                "total_proposal_reporting_currency": float(total_proposal_reporting),
+                "contract_term_months": int(term_dec),
+                "total_proposal_annual_reporting_currency": float(total_proposal_annual_reporting),
+                "total_proposal_contract_reporting_currency": float(total_proposal_contract_reporting),
+                "is_stale": None,
+                "snapshot_payload": snapshot_payload,
+            }
 
         # 7. Persist Snapshot Immutably
         snapshot = CalculationSnapshot(
@@ -600,6 +737,7 @@ class PricingCalculationEngine:
 
         return {
             "snapshot_id": snapshot.id,
+            "pricing_stage": "discounted",
             "proposal_id": proposal.id,
             "proposal_version_id": version.id,
             "version_no": version.version_no,
@@ -612,6 +750,33 @@ class PricingCalculationEngine:
             "is_stale": False,
             "snapshot_payload": snapshot_payload,
         }
+
+    @staticmethod
+    def _overall_discount(
+        block: Optional[ProposalCountry],
+        field: str,
+        pub_key: str,
+        requested: Dict[str, Decimal],
+        label: str,
+    ) -> tuple:
+        """The overall discount % for one product and where it came from.
+
+        Source of truth is the product's country block ("country"). A % sent with the calculation
+        request ("request") is accepted only when that country has none set, so a discount can
+        never be applied twice. Returns (pct, source); source is None when no discount applies.
+        """
+        stored = getattr(block, field, None) if block is not None else None
+        if pub_key in requested:
+            if stored is not None:
+                country = block.country.name if block.country else f"country block {block.id}"
+                raise InvalidDiscountError(
+                    f"The overall {label} discount for {country} is set on the country ({Decimal(stored).normalize()}%); "
+                    f"do not also send one for {pub_key} with the calculation"
+                )
+            return Decimal(str(requested[pub_key])), "request"
+        if stored is not None:
+            return Decimal(stored), "country"
+        return Decimal("0.00"), None
 
     @staticmethod
     def _inputs_fingerprint(proposal: Proposal, version: ProposalVersion) -> str:
@@ -634,6 +799,13 @@ class PricingCalculationEngine:
             "rate_card_version_id": version.rate_card_version_id,
             "countries": sorted(
                 [c.country_id, c.deployment_model_id, c.pricing_model_id, c.user_headcount, bool(c.is_primary_deployment)]
+                # Country discounts are added only when set, so fingerprints of proposals saved before
+                # country-level discounts existed are unchanged (no false "stale" flags).
+                + (
+                    [dec(c.subscription_discount_pct), dec(c.service_discount_pct)]
+                    if c.subscription_discount_pct is not None or c.service_discount_pct is not None
+                    else []
+                )
                 for c in proposal.countries
             ),
             "lines": sorted(
@@ -672,9 +844,15 @@ class PricingCalculationEngine:
         stored_fp = snapshot.snapshot_payload.get("inputs_fingerprint")
         # None = unknown (snapshot written before fingerprints existed).
         is_stale = None if stored_fp is None else stored_fp != self._inputs_fingerprint(proposal, version)
+        # The contract term is saved on the proposal: a snapshot priced with another term is outdated.
+        snapshot_term = snapshot.snapshot_payload.get("contract_term_months")
+        stored_term = getattr(proposal, "contract_term_months", None)
+        if stored_term is not None and snapshot_term is not None and int(snapshot_term) != int(stored_term):
+            is_stale = True
 
         return {
             "is_stale": is_stale,
+            "pricing_stage": snapshot.snapshot_payload.get("pricing_stage", "discounted"),
             "snapshot_id": snapshot.id,
             "proposal_id": proposal.id,
             "proposal_version_id": version.id,
@@ -702,10 +880,11 @@ class PricingCalculationEngine:
         pricing_model_id: Optional[int] = None,
         persist_amounts: bool = True,
         contract_term_months: Optional[int] = None,
+        apply_discounts: bool = True,
     ) -> Dict[str, Any]:
         """Calculates a single subscription line item using the PDF formulas."""
-        # Validate discount
-        item_discount_pct = item.discount_pct or Decimal("0.00")
+        # Validate discount (base pricing ignores the saved line discount)
+        item_discount_pct = (item.discount_pct or Decimal("0.00")) if apply_discounts else Decimal("0.00")
         if item_discount_pct < 0 or item_discount_pct > 100:
             raise InvalidDiscountError(
                 f"Item discount percentage must be between 0 and 100, got {item_discount_pct}"
@@ -734,13 +913,19 @@ class PricingCalculationEngine:
             pack = pack_version.pack
             target_name = f"{pack.name} v{pack_version.version_no}" if pack else f"PackVersion {item.pack_version_id}"
 
-            # Resolve product from pack's items or family
-            if pack_version.pack_items:
-                first_feat = pack_version.pack_items[0].feature
-                if first_feat and first_feat.product:
-                    product_id = first_feat.product.id
-                    product_name = first_feat.product.name
-                    product_code = first_feat.product.code
+            # A pack's product identity must not depend on row order. If every feature in the pack
+            # belongs to one product, the pack is shown under that product. If the pack spans several
+            # products, it is its own group (pack code/name) rather than an arbitrary member product.
+            pack_products = {
+                pi.feature.product.id: pi.feature.product
+                for pi in pack_version.pack_items
+                if pi.feature is not None and pi.feature.product is not None
+            }
+            if len(pack_products) == 1:
+                only = next(iter(pack_products.values()))
+                product_id, product_name, product_code = only.id, only.name, only.code
+            elif len(pack_products) > 1 and pack:
+                product_name, product_code = pack.name, pack.code
             if not product_name and pack and pack.product_family:
                 product_name = pack.product_family.name
                 product_code = pack.product_family.code

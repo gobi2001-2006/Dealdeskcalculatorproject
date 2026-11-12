@@ -6,6 +6,7 @@ import { ProposalProvider } from '../context/ProposalContext'
 import { ProposalSummaryPage } from '../features/proposals/ProposalSummaryPage'
 import { installFakeApi } from './fixtures/fakeApi'
 import * as fx from './fixtures/backendRecords'
+import { formatMoney } from '../utils/calculationView'
 
 vi.mock('../api/client')
 
@@ -56,7 +57,8 @@ describe('Page 6 — Proposal Summary', () => {
     expect(within(table).getByText(/12 man-days × ₹12,000\.00\/day/)).toBeInTheDocument()
     // Native INR subtotal and the backend's USD conversion are both shown and labelled.
     expect(within(table).getByText(/Subtotal — TA Max \(INR\)/)).toBeInTheDocument()
-    expect(within(table).getByText('₹14,13,620.00')).toBeInTheDocument()
+    // Locale-independent: the page formats in the viewer's locale (Indian or Western grouping).
+    expect(within(table).getByText(formatMoney(1413620, 'INR'))).toBeInTheDocument()
     expect(within(table).getByText('Converted to USD')).toBeInTheDocument()
     expect(within(table).getByText(/INR → USD @ 0\.012/)).toBeInTheDocument()
     // Grand total = full contract value from the backend

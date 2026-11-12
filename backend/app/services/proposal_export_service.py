@@ -351,8 +351,10 @@ def _build_product_calculation_details(
                 format_money(contract_sub_before, n_curr),
                 format_money_pdf(contract_sub_before, n_curr),
             )
+        sub_reason = prod_entry.get("sub_discount_reason")
+        sub_reason_str = f" [{sub_reason}]" if sub_reason else ""
         add_step(
-            f"Overall Subscription Discount ({sub_disc_pct:g}%)",
+            f"Overall Subscription Discount ({sub_disc_pct:g}%){sub_reason_str}",
             f"Net After Line Discount × Overall Subscription Discount % = {format_money(contract_sub_before, n_curr)} × {sub_disc_pct:g}%",
             f"Net After Line Disc. x Overall Sub Disc. % = {format_money_pdf(contract_sub_before, n_curr)} x {sub_disc_pct:g}%",
             _signed_discount_docx(sub_disc_amt, n_curr),
@@ -396,8 +398,10 @@ def _build_product_calculation_details(
                 format_money(serv_subtotal, n_curr),
                 format_money_pdf(serv_subtotal, n_curr),
             )
+        serv_reason = prod_entry.get("serv_discount_reason")
+        serv_reason_str = f" [{serv_reason}]" if serv_reason else ""
         add_step(
-            f"Overall Service Discount ({serv_disc_pct:g}%)",
+            f"Overall Service Discount ({serv_disc_pct:g}%){serv_reason_str}",
             f"Gross Services × Service Discount % = {format_money(serv_subtotal, n_curr)} × {serv_disc_pct:g}%",
             f"Gross Services x Service Discount % = {format_money_pdf(serv_subtotal, n_curr)} x {serv_disc_pct:g}%",
             _signed_discount_docx(serv_disc_amt, n_curr),
@@ -582,6 +586,10 @@ def extract_proposal_export_data(proposal_id: int, db: Session) -> Dict[str, Any
             "deployment_name": dep_name,
             "pricing_model_name": pm_name,
             "user_headcount": pc.user_headcount,
+            "subscription_discount_pct": float(pc.subscription_discount_pct) if pc.subscription_discount_pct is not None else None,
+            "subscription_discount_reason": pc.subscription_discount_reason,
+            "service_discount_pct": float(pc.service_discount_pct) if pc.service_discount_pct is not None else None,
+            "service_discount_reason": pc.service_discount_reason,
         }
 
     # Commercial Breakdown from snapshot products and line items
@@ -733,10 +741,14 @@ def extract_proposal_export_data(proposal_id: int, db: Session) -> Dict[str, Any
             "sub_subtotal": float(prod.get("subscription_subtotal_before_discount") or 0.0),
             "sub_discount_pct": sub_disc_pct,
             "sub_discount_amt": contract_sub_disc_amt if contract_sub_disc_amt > 0 else sub_disc_amt,
+            "sub_discount_source": prod.get("subscription_discount_source"),
+            "sub_discount_reason": prod.get("subscription_discount_reason") or blk_info.get("subscription_discount_reason"),
             "contract_sub_total": contract_sub_after,
             "serv_subtotal": float(prod.get("service_subtotal_before_discount") or 0.0),
             "serv_discount_pct": serv_disc_pct,
             "serv_discount_amt": serv_disc_amt,
+            "serv_discount_source": prod.get("service_discount_source"),
+            "serv_discount_reason": prod.get("service_discount_reason") or blk_info.get("service_discount_reason"),
             "serv_total": float(prod.get("service_total_after_discount") or 0.0),
             "line_disc_native": line_disc_native,
             "total_prod_disc_native": total_prod_disc_native,

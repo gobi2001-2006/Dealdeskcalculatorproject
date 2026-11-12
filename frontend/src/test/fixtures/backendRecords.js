@@ -186,3 +186,73 @@ export function calculationResult(overrides = {}) {
     ...overrides,
   }
 }
+
+/**
+ * Base (undiscounted) pricing of the same proposal, as POST .../calculate/base returns it for the
+ * Proposal Configurator. Worked out by hand from calculationResult(), without any discount:
+ *   subscription Year 1 620,000 + 62,000 = 682,000 INR ; 24 months 1,240,000 + 124,000 = 1,364,000 INR
+ *   services 144,000 INR ; FX 0.012 -> Year 1 826,000 INR = 9,912 USD ; contract 1,508,000 INR = 18,096 USD
+ *   services 1,728 USD ; subscription over the contract 18,096 - 1,728 = 16,368 USD
+ */
+export function basePricingResult(overrides = {}) {
+  const data = calculationResult()
+  const p = data.snapshot_payload
+  const lines = p.products[0].line_items.map((li) => ({
+    ...li,
+    item_discount_pct: 0,
+    item_discount_amount: 0,
+    item_subscription_after_discount: li.item_subscription_before_discount,
+  }))
+  const product = {
+    ...p.products[0],
+    subscription_subtotal_before_discount: 682000,
+    subscription_discount_pct: 0,
+    subscription_discount_amount: 0,
+    subscription_total_after_discount: 682000,
+    service_discount_pct: 0,
+    service_discount_amount: 0,
+    service_total_after_discount: 144000,
+    subscription_base_annual: 682000,
+    contract_subscription_base: 1364000,
+    service_base: 144000,
+    product_base_native_total: 826000,
+    contract_product_base_native_total: 1508000,
+    product_reporting_total: 9912,
+    contract_product_reporting_total: 18096,
+    product_base_reporting_total: 9912,
+    contract_product_base_reporting_total: 18096,
+    line_items: lines,
+  }
+  const totals = {
+    total_proposal_annual_reporting_currency: 9912,
+    total_proposal_contract_reporting_currency: 18096,
+    total_proposal_reporting_currency: 9912,
+    total_subscription_annual_reporting_currency: 8184,
+    total_subscription_contract_reporting_currency: 16368,
+    total_services_reporting_currency: 1728,
+    total_proposal_base_annual_reporting_currency: 9912,
+    total_proposal_base_contract_reporting_currency: 18096,
+    total_subscription_base_annual_reporting_currency: 8184,
+    total_subscription_base_contract_reporting_currency: 16368,
+    total_services_base_reporting_currency: 1728,
+    total_discount_contract_reporting_currency: 0,
+  }
+  return {
+    ...data,
+    snapshot_id: null,
+    pricing_stage: 'base',
+    is_stale: null,
+    total_proposal_reporting_currency: 9912,
+    total_proposal_annual_reporting_currency: 9912,
+    total_proposal_contract_reporting_currency: 18096,
+    snapshot_payload: {
+      ...p,
+      ...totals,
+      pricing_stage: 'base',
+      contract_term_years: 2,
+      products: [product],
+      all_subscription_line_items: lines,
+    },
+    ...overrides,
+  }
+}
