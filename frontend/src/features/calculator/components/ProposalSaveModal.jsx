@@ -1,0 +1,155 @@
+import { useState } from 'react'
+import {
+  X,
+  Check,
+  Copy,
+  Download,
+  Database,
+  Code2,
+  RefreshCw,
+} from 'lucide-react'
+
+export function ProposalSaveModal({
+  isOpen,
+  serializedData,
+  onClose,
+  onConfirmSave,
+  isSaving = false,
+}) {
+  const [copied, setCopied] = useState(false)
+
+  if (!isOpen) return null
+
+  const jsonString = JSON.stringify(serializedData, null, 2)
+
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(jsonString)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleDownload = () => {
+    const blob = new Blob([jsonString], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `proposal-${serializedData?.proposal?.code || 'draft'}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="save-proposal-title"
+    >
+      <div className="bg-white rounded-xl shadow-xl border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="bg-[#0B1528] text-white px-5 py-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-orange-400">
+              <Database className="w-4 h-4" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 id="save-proposal-title" className="text-[16px] font-bold text-white tracking-wide">
+                Save Proposal
+              </h2>
+              <p className="text-[11px] text-slate-300">
+                Review and save client details, country scopes, and line items.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            aria-label="Close dialog"
+          >
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Content Body: Schema Preview */}
+        <div className="p-5 flex-1 overflow-y-auto space-y-3">
+          <div className="flex items-center justify-between text-[12px]">
+            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+              <Code2 className="w-4 h-4 text-orange-600" aria-hidden="true" />
+              <span>Proposal Payload ({serializedData?.proposal?.code})</span>
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Copy JSON</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-[12px] font-semibold rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>Export JSON</span>
+              </button>
+            </div>
+          </div>
+
+          <pre className="p-3 bg-slate-900 text-slate-200 rounded-lg text-[10px] font-mono overflow-x-auto max-h-72 border border-slate-800">
+            {jsonString}
+          </pre>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+          <div className="text-[11px] text-slate-500 font-mono">
+            {serializedData?.proposal_countries?.length || 0} Countries •{' '}
+            {serializedData?.proposal_line_items?.length || 0} Line Items
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              className="px-4 py-2 text-[13px] font-medium rounded-lg text-slate-600 hover:bg-slate-200/60 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onConfirmSave}
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-semibold rounded-lg bg-orange-600 hover:bg-orange-700 text-white shadow-2xs transition-colors disabled:opacity-50"
+            >
+              {isSaving ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4" aria-hidden="true" />
+                  <span>Confirm Save</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default ProposalSaveModal
