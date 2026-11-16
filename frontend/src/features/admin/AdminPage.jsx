@@ -46,10 +46,10 @@ export function AdminPage() {
   const current = visible.find((t) => t.key === active) || visible[0]
 
   return (
-    <div className="min-h-screen bg-[#f4f2ee] flex flex-col text-slate-800 font-sans">
+    <div className="h-screen overflow-hidden bg-[#f4f2ee] flex flex-col text-slate-800 font-sans">
       <CatalogueTopNav activeSection="admin" />
 
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2 flex items-center gap-2 overflow-x-auto" role="tablist" aria-label="Admin sections">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2 flex shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden" role="tablist" aria-label="Admin sections">
         {visible.map((tab) => {
           const Icon = tab.icon
           const isActive = current?.key === tab.key
@@ -73,7 +73,8 @@ export function AdminPage() {
         })}
       </div>
 
-      <main className="flex-1 w-full max-w-[1600px] mx-auto p-4 sm:p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto" data-testid="admin-scroll">
+      <main className="w-full max-w-[1600px] mx-auto p-4 sm:p-6">
         {me?.bootstrap_mode && (
           <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] text-amber-900" role="status">
             <strong>Set-up mode:</strong> no active user has the Admin role yet, so these screens are open. Assign the
@@ -97,6 +98,7 @@ export function AdminPage() {
         {me && meta && current?.key === 'workflow' && <ApprovalWorkflowTab meta={meta} />}
         {me && meta && current?.key === 'notifications' && <EmailNotificationsTab meta={meta} />}
       </main>
+      </div>
     </div>
   )
 }
