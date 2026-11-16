@@ -96,9 +96,12 @@ Asked before implementation. Answer (2026-11-17): **"Keep v3.1 defaults as appro
 
 ## 5. Deployment notes (Neon)
 
-1. Neon is at `c5d6e7f8a9b0`. Migration `d6e7f8a9b0c1` was **never applied** there, so the structure-only version is the first one Neon will get.
-2. After `alembic upgrade head`, the Admin pages show "Not configured" everywhere. To load the approved initial setup:
-   `python -m scripts.setup_admin_defaults` (review the counts), then `--apply`.
+1. **Correction (2026-11-17, read-only check):** Neon is already at `d6e7f8a9b0c1`. It ran an *earlier* version of that migration, which inserted the v3.1 values (39 permission grants, 5 stages, 9 rules) and had no `roles.description`. These are the approved values, so they stay.
+   - `roles.description` now comes from the new migration **`e7f8a9b0c1d2`**, which uses `ADD COLUMN IF NOT EXISTS`.
+   - It was tested on a database in Neon's state, on one that already had the column, and on a fresh database (upgrade, downgrade, upgrade).
+2. On Neon, run `alembic upgrade head` (applies `e7f8a9b0c1d2` only), then `python -m scripts.setup_admin_defaults` to review the counts, then `--apply`.
+   - On Neon this adds only the 7 role descriptions; the existing grants, stages and rules are kept.
+   - On a new database, the same commands load the whole approved setup.
 3. **Then the Admin must configure:**
    - discount ceilings and the gross margin floor;
    - SLA / reminder / escalation;

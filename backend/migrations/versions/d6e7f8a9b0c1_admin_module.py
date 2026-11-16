@@ -11,7 +11,7 @@ Phase 2 Admin module. Additive only; no existing row is changed or deleted.
 2. New tables: regions, role_permissions, approval_workflow_stages, admin_settings,
    notification_rules, email_logs.
 3. New nullable columns: countries.region_id (Region ADR of a country) and approvals.stage_code.
-4. roles.description (nullable): role descriptions, entered by the Admin or the approved setup.
+   (roles.description is added by the next migration, e7f8a9b0c1d2.)
 
 No business rows are inserted (no permission grants, approval stages or notification rules): the
 approved v3.1 initial setup is applied deliberately with `python -m scripts.setup_admin_defaults
@@ -163,11 +163,8 @@ def upgrade() -> None:
     op.create_index("ix_countries_region_id", "countries", ["region_id"])
     op.add_column("approvals", sa.Column("stage_code", sa.String(50), nullable=True))
 
-    op.add_column("roles", sa.Column("description", sa.String(255), nullable=True))
-
 
 def downgrade() -> None:
-    op.drop_column("roles", "description")
     op.drop_column("approvals", "stage_code")
     op.drop_index("ix_countries_region_id", table_name="countries")
     op.drop_constraint("fk_countries_region_id_regions", "countries", type_="foreignkey")
