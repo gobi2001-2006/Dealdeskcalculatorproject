@@ -176,6 +176,13 @@ class Country(Base):
         Date,
         nullable=True,
     )
+    # Phase 2 (Admin): Region (ADR) of the country, used to route regional Business Head approvals.
+    region_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("regions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -189,6 +196,13 @@ class Country(Base):
     )
 
     # Relationships
+    region_ref: Mapped[Optional["Region"]] = relationship("Region")  # noqa: F821
+
+    @property
+    def region(self) -> Optional[str]:
+        """Region (ADR) name, read by the approval workflow (None when not assigned)."""
+        return self.region_ref.name if self.region_ref is not None else None
+
     currency: Mapped["Currency"] = relationship(
         "Currency",
         back_populates="countries",

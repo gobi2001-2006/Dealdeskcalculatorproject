@@ -364,8 +364,8 @@ def evaluate_proposal_readiness(proposal_id: int, db: Session) -> Dict[str, Any]
     elif proposal.deal and getattr(proposal.deal, "region", None):
         region = proposal.deal.region
 
-    currency_code = proposal.currency.code if proposal.currency else "USD"
-    currency_symbol = proposal.currency.symbol if proposal.currency else "$"
+    currency_code = proposal.currency.code if proposal.currency else None
+    currency_symbol = proposal.currency.symbol if proposal.currency else None
 
     # 2. Checklist checks
     # Item 1: Deal Associated
@@ -468,7 +468,7 @@ def evaluate_proposal_readiness(proposal_id: int, db: Session) -> Dict[str, Any]
     gross_total = 0.0
     annual_total = 0.0
     overall_discount = 0.0
-    gross_margin = 0.0
+    gross_margin: Optional[float] = None  # only a margin the engine calculated is ever used
 
     if latest_snapshot and latest_snapshot.snapshot_payload:
         snapshot_ready = True
@@ -491,11 +491,10 @@ def evaluate_proposal_readiness(proposal_id: int, db: Session) -> Dict[str, Any]
         else:
             overall_discount = float(payload.get("overall_discount_pct") or 0.0)
 
-        gross_margin = float(
-            payload.get("effective_gross_margin_pct")
-            or payload.get("gross_margin_pct")
-            or 65.0
-        )
+        margin = payload.get("effective_gross_margin_pct")
+        if margin is None:
+            margin = payload.get("gross_margin_pct")
+        gross_margin = float(margin) if margin is not None else None
 
     # Max line discount
     max_line_discount = 0.0
@@ -503,47 +502,44 @@ def evaluate_proposal_readiness(proposal_id: int, db: Session) -> Dict[str, Any]
         if item.discount_pct and float(item.discount_pct) > max_line_discount:
             max_line_discount = float(item.discount_pct)
 
-    # 4. Read DB Configured Thresholds
-    today = date.today()
-    configured_thresholds = db.execute(
-        select(ApprovalThreshold).where(
-            ApprovalThreshold.status == "active",
-            ApprovalThreshold.valid_from <= today,
-            or_(ApprovalThreshold.valid_to.is_(None), ApprovalThreshold.valid_to >= today),
-        )
-    ).scalars().all()
+    # 4. Ceilings from Admin -> Approval Workflow (approval_thresholds). Nothing is assumed when a
+    #    ceiling is missing: it is reported as not configured and submission is blocked.
+    ceilings = _discount_policy_values(db)
+    line_ceiling = ceilings["line"]
+    overall_ceiling = ceilings["proposal"]
+    gm_floor = ceilings["gm_floor"]
+    stage_roles = _stage_role_names(db)
+    line_approver_role = stage_roles.get("commercial_line")
+    overall_approver_role = stage_roles.get("commercial_proposal")
+    gm_approver_role = ceilings["gm_floor_role"]
 
-    # Determine ceilings from DB or baseline fallback
-    line_thresholds = [t for t in configured_thresholds if t.threshold_type == "line_discount"]
-    overall_thresholds = [t for t in configured_thresholds if t.threshold_type == "overall_discount"]
-    gm_thresholds = [t for t in configured_thresholds if t.threshold_type == "gm_floor"]
+    not_configured = []
+    if line_ceiling is None:
+        not_configured.append("Line-level discount ceiling")
+    if overall_ceiling is None:
+        not_configured.append("Proposal-level discount ceiling")
 
-    line_ceiling = float(min(t.value_pct for t in line_thresholds)) if line_thresholds else 15.0
-    overall_ceiling = float(min(t.value_pct for t in overall_thresholds)) if overall_thresholds else 10.0
-    gm_floor = float(max(t.value_pct for t in gm_thresholds)) if gm_thresholds else 50.0
+    line_breached = line_ceiling is not None and max_line_discount > line_ceiling
+    overall_breached = overall_ceiling is not None and overall_discount > overall_ceiling
+    gm_breached = (
+        gm_floor is not None and gross_margin is not None and snapshot_ready and net_total > 0 and gross_margin < gm_floor
+    )
 
-    line_approver_role = (
-        line_thresholds[0].approver_role.name if line_thresholds and line_thresholds[0].approver_role else "Pricing Desk"
-    )
-    overall_approver_role = (
-        overall_thresholds[0].approver_role.name if overall_thresholds and overall_thresholds[0].approver_role else "Pricing Desk"
-    )
-    gm_approver_role = (
-        gm_thresholds[0].approver_role.name if gm_thresholds and gm_thresholds[0].approver_role else "Business Head"
-    )
+    def _needs(role: Optional[str]) -> str:
+        return f" (Requires {role} approval)" if role else ""
 
     breaches_list = []
-    if max_line_discount > line_ceiling:
+    if line_breached:
         breaches_list.append(
-            f"Line item discount of {max_line_discount:.1f}% exceeds policy ceiling of {line_ceiling:.1f}% (Requires {line_approver_role} approval)"
+            f"Line item discount of {max_line_discount:.1f}% exceeds policy ceiling of {line_ceiling:.1f}%{_needs(line_approver_role)}"
         )
-    if overall_discount > overall_ceiling:
+    if overall_breached:
         breaches_list.append(
-            f"Overall proposal discount of {overall_discount:.1f}% exceeds policy ceiling of {overall_ceiling:.1f}% (Requires {overall_approver_role} approval)"
+            f"Overall proposal discount of {overall_discount:.1f}% exceeds policy ceiling of {overall_ceiling:.1f}%{_needs(overall_approver_role)}"
         )
-    if snapshot_ready and net_total > 0 and gross_margin < gm_floor:
+    if gm_breached:
         breaches_list.append(
-            f"Gross Margin of {gross_margin:.1f}% is below policy threshold floor of {gm_floor:.1f}% (Requires {gm_approver_role} approval)"
+            f"Gross Margin of {gross_margin:.1f}% is below policy threshold floor of {gm_floor:.1f}%{_needs(gm_approver_role)}"
         )
 
     breaches_count = len(breaches_list)
@@ -567,25 +563,29 @@ def evaluate_proposal_readiness(proposal_id: int, db: Session) -> Dict[str, Any]
             "policy_name": "Line-Level Discount Policy",
             "actual_pct": max_line_discount,
             "ceiling_pct": line_ceiling,
-            "is_breached": max_line_discount > line_ceiling,
+            "configured": line_ceiling is not None,
+            "is_breached": line_breached,
             "required_role": line_approver_role,
         },
         "proposal_level": {
             "policy_name": "Proposal-Level Discount Policy",
             "actual_pct": overall_discount,
             "ceiling_pct": overall_ceiling,
-            "is_breached": overall_discount > overall_ceiling,
+            "configured": overall_ceiling is not None,
+            "is_breached": overall_breached,
             "required_role": overall_approver_role,
         },
         "gm_floor": {
             "policy_name": "Gross Margin Floor Policy",
             "actual_pct": gross_margin,
             "floor_pct": gm_floor,
-            "is_breached": gross_margin < gm_floor and (snapshot_ready and net_total > 0),
+            "configured": gm_floor is not None,
+            "is_breached": gm_breached,
             "required_role": gm_approver_role,
         },
         "breaches_count": breaches_count,
         "breaches": breaches_list,
+        "not_configured": not_configured,
     }
 
     # 5. Build dynamic 8-point checklist
@@ -712,202 +712,33 @@ def evaluate_proposal_approval_route(proposal_id: int, db: Session) -> Dict[str,
 
     version = get_latest_version(proposal)
 
-    # 1. Existing approval records
-    existing_approvals = {
-        app.assigned_role_id: app
-        for app in db.execute(
-            select(Approval).where(Approval.proposal_version_id == version.id)
-        ).scalars().all()
-    }
+    # Phase 2: when the Admin approval matrix is configured, it drives the route.
+    configured_stages = _active_workflow_stages(db)
+    if configured_stages:
+        return _configured_approval_route(proposal, version, configured_stages, db)
 
-    # 2. Calculation Snapshot metrics
-    latest_snapshot = db.execute(
-        select(CalculationSnapshot)
-        .where(CalculationSnapshot.proposal_version_id == version.id)
-        .order_by(CalculationSnapshot.id.desc())
-    ).scalars().first()
-
-    payload = latest_snapshot.snapshot_payload if latest_snapshot else {}
-    net_total = float(
-        payload.get("total_proposal_contract_reporting_currency")
-        or payload.get("total_proposal_reporting_currency")
-        or 0.0
-    )
-    gross_total = float(
-        payload.get("total_proposal_base_contract_reporting_currency")
-        or payload.get("total_base_contract_reporting")
-        or net_total
-    )
-    if gross_total > 0 and gross_total >= net_total:
-        overall_discount = round(((gross_total - net_total) / gross_total) * 100, 2)
-    else:
-        overall_discount = float(payload.get("overall_discount_pct") or 0.0)
-
-    gross_margin = float(
-        payload.get("effective_gross_margin_pct")
-        or payload.get("gross_margin_pct")
-        or 65.0
-    )
-
-    max_line_discount = 0.0
-    for item in version.line_items:
-        if item.discount_pct and float(item.discount_pct) > max_line_discount:
-            max_line_discount = float(item.discount_pct)
-
-    # 3. Read DB roles & thresholds
-    roles = {r.code: r for r in db.execute(select(Role)).scalars().all()}
-    today = date.today()
-    configured_thresholds = db.execute(
-        select(ApprovalThreshold).where(
-            ApprovalThreshold.status == "active",
-            ApprovalThreshold.valid_from <= today,
-            or_(ApprovalThreshold.valid_to.is_(None), ApprovalThreshold.valid_to >= today),
-        )
-    ).scalars().all()
-
-    line_thresholds = [t for t in configured_thresholds if t.threshold_type == "line_discount"]
-    overall_thresholds = [t for t in configured_thresholds if t.threshold_type == "overall_discount"]
-    gm_thresholds = [t for t in configured_thresholds if t.threshold_type == "gm_floor"]
-
-    line_ceiling = float(min(t.value_pct for t in line_thresholds)) if line_thresholds else 15.0
-    overall_ceiling = float(min(t.value_pct for t in overall_thresholds)) if overall_thresholds else 10.0
-    gm_floor = float(max(t.value_pct for t in gm_thresholds)) if gm_thresholds else 50.0
-
-    # Primary region
-    region = "Global"
-    if proposal.countries:
-        primary_c = next((c for c in proposal.countries if c.is_primary_deployment), proposal.countries[0])
-        if primary_c and primary_c.country:
-            region = primary_c.country.region or "Global"
-    elif proposal.deal and getattr(proposal.deal, "region", None):
-        region = proposal.deal.region
-
-    stages = []
-
-    # Level 1: Presales / Sales Lead
-    lead_role = roles.get("sales_lead") or roles.get("presales") or roles.get("admin")
-    if lead_role:
-        existing = existing_approvals.get(lead_role.id)
-        assigned_u = _find_assigned_user_for_role(lead_role.id, region, db)
-        assigned_name = (
-            assigned_u.full_name
-            if assigned_u
-            else (proposal.created_by_user.full_name if proposal.created_by_user else "Sales Lead")
-        )
-        stages.append({
-            "stage_level": 1,
-            "role_id": lead_role.id,
-            "role_code": lead_role.code,
-            "role_name": lead_role.name,
-            "assigned_user_name": assigned_name,
-            "region": region,
-            "reason": "Standard Commercial & Technical Review Gate",
-            "is_required": True,
-            "status": existing.status if existing else ("pending" if version.status == "under_review" else "pending_submission"),
-            "decision_notes": existing.decision_notes if existing else None,
-            "decided_at": existing.decided_at.isoformat() if existing and existing.decided_at else None,
-        })
-
-    # Level 2: Pricing Desk
-    pd_role = roles.get("pricing_desk")
-    if pd_role:
-        pd_required = overall_discount > overall_ceiling or max_line_discount > line_ceiling or len(configured_thresholds) > 0
-        existing = existing_approvals.get(pd_role.id)
-        assigned_u = _find_assigned_user_for_role(pd_role.id, None, db)
-        stages.append({
-            "stage_level": 2,
-            "role_id": pd_role.id,
-            "role_code": pd_role.code,
-            "role_name": pd_role.name,
-            "assigned_user_name": assigned_u.full_name if assigned_u else "Pricing Desk Analyst",
-            "region": "Global",
-            "reason": (
-                f"Discount Review (Overall: {overall_discount:.1f}%, Max Line: {max_line_discount:.1f}%)"
-                if pd_required
-                else "Discounts within standard policy limits"
-            ),
-            "is_required": pd_required,
-            "status": (
-                existing.status
-                if existing
-                else (
-                    "pending"
-                    if pd_required and version.status == "under_review"
-                    else "not_required"
-                    if not pd_required
-                    else "pending_submission"
-                )
-            ),
-            "decision_notes": existing.decision_notes if existing else None,
-            "decided_at": existing.decided_at.isoformat() if existing and existing.decided_at else None,
-        })
-
-    # Level 3: Business Head (Regional Governance)
-    bh_role = roles.get("business_head")
-    if bh_role:
-        bh_required = overall_discount > 15.0 or gross_margin < gm_floor or True  # Standard regional oversight
-        existing = existing_approvals.get(bh_role.id)
-        assigned_u = _find_assigned_user_for_role(bh_role.id, region, db)
-        stages.append({
-            "stage_level": 3,
-            "role_id": bh_role.id,
-            "role_code": bh_role.code,
-            "role_name": f"Business Head ({region})",
-            "assigned_user_name": assigned_u.full_name if assigned_u else f"Regional Business Head ({region})",
-            "region": region,
-            "reason": f"Regional Business Head Signoff for {region} territory",
-            "is_required": bh_required,
-            "status": (
-                existing.status
-                if existing
-                else ("pending" if version.status == "under_review" else "pending_submission")
-            ),
-            "decision_notes": existing.decision_notes if existing else None,
-            "decided_at": existing.decided_at.isoformat() if existing and existing.decided_at else None,
-        })
-
-    # Level 4: Chief Financial Officer (CFO)
-    cfo_role = roles.get("cfo")
-    if cfo_role:
-        cfo_required = overall_discount > 25.0 or gross_margin < 35.0
-        existing = existing_approvals.get(cfo_role.id)
-        assigned_u = _find_assigned_user_for_role(cfo_role.id, None, db)
-        stages.append({
-            "stage_level": 4,
-            "role_id": cfo_role.id,
-            "role_code": cfo_role.code,
-            "role_name": cfo_role.name,
-            "assigned_user_name": assigned_u.full_name if assigned_u else "Chief Financial Officer",
-            "region": "Global",
-            "reason": (
-                f"Executive Margin & Discount Exception (Overall: {overall_discount:.1f}%, GM: {gross_margin:.1f}%)"
-                if cfo_required
-                else "Standard margins - CFO review not triggered"
-            ),
-            "is_required": cfo_required,
-            "status": (
-                existing.status
-                if existing
-                else (
-                    "pending"
-                    if cfo_required and version.status == "under_review"
-                    else "not_required"
-                    if not cfo_required
-                    else "pending_submission"
-                )
-            ),
-            "decision_notes": existing.decision_notes if existing else None,
-            "decided_at": existing.decided_at.isoformat() if existing and existing.decided_at else None,
-        })
-
+    # No approval stages configured: there is no route to follow. Nothing is invented; the
+    # Admin configures the stages (Admin -> Approval Workflow) and submission stays blocked.
+    metrics = _route_metrics(proposal, version, db)
     return {
         "proposal_id": proposal.id,
         "proposal_code": proposal.code,
         "proposal_version_id": version.id,
-        "overall_discount_pct": overall_discount,
-        "max_line_discount_pct": max_line_discount,
-        "gross_margin_pct": gross_margin,
-        "approval_stages": stages,
+        "overall_discount_pct": metrics["effective_discount"],
+        "max_line_discount_pct": metrics["max_line_discount"],
+        "gross_margin_pct": None,
+        "route_source": "not_configured",
+        "net_total": metrics["net_total"],
+        "currency": metrics["currency"],
+        "region": None,
+        "ceilings": {"line_pct": metrics["ceilings"]["line"], "proposal_pct": metrics["ceilings"]["proposal"],
+                     "gm_floor_pct": metrics["ceilings"]["gm_floor"],
+                     "test_effective_discount": metrics["test_effective_discount"]},
+        "line_breaches": metrics["line_breaches"],
+        "proposal_breaches": metrics["proposal_breaches"],
+        "configuration_issues": ["No approval stages are configured (Admin → Approval Workflow)."]
+        + metrics["configuration_issues"],
+        "approval_stages": [],
     }
 
 
@@ -929,8 +760,12 @@ def submit_proposal_for_approval(
     proposal = get_proposal(db=db, proposal_id=proposal_id)
     version = get_latest_version(proposal)
 
-    # 2. Compute dynamic route
+    # 2. Compute dynamic route (it must be fully configured: stages and discount ceilings)
     route = evaluate_proposal_approval_route(proposal_id=proposal_id, db=db)
+    if route.get("configuration_issues"):
+        raise ProposalWorkflowError(
+            "The approval workflow is not fully configured: " + " ".join(route["configuration_issues"])
+        )
 
     # 3. Transition statuses
     proposal.status = "submitted"
@@ -945,7 +780,33 @@ def submit_proposal_for_approval(
         ).scalars().all()
     }
 
+    # Configured route: a (re)submission restarts the route, so earlier stage decisions of this
+    # version are cancelled (kept for history) and every required stage is approved again.
+    if any(s.get("stage_code") for s in route["approval_stages"]):
+        for old in db.execute(
+            select(Approval).where(
+                Approval.proposal_version_id == version.id,
+                Approval.stage_code.isnot(None),
+                Approval.status != "cancelled",
+            )
+        ).scalars().all():
+            old.status = "cancelled"
+        db.flush()
+    existing_stage_codes: set = set()
+
     for stage in route["approval_stages"]:
+        stage_code = stage.get("stage_code")
+        if stage_code:
+            # Phase 2 configured route: one approval per stage (several stages may share a role).
+            if stage["is_required"] and stage_code not in existing_stage_codes:
+                db.add(Approval(
+                    proposal_version_id=version.id,
+                    assigned_role_id=stage["role_id"],
+                    stage_code=stage_code,
+                    status="pending",
+                    decision_notes=f"Triggered by rule: {stage['reason']}",
+                ))
+            continue
         if stage["is_required"] and stage["role_id"] not in existing_role_ids:
             approval_rec = Approval(
                 proposal_version_id=version.id,
@@ -970,6 +831,8 @@ def submit_proposal_for_approval(
         },
     )
     db.add(audit)
+    db.flush()
+    _notify_submitted(db, proposal, route, acting_user_id)
     db.commit()
 
     return {
@@ -1010,6 +873,18 @@ def decide_proposal_approval(
     if decision not in ("approved", "rejected"):
         raise ProposalWorkflowError(f"Invalid decision '{decision}'. Must be 'approved' or 'rejected'.")
 
+    if approval.stage_code:
+        # Phase 2 configured route: stages are decided in order, once.
+        if approval.status != "pending":
+            raise ProposalWorkflowError(f"This approval is already '{approval.status}'.")
+        blocking = _earlier_open_stage(db, version.id, approval)
+        if blocking is not None:
+            raise ProposalWorkflowError(
+                f"Stage '{blocking.stage_code}' must be decided before '{approval.stage_code}'."
+            )
+        if decision == "rejected" and not (notes or "").strip():
+            raise ProposalWorkflowError("A comment is required when returning a proposal.")
+
     approval.status = decision
     approval.decision_notes = notes
     approval.decided_at = datetime.now(timezone.utc)
@@ -1045,7 +920,8 @@ def decide_proposal_approval(
         all_approvals = db.execute(
             select(Approval).where(Approval.proposal_version_id == version.id)
         ).scalars().all()
-        if all(a.status == "approved" for a in all_approvals):
+        open_or_decided = [a for a in all_approvals if a.status != "cancelled"]
+        if open_or_decided and all(a.status == "approved" for a in open_or_decided):
             proposal.status = "approved"
             version.status = "approved"
             db.add(
@@ -1059,6 +935,8 @@ def decide_proposal_approval(
                 )
             )
 
+    db.flush()
+    _notify_decided(db, proposal, version, approval, decision, notes, acting_user_id)
     db.commit()
 
     return {
@@ -1181,3 +1059,361 @@ def get_proposal_activity(proposal_id: int, db: Session) -> List[Dict[str, Any]]
         })
     return results
 
+
+
+# =============================================================================================
+# Phase 2 — Admin-configured approval route, permission checks and notifications
+# =============================================================================================
+_FINAL_STAGES = ("final_l1", "final_l2_legal", "final_l2_cfo")
+_COMMERCIAL_STAGES = ("commercial_line", "commercial_proposal")
+
+
+def _active_workflow_stages(db: Session) -> list:
+    from app.models.admin import ApprovalWorkflowStage
+
+    return list(
+        db.execute(
+            select(ApprovalWorkflowStage)
+            .where(ApprovalWorkflowStage.is_active.is_(True))
+            .order_by(ApprovalWorkflowStage.sort_order, ApprovalWorkflowStage.id)
+        ).scalars().all()
+    )
+
+
+def _line_label(item: ProposalLineItem) -> str:
+    if item.pack_version is not None and getattr(item.pack_version, "pack", None) is not None:
+        return item.pack_version.pack.name
+    if item.feature is not None:
+        return item.feature.name
+    return f"Line {item.id}"
+
+
+def _discount_policy_values(db: Session) -> Dict[str, Any]:
+    """Ceilings in effect today, from approval_thresholds. None when the Admin has not configured one."""
+    today = date.today()
+    rows = db.execute(
+        select(ApprovalThreshold).where(
+            ApprovalThreshold.status == "active",
+            ApprovalThreshold.valid_from <= today,
+            or_(ApprovalThreshold.valid_to.is_(None), ApprovalThreshold.valid_to >= today),
+        )
+    ).scalars().all()
+
+    def pick(kind: str, fn) -> Optional[float]:
+        values = [float(t.value_pct) for t in rows if t.threshold_type == kind]
+        return float(fn(values)) if values else None
+
+    gm_rows = [t for t in rows if t.threshold_type == "gm_floor" and t.approver_role is not None]
+    return {
+        "line": pick("line_discount", min),
+        "proposal": pick("overall_discount", min),
+        "gm_floor": pick("gm_floor", max),
+        "gm_floor_role": gm_rows[0].approver_role.name if gm_rows else None,
+    }
+
+
+def _stage_role_names(db: Session) -> Dict[str, str]:
+    """Approver role name of each active configured stage (stage_code -> role name)."""
+    return {s.stage_code: s.approver_role.name for s in _active_workflow_stages(db) if s.approver_role is not None}
+
+
+def _route_metrics(proposal: Proposal, version: ProposalVersion, db: Session) -> Dict[str, Any]:
+    from app.services.admin_service import approval_options
+
+    latest_snapshot = db.execute(
+        select(CalculationSnapshot)
+        .where(CalculationSnapshot.proposal_version_id == version.id)
+        .order_by(CalculationSnapshot.id.desc())
+    ).scalars().first()
+    payload = latest_snapshot.snapshot_payload if latest_snapshot else {}
+    net_total = float(payload.get("total_proposal_contract_reporting_currency") or 0.0)
+    gross_total = float(payload.get("total_proposal_base_contract_reporting_currency") or net_total)
+    effective = round(((gross_total - net_total) / gross_total) * 100, 2) if gross_total > 0 and gross_total >= net_total else 0.0
+
+    ceilings = _discount_policy_values(db)
+    test_effective = bool(approval_options(db).get("test_effective_discount", False))
+    issues = []
+    if ceilings["line"] is None:
+        issues.append("The line-level discount ceiling is not configured (Admin → Approval Workflow).")
+    if ceilings["proposal"] is None:
+        issues.append("The proposal-level discount ceiling is not configured (Admin → Approval Workflow).")
+
+    line_breaches = []
+    max_line = 0.0
+    for item in version.line_items:
+        pct = float(item.discount_pct or 0)
+        max_line = max(max_line, pct)
+        if ceilings["line"] is not None and pct > ceilings["line"]:
+            line_breaches.append({"line_item_id": item.id, "label": _line_label(item), "discount_pct": pct})
+
+    prop_breaches = []
+    if ceilings["proposal"] is not None:
+        for pc in proposal.countries or []:
+            name = pc.country.name if pc.country is not None else f"Country block {pc.id}"
+            for field, label in (("subscription_discount_pct", "subscription"), ("service_discount_pct", "services")):
+                value = getattr(pc, field, None)
+                if value is not None and float(value) > ceilings["proposal"]:
+                    prop_breaches.append({"country": name, "kind": label, "discount_pct": float(value)})
+        if test_effective and effective > ceilings["proposal"]:
+            prop_breaches.append({"country": "Whole proposal", "kind": "effective", "discount_pct": effective})
+
+    return {
+        "ceilings": ceilings,
+        "effective_discount": effective,
+        "max_line_discount": max_line,
+        "line_breaches": line_breaches,
+        "proposal_breaches": prop_breaches,
+        "net_total": net_total,
+        "currency": payload.get("reporting_currency_code") or (proposal.currency.code if proposal.currency else None),
+        "test_effective_discount": test_effective,
+        "configuration_issues": issues,
+    }
+
+
+def _stage_assignee(stage, region: str, db: Session) -> Optional[User]:
+    from app.services.notification_service import regional_business_head
+
+    role = stage.approver_role
+    if stage.routing == "regional" and role.code == "business_head":
+        bh = regional_business_head(db, region)
+        if bh is not None:
+            return bh
+    users = db.execute(
+        select(User).join(UserRole, UserRole.user_id == User.id)
+        .where(UserRole.role_id == role.id, User.is_active.is_(True)).order_by(User.id)
+    ).scalars().all()
+    if stage.routing == "regional" and region:
+        for u in users:
+            if u.region and u.region.strip().lower() == region.strip().lower():
+                return u
+        return None
+    return users[0] if users else None
+
+
+def _configured_approval_route(proposal: Proposal, version: ProposalVersion, stages: list, db: Session) -> Dict[str, Any]:
+    from app.services.notification_service import proposal_region
+
+    region = proposal_region(proposal)
+    metrics = _route_metrics(proposal, version, db)
+    ceilings = metrics["ceilings"]
+
+    approvals = db.execute(
+        select(Approval).where(Approval.proposal_version_id == version.id).order_by(Approval.id)
+    ).scalars().all()
+    by_stage: Dict[str, Approval] = {}
+    for a in approvals:
+        if a.stage_code and a.status != "cancelled":
+            by_stage[a.stage_code] = a
+
+    result_stages = []
+    for level, stage in enumerate(stages, start=1):
+        code = stage.stage_code
+        if code == "commercial_line" and ceilings["line"] is None:
+            required, reason = True, "Line-level ceiling not configured"
+        elif code == "commercial_line":
+            required = bool(metrics["line_breaches"])
+            reason = (
+                f"{len(metrics['line_breaches'])} line(s) above the {ceilings['line']:g}% line ceiling"
+                if required else f"No line above the {ceilings['line']:g}% line ceiling"
+            )
+        elif code == "commercial_proposal" and ceilings["proposal"] is None:
+            required, reason = True, "Proposal-level ceiling not configured"
+        elif code == "commercial_proposal":
+            required = bool(metrics["proposal_breaches"])
+            reason = (
+                f"Overall discount above the {ceilings['proposal']:g}% proposal ceiling"
+                if required else f"Overall discounts within the {ceilings['proposal']:g}% proposal ceiling"
+            )
+        else:
+            required = True
+            reason = stage.condition_text or stage.label
+
+        existing = by_stage.get(code)
+        assignee = _stage_assignee(stage, region, db)
+        role_label = stage.approver_role.name
+        if existing is not None:
+            stage_status = existing.status
+        elif not required:
+            stage_status = "not_required"
+        elif version.status == "under_review":
+            stage_status = "pending"
+        else:
+            stage_status = "pending_submission"
+        result_stages.append({
+            "stage_level": level,
+            "stage_code": code,
+            "stage_label": f"{stage.label}{' · ' + stage.sub_label if stage.sub_label else ''}",
+            "approval_id": existing.id if existing is not None else None,
+            "role_id": stage.approver_role_id,
+            "role_code": stage.approver_role.code,
+            "role_name": f"{role_label} ({region})" if stage.routing == "regional" else role_label,
+            "assigned_user_name": assignee.full_name if assignee else f"Unassigned {role_label}"
+                                  + (f" ({region})" if stage.routing == "regional" else ""),
+            "assigned_user_id": assignee.id if assignee else None,
+            "region": region if stage.routing == "regional" else "Global",
+            "routing": stage.routing,
+            "reason": reason,
+            "is_required": required,
+            "status": stage_status,
+            "decision_notes": existing.decision_notes if existing else None,
+            "decided_at": existing.decided_at.isoformat() if existing and existing.decided_at else None,
+        })
+
+    return {
+        "proposal_id": proposal.id,
+        "proposal_code": proposal.code,
+        "proposal_version_id": version.id,
+        "overall_discount_pct": metrics["effective_discount"],
+        "max_line_discount_pct": metrics["max_line_discount"],
+        "gross_margin_pct": None,
+        "route_source": "admin_configuration",
+        "net_total": metrics["net_total"],
+        "currency": metrics["currency"],
+        "region": region,
+        "ceilings": {"line_pct": ceilings["line"], "proposal_pct": ceilings["proposal"],
+                     "gm_floor_pct": ceilings["gm_floor"],
+                     "test_effective_discount": metrics["test_effective_discount"]},
+        "line_breaches": metrics["line_breaches"],
+        "proposal_breaches": metrics["proposal_breaches"],
+        "configuration_issues": metrics["configuration_issues"],
+        "approval_stages": result_stages,
+    }
+
+
+def _stage_order(db: Session) -> Dict[str, int]:
+    return {s.stage_code: i for i, s in enumerate(_active_workflow_stages(db))}
+
+
+def _earlier_open_stage(db: Session, version_id: int, approval: Approval) -> Optional[Approval]:
+    order = _stage_order(db)
+    mine = order.get(approval.stage_code, 0)
+    rows = db.execute(
+        select(Approval).where(
+            Approval.proposal_version_id == version_id,
+            Approval.stage_code.isnot(None),
+            Approval.status == "pending",
+            Approval.id != approval.id,
+        )
+    ).scalars().all()
+    earlier = [a for a in rows if order.get(a.stage_code, 0) < mine]
+    return min(earlier, key=lambda a: order.get(a.stage_code, 0)) if earlier else None
+
+
+def assert_can_submit(proposal_id: int, user_id: int, db: Session) -> None:
+    from app.services.permission_service import assert_user_permission
+
+    assert_user_permission(db, user_id, "proposal.submit")
+
+
+def assert_can_decide(proposal_id: int, approval_id: int, user_id: int, db: Session) -> None:
+    """The acting user needs the stage's approval permission and, for regional stages, the proposal's region."""
+    from app.models.admin import ApprovalWorkflowStage
+    from app.services.notification_service import proposal_region
+    from app.services.permission_service import (
+        STAGE_PERMISSION,
+        PermissionDenied,
+        assert_user_permission,
+        user_role_codes,
+    )
+
+    approval = db.get(Approval, approval_id)
+    if approval is None:
+        return  # the decision call reports "not found"
+    if approval.stage_code:
+        assert_user_permission(db, user_id, STAGE_PERMISSION.get(approval.stage_code, "approval.final_l1"))
+        stage = db.execute(
+            select(ApprovalWorkflowStage).where(ApprovalWorkflowStage.stage_code == approval.stage_code)
+        ).scalars().first()
+        if stage is not None and stage.routing == "regional":
+            user = db.get(User, user_id)
+            proposal = get_proposal(db=db, proposal_id=proposal_id)
+            region = proposal_region(proposal) if proposal else None
+            user_region = (user.region or "").strip().lower() if user else ""
+            if user_region not in ("", "global") and region and user_region != region.strip().lower():
+                raise PermissionDenied(f"This approval belongs to region {region}; your region is {user.region}.")
+    else:
+        # Approvals created before Phase 2: the user must hold the assigned role.
+        role = db.get(Role, approval.assigned_role_id)
+        if role is not None and role.code not in user_role_codes(db, user_id):
+            raise PermissionDenied(f"Only a user with the {role.name} role can decide this approval.")
+
+
+def _fmt_money(value: float, currency: Optional[str]) -> str:
+    return f"{currency} {value:,.2f}" if currency else f"{value:,.2f}"
+
+
+def route_merge_fields(route: Dict[str, Any], actor_name: str) -> Dict[str, str]:
+    """Email merge fields taken from an approval route (also used by the Admin template preview)."""
+    ceilings = route.get("ceilings") or {}
+
+    def pct(value: Any) -> str:
+        return f"{float(value):g}" if value is not None else ""
+
+    return {
+        "actor": actor_name,
+        "value": _fmt_money(float(route.get("net_total") or 0), route.get("currency")) if route.get("net_total") else "",
+        "eff_disc": pct(route.get("overall_discount_pct") or 0),
+        "threshold_line": pct(ceilings.get("line_pct")),
+        "threshold_prop": pct(ceilings.get("proposal_pct")),
+        "breach_lines": "\n".join(
+            f"• {b['label']} — {b['discount_pct']:g}%" for b in route.get("line_breaches", [])
+        ) or "(none)",
+        "breach_prop": "\n".join(
+            f"• {b['country']} {b['kind']} — {b['discount_pct']:g}%" for b in route.get("proposal_breaches", [])
+        ) or "(none)",
+    }
+
+
+def _notify_submitted(db: Session, proposal: Proposal, route: Dict[str, Any], acting_user_id: Optional[int]) -> None:
+    from app.services.notification_service import dispatch
+
+    actor = db.get(User, acting_user_id) if acting_user_id else None
+    stages = [s for s in route.get("approval_stages", []) if s.get("is_required")]
+    base = route_merge_fields(route, actor.full_name if actor else "")
+    if not any(s.get("stage_code") for s in stages):
+        return  # legacy route: no Phase 2 notifications
+    if route.get("line_breaches"):
+        dispatch(db, "line_discount_breach", proposal, base)
+    if route.get("proposal_breaches"):
+        dispatch(db, "proposal_discount_breach", proposal, base)
+    commercial = [s for s in stages if s.get("stage_code") in _COMMERCIAL_STAGES]
+    if commercial:
+        dispatch(db, "commercial_submitted", proposal, {**base, "stage": commercial[0]["stage_label"]})
+    else:
+        first_final = next((s for s in stages if s.get("stage_code") == "final_l1"), None)
+        if first_final:
+            dispatch(db, "final_l1_submitted", proposal, {**base, "stage": first_final["stage_label"]})
+
+
+def _notify_decided(db: Session, proposal: Proposal, version: ProposalVersion, approval: Approval,
+                    decision: str, notes: Optional[str], acting_user_id: Optional[int]) -> None:
+    from app.services.notification_service import dispatch
+
+    actor = db.get(User, acting_user_id) if acting_user_id else None
+    labels = {s.stage_code: f"{s.label}{' · ' + s.sub_label if s.sub_label else ''}" for s in _active_workflow_stages(db)}
+    base = {"actor": actor.full_name if actor else "", "decision": decision, "comment": notes or "",
+            "stage": labels.get(approval.stage_code or "", "")}
+
+    if decision == "rejected":
+        dispatch(db, "proposal_returned", proposal, base)
+        return
+    if not approval.stage_code:
+        if proposal.status == "approved":
+            dispatch(db, "final_completed", proposal, base)
+        return
+
+    open_rows = db.execute(
+        select(Approval).where(Approval.proposal_version_id == version.id, Approval.status == "pending",
+                               Approval.stage_code.isnot(None))
+    ).scalars().all()
+    order = _stage_order(db)
+    next_row = min(open_rows, key=lambda a: order.get(a.stage_code, 99)) if open_rows else None
+
+    if approval.stage_code in _COMMERCIAL_STAGES:
+        dispatch(db, "commercial_decision", proposal, base)
+        if next_row is not None and next_row.stage_code == "final_l1":
+            dispatch(db, "final_l1_submitted", proposal, {**base, "stage": labels.get("final_l1", "")})
+    elif next_row is not None and next_row.stage_code in ("final_l2_legal", "final_l2_cfo"):
+        dispatch(db, "final_l2", proposal, {**base, "stage": labels.get(next_row.stage_code, "")})
+    if proposal.status == "approved":
+        dispatch(db, "final_completed", proposal, base)

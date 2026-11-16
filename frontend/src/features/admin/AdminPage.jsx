@@ -1,100 +1,104 @@
-import { Settings, Shield, Sliders, Database } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Users, KeyRound, GitBranch, Mail } from 'lucide-react'
 import { CatalogueTopNav } from '../catalogue/CatalogueTopNav'
+import { adminApi, adminErrorMessage } from '../../api/adminApi'
+import { UsersTab } from './UsersTab'
+import { RolesPermissionsTab } from './RolesPermissionsTab'
+import { ApprovalWorkflowTab } from './ApprovalWorkflowTab'
+import { EmailNotificationsTab } from './EmailNotificationsTab'
 
+const TABS = [
+  { key: 'users', label: 'Users', icon: Users, permission: 'admin.users' },
+  { key: 'roles', label: 'Roles & Permissions', icon: KeyRound, permission: 'admin.roles' },
+  { key: 'workflow', label: 'Approval Workflow', icon: GitBranch, permission: 'admin.workflow' },
+  { key: 'notifications', label: 'Email Notifications', icon: Mail, permission: 'admin.notifications' },
+]
+
+/**
+ * Admin module (Phase 2): Users, Roles & Permissions, Approval Workflow, Email Notifications.
+ * The tab is kept in the URL (?tab=...). Access is enforced by the backend; the page only hides
+ * tabs the acting user cannot use.
+ */
 export function AdminPage() {
+  const [params, setParams] = useSearchParams()
+  const active = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'users'
+  const [me, setMe] = useState(null)
+  const [meta, setMeta] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    Promise.all([adminApi.me(), adminApi.meta()])
+      .then(([m, mt]) => {
+        if (!alive) return
+        setMe(m)
+        setMeta(mt)
+      })
+      .catch((e) => alive && setError(adminErrorMessage(e, 'Could not load the Admin module.')))
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const can = (perm) => Boolean(me?.bootstrap_mode || me?.permissions?.includes(perm))
+  const visible = TABS.filter((t) => !me || can(t.permission))
+  const current = visible.find((t) => t.key === active) || visible[0]
+
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col text-slate-800 font-sans">
-      {/* 1. Header Navigation */}
+    <div className="min-h-screen bg-[#f4f2ee] flex flex-col text-slate-800 font-sans">
       <CatalogueTopNav activeSection="admin" />
 
-      {/* 2. Page Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        {/* Page Title & Status Strip */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[11px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-slate-200 text-slate-800 font-semibold border border-slate-300">
-                Administration
-              </span>
-              <span className="text-slate-400 text-xs">/</span>
-              <span className="text-xs text-slate-500 font-medium">System Configuration</span>
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <Settings className="w-6 h-6 text-slate-700" aria-hidden="true" />
-              Administration & System Settings
-            </h1>
-            <p className="text-sm text-slate-600 mt-1">
-              Manage organization parameters, integration settings, audit logs, and system preferences.
-            </p>
-          </div>
-        </div>
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2 flex items-center gap-2 overflow-x-auto" role="tablist" aria-label="Admin sections">
+        {visible.map((tab) => {
+          const Icon = tab.icon
+          const isActive = current?.key === tab.key
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setParams({ tab: tab.key })}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-medium whitespace-nowrap transition-colors border ${
+                isActive
+                  ? 'bg-orange-50 text-orange-800 border-orange-200 font-semibold'
+                  : 'text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <Icon className="w-4 h-4" aria-hidden="true" />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
 
-        {/* Informational Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200">
-                <Shield className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                Configured
-              </span>
-            </div>
-            <h3 className="text-sm font-bold text-slate-900 mb-1">Access Control</h3>
-            <p className="text-xs text-slate-600">
-              User roles, permission scopes, and authentication policies for commercial desk analysts.
-            </p>
+      <main className="flex-1 w-full max-w-[1600px] mx-auto p-4 sm:p-6">
+        {me?.bootstrap_mode && (
+          <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] text-amber-900" role="status">
+            <strong>Set-up mode:</strong> no active user has the Admin role yet, so these screens are open. Assign the
+            Admin role to a user on the Users tab; from then on only users with the matching permission can change
+            these settings.
           </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200">
-                <Sliders className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-mono font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                Defaults
-              </span>
-            </div>
-            <h3 className="text-sm font-bold text-slate-900 mb-1">Commercial Parameters</h3>
-            <p className="text-xs text-slate-600">
-              Default currency preferences, contract duration limits, and standard inflation indexes.
-            </p>
+        )}
+        {error && (
+          <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-800" role="alert">
+            {error}
           </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
-            <div className="flex items-center justify-between mb-3">
-              <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200">
-                <Database className="w-5 h-5" />
-              </div>
-              <span className="text-xs font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                Healthy
-              </span>
-            </div>
-            <h3 className="text-sm font-bold text-slate-900 mb-1">System Health</h3>
-            <p className="text-xs text-slate-600">
-              Database connectivity, cache status, and calculation engine performance metrics.
-            </p>
+        )}
+        {!me && !error && <p className="text-sm text-slate-500">Loading…</p>}
+        {me && visible.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600">
+            Your role has no administration permissions. Ask an Admin to grant them on Roles & Permissions.
           </div>
-        </div>
-
-        {/* Main admin settings panel */}
-        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center max-w-2xl mx-auto shadow-xs">
-          <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-500 mx-auto mb-3 flex items-center justify-center">
-            <Settings className="w-6 h-6 text-slate-600" />
-          </div>
-          <h2 className="text-lg font-bold text-slate-900 mb-2">Deal Desk Environment Active</h2>
-          <p className="text-xs text-slate-600 max-w-md mx-auto mb-4">
-            System configuration is loaded from environment variables and backend database configuration. Commercial parameters can be reviewed across the Masters section.
-          </p>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            Commercial Engine v2.0
-          </div>
-        </div>
+        )}
+        {me && meta && current?.key === 'users' && <UsersTab meta={meta} me={me} />}
+        {me && meta && current?.key === 'roles' && <RolesPermissionsTab />}
+        {me && meta && current?.key === 'workflow' && <ApprovalWorkflowTab meta={meta} />}
+        {me && meta && current?.key === 'notifications' && <EmailNotificationsTab meta={meta} />}
       </main>
     </div>
   )
 }
 
 export default AdminPage
-

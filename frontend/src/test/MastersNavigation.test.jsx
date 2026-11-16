@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
@@ -86,7 +86,12 @@ function renderMastersApp(initialEntry = '/catalogue') {
 }
 
 describe('Masters Main Navigation & Secondary Tabs', () => {
+  // The app routes sit behind the sign-in guard: these tests run as an identified development user,
+  // independent of the developer's own frontend/.env.local.
+  afterEach(() => vi.unstubAllEnvs())
+
   beforeEach(() => {
+    vi.stubEnv('VITE_DEALDESK_USER_ID', '1')
     vi.clearAllMocks()
     installFakeApi(apiClient, mockBackendRoutes())
   })
@@ -217,7 +222,8 @@ describe('Masters Main Navigation & Secondary Tabs', () => {
 
     // Navigate to Admin
     await user.click(within(topNav).getByRole('link', { name: 'Admin' }))
-    expect(await screen.findByRole('heading', { name: /Administration & System Settings/i, level: 1 })).toBeInTheDocument()
+    // Phase 2: the Admin placeholder was replaced by the Admin module (Users, Roles, Workflow, Notifications).
+    expect(await screen.findByRole('tablist', { name: /Admin sections/i })).toBeInTheDocument()
     topNav = screen.getByRole('navigation', { name: /Catalogue Top Navigation/i })
     expect(within(topNav).getByRole('link', { name: 'Admin' })).toHaveAttribute('aria-current', 'page')
 

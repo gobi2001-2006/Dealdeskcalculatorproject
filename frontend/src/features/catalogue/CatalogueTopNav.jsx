@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck, User } from 'lucide-react'
+import { LogOut, ShieldCheck, User } from 'lucide-react'
 import { useProposal } from '../../context/ProposalContext'
+import { clearSession, currentUser } from '../../auth/session'
+import { logout } from '../../api/authApi'
 
 /**
  * Top navigation with two-tier hierarchy:
@@ -12,6 +14,18 @@ import { useProposal } from '../../context/ProposalContext'
 export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = null, isDemo = false }) {
   // Keep the open proposal when moving between the proposal pages (survives a browser refresh).
   const { clientInfo } = useProposal()
+  const signedIn = currentUser()
+  // Sign out: tell the server (stateless), drop the session, and reload on the login page so no
+  // proposal data stays in memory for the next person.
+  const handleSignOut = async () => {
+    try {
+      await logout()
+    } catch {
+      /* the session is cleared locally either way */
+    }
+    clearSession()
+    window.location.assign('/login')
+  }
   const proposalQuery = clientInfo?.proposalId ? `?proposalId=${clientInfo.proposalId}` : ''
 
   const isMastersSection = [
@@ -214,7 +228,27 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
               <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
                 <User className="w-3.5 h-3.5" aria-hidden="true" />
               </div>
-              <span className="hidden sm:inline font-medium">Commercial Ops</span>
+              {signedIn ? (
+                <>
+                  <span className="hidden sm:flex flex-col leading-tight" data-testid="signed-in-user">
+                    <span className="font-medium text-slate-200">{signedIn.full_name}</span>
+                    {signedIn.role_labels?.length > 0 && (
+                      <span className="text-[10px] text-slate-400">{signedIn.role_labels.join(', ')}</span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSignOut}
+                    className="ml-1 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold text-slate-300 border border-slate-700 hover:bg-slate-800 hover:text-white"
+                    title="Sign out"
+                  >
+                    <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span>Sign out</span>
+                  </button>
+                </>
+              ) : (
+                <span className="hidden sm:inline font-medium">Commercial Ops</span>
+              )}
             </div>
           </div>
         </div>

@@ -941,6 +941,11 @@ class Approval(Base):
         index=True,
         comment="Required approver role",
     )
+    stage_code: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        nullable=True,
+        comment="Approval matrix stage (approval_workflow_stages.stage_code); NULL for pre-Phase-2 rows",
+    )
     decided_by_user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         ForeignKey("users.id", ondelete="RESTRICT"),

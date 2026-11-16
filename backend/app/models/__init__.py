@@ -58,8 +58,23 @@ from app.models.integrations import (
     ProposalClause,
     PublishJob,
 )
+from app.models.admin import (
+    AdminSetting,
+    ApprovalWorkflowStage,
+    EmailLog,
+    NotificationRule,
+    Region,
+    RolePermission,
+)
 
 __all__ = [
+    # Phase 2 — Admin module
+    "AdminSetting",
+    "ApprovalWorkflowStage",
+    "EmailLog",
+    "NotificationRule",
+    "Region",
+    "RolePermission",
     "Base",
     # Wave 1 — Master data (in business flow order)
     "Currency",

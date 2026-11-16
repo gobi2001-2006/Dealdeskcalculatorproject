@@ -1,6 +1,7 @@
 import apiClient from './client'
 import { validateContractYears, yearsToMonths } from '../utils/contractDuration'
 import { resolveRateCard } from './ratesApi'
+import { actingUserId } from '../auth/session'
 
 /**
  * Proposals & commercial calculation API service (FastAPI backend).
@@ -201,10 +202,11 @@ function positiveId(value) {
  * from configuration (VITE_DEALDESK_USER_ID) instead of a hardcoded database ID.
  */
 export function getConfiguredUserId() {
-  const id = positiveId(import.meta.env.VITE_DEALDESK_USER_ID)
+  // The signed-in user; without a sign-in, the development id (VITE_DEALDESK_USER_ID).
+  const id = positiveId(actingUserId())
   if (!id) {
     throw new ProposalInputError([
-      'No acting user is configured. Set VITE_DEALDESK_USER_ID in frontend/.env.local to the id of an existing user, then restart the dev server.',
+      'No acting user: sign in, or (development) set VITE_DEALDESK_USER_ID in frontend/.env.local to the id of an existing user and restart the dev server.',
     ])
   }
   return id

@@ -34,6 +34,11 @@ import {
   listProposals,
 } from '../../api/proposalsApi'
 
+/** A configured percentage, or 'Not configured' when the Admin has not set it (no assumed value). */
+function pctOrNotConfigured(value) {
+  return value === null || value === undefined ? 'Not configured' : `${Number(value).toFixed(1)}%`
+}
+
 export function ProposalReviewSubmitPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -492,11 +497,11 @@ export function ProposalReviewSubmitPage() {
                   value={`${effectiveDiscount.toFixed(1)}%`}
                   subtitle={
                     readiness?.discount_policy?.proposal_level
-                      ? `Policy Ceiling: ${readiness.discount_policy.proposal_level.ceiling_pct.toFixed(1)}%`
+                      ? `Policy Ceiling: ${pctOrNotConfigured(readiness.discount_policy.proposal_level.ceiling_pct)}`
                       : 'Contract Weighted'
                   }
                   icon={TrendingDown}
-                  colorVariant={effectiveDiscount > 10 ? 'orange' : 'slate'}
+                  colorVariant={readiness?.discount_policy?.proposal_level?.is_breached ? 'orange' : 'slate'}
                 />
 
                 <SummaryMetricCard
@@ -678,10 +683,10 @@ export function ProposalReviewSubmitPage() {
                           <div className="flex justify-between">
                             <span className="text-slate-400">Configured Ceiling:</span>
                             <span className="font-mono text-slate-700">
-                              {readiness.discount_policy.line_level.ceiling_pct.toFixed(1)}%
+                              {pctOrNotConfigured(readiness.discount_policy.line_level.ceiling_pct)}
                             </span>
                           </div>
-                          {readiness.discount_policy.line_level.is_breached && (
+                          {readiness.discount_policy.line_level.is_breached && readiness.discount_policy.line_level.required_role && (
                             <div className="pt-1 text-[11px] text-rose-700 font-medium">
                               Requires {readiness.discount_policy.line_level.required_role} approval
                             </div>
@@ -721,10 +726,10 @@ export function ProposalReviewSubmitPage() {
                           <div className="flex justify-between">
                             <span className="text-slate-400">Configured Ceiling:</span>
                             <span className="font-mono text-slate-700">
-                              {readiness.discount_policy.proposal_level.ceiling_pct.toFixed(1)}%
+                              {pctOrNotConfigured(readiness.discount_policy.proposal_level.ceiling_pct)}
                             </span>
                           </div>
-                          {readiness.discount_policy.proposal_level.is_breached && (
+                          {readiness.discount_policy.proposal_level.is_breached && readiness.discount_policy.proposal_level.required_role && (
                             <div className="pt-1 text-[11px] text-rose-700 font-medium">
                               Requires {readiness.discount_policy.proposal_level.required_role} approval
                             </div>
@@ -764,6 +769,16 @@ export function ProposalReviewSubmitPage() {
                   <span className="text-[11px] text-slate-500">Policy Engine</span>
                 </div>
 
+                {approvalRoute?.configuration_issues?.length > 0 && (
+                  <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
+                    <div className="font-semibold">Approval workflow not fully configured — submission is blocked</div>
+                    <ul className="mt-1 list-disc pl-5">
+                      {approvalRoute.configuration_issues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {approvalRoute?.approval_stages && (
                   <div className="space-y-4 pt-1">
                     {approvalRoute.approval_stages.map((stage, idx) => {

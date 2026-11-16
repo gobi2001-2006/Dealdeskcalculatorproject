@@ -12,8 +12,11 @@ import { ProposalReviewSubmitPage } from '../features/proposals/ProposalReviewSu
 import { ApprovalsPage } from '../features/approvals/ApprovalsPage'
 import { AdminPage } from '../features/admin/AdminPage'
 import { NotFoundPage } from '../features/notfound/NotFoundPage'
+import { LoginPage } from '../features/auth/LoginPage'
+import { RequireAuth } from '../features/auth/RequireAuth'
 
-export const router = createBrowserRouter([
+// Application pages: all behind the sign-in guard (RequireAuth).
+export const appRoutes = [
   {
     path: '/',
     element: <Navigate to="/catalogue" replace />,
@@ -107,6 +110,11 @@ export const router = createBrowserRouter([
       },
     ],
   },
+]
+
+export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  { element: <RequireAuth />, children: appRoutes },
 ])
 
 export default router

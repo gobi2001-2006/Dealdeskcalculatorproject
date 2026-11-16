@@ -72,9 +72,11 @@ def test_wave6_tables_registered():
 
 
 def test_total_tables_registered():
-    """Total tables across all 6 waves (42) plus pricing_model_uoms must equal exactly 43."""
-    assert len(Base.metadata.tables) == 43, (
-        f"Expected 43 tables, got {len(Base.metadata.tables)}"
+    """Total tables across all 6 waves (42) plus pricing_model_uoms (43) plus the 6 Phase 2 Admin
+    tables (regions, role_permissions, approval_workflow_stages, admin_settings,
+    notification_rules, email_logs) must equal exactly 49."""
+    assert len(Base.metadata.tables) == 49, (
+        f"Expected 49 tables, got {len(Base.metadata.tables)}"
     )
 
 

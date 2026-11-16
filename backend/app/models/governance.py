@@ -54,7 +54,7 @@ class Role(Base):
     __table_args__ = (
         UniqueConstraint("code", name="uq_roles_code"),
         CheckConstraint(
-            "code IN ('admin', 'pricing_desk', 'presales', 'sales_lead', 'business_head', 'cfo')",
+            "code IN ('admin', 'pricing_desk', 'presales', 'sales_lead', 'business_head', 'cfo', 'legal', 'ccxo')",
             name="ck_roles_code_allowed",
         ),
     )
@@ -74,6 +74,11 @@ class Role(Base):
         String(100),
         nullable=False,
         comment="Human-readable role title (e.g. 'Chief Financial Officer')",
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="What the role does (Admin -> Users); entered by the Admin or the approved setup",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

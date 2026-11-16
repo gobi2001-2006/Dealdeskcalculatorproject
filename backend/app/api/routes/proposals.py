@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.services.permission_service import get_acting_user_id
 from app.schemas.proposals import (
     BasePricingRequest,
     CalculationRequest,
@@ -903,16 +904,28 @@ def submit_proposal_endpoint(
     *,
     proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
     payload: dict = {},
+    header_user_id: Optional[int] = Depends(get_acting_user_id),
     db: Session = Depends(get_db),
 ):
-    """POST /api/proposals/{proposal_id}/submit"""
+    """POST /api/proposals/{proposal_id}/submit
+
+    Phase 2: when the X-User-Id header is sent, that user is the actor and must hold
+    'proposal.submit'. Without the header the previous behaviour (payload acting_user_id) is kept.
+    """
+    from app.services.permission_service import PermissionDenied
     from app.services.proposal_workflow_service import (
         ProposalNotReadyError,
         ProposalWorkflowError,
+        assert_can_submit,
         submit_proposal_for_approval,
     )
+    if header_user_id is not None:
+        try:
+            assert_can_submit(proposal_id, header_user_id, db)
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     try:
-        acting_user_id = payload.get("acting_user_id", 1)
+        acting_user_id = header_user_id or payload.get("acting_user_id", 1)
         notes = payload.get("notes", "")
         return submit_proposal_for_approval(
             proposal_id=proposal_id,
@@ -962,17 +975,29 @@ def record_approval_decision_endpoint(
     proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
     approval_id: int = Path(..., gt=0, description="Approval primary key"),
     payload: dict = {},
+    header_user_id: Optional[int] = Depends(get_acting_user_id),
     db: Session = Depends(get_db),
 ):
-    """POST /api/proposals/{proposal_id}/approvals/{approval_id}/decision"""
+    """POST /api/proposals/{proposal_id}/approvals/{approval_id}/decision
+
+    Phase 2: when the X-User-Id header is sent, that user must hold the stage's approval
+    permission (and, for regional stages, belong to the proposal's region).
+    """
+    from app.services.permission_service import PermissionDenied
     from app.services.proposal_workflow_service import (
         ProposalWorkflowError,
+        assert_can_decide,
         decide_proposal_approval,
     )
+    if header_user_id is not None:
+        try:
+            assert_can_decide(proposal_id, approval_id, header_user_id, db)
+        except PermissionDenied as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     try:
         decision = payload.get("decision", "approved")
         notes = payload.get("notes", "")
-        acting_user_id = payload.get("acting_user_id", 1)
+        acting_user_id = header_user_id or payload.get("acting_user_id", 1)
         return decide_proposal_approval(
             proposal_id=proposal_id,
             approval_id=approval_id,
