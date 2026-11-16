@@ -4,15 +4,25 @@ import { Menu, Plus, User } from 'lucide-react'
 const ROUTE_TITLES = {
   '/': 'Product Catalogue',
   '/dashboard': 'Product Catalogue',
+  '/masters': 'Product Catalogue',
+  '/masters/catalogue': 'Product Catalogue',
   '/catalogue': 'Product Catalogue',
   '/packs': 'Pack Builder',
+  '/masters/packs': 'Pack Builder',
   '/rate-cards': 'Rate Card & Masters',
   '/rate-card': 'Rate Card & Masters',
+  '/masters/rate-cards': 'Rate Card & Masters',
+  '/proposals/import': 'Import from HubSpot',
   '/calculator': 'Proposal Calculator',
   '/pricing-discounts': 'Pricing & Discounts',
   '/pricing': 'Pricing & Discounts',
+  '/proposals/content': 'Proposal Content',
   '/proposals': 'Proposal Summary',
   '/proposal-summary': 'Proposal Summary',
+  '/proposals/review': 'Review & Submit',
+  '/proposals/review-submit': 'Review & Submit',
+  '/approvals': 'Approvals & Governance',
+  '/admin': 'Administration',
 }
 
 export function Header({ onMenuClick }) {

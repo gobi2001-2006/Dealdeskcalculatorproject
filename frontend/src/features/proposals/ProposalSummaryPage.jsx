@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Clock,
   AlertCircle,
+  ShieldCheck,
 } from 'lucide-react'
 import { CatalogueTopNav } from '../catalogue/CatalogueTopNav'
 import { SummaryStrip } from '../catalogue/SummaryStrip'
@@ -376,6 +377,15 @@ export function ProposalSummaryPage() {
                     <FileDown className={`w-4 h-4 text-slate-600 ${isExportingPdf ? 'animate-pulse' : ''}`} aria-hidden="true" />
                     <span>{isExportingPdf ? 'Exporting PDF…' : 'Export PDF'}</span>
                   </button>
+
+                  <Link
+                    to={`/proposals/review${effectiveProposalId ? `?proposalId=${effectiveProposalId}` : ''}`}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[40px] text-[13px] font-semibold rounded-lg bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs focus:outline-none focus:ring-2 focus:ring-emerald-200 cursor-pointer"
+                    title="Review completeness and submit proposal for governance approval"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-white" aria-hidden="true" />
+                    <span>Review & Submit</span>
+                  </Link>
 
                   <button
                     type="button"

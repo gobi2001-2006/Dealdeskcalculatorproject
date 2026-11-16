@@ -1015,6 +1015,319 @@ def _replace_placeholder_everywhere(doc: docx.document.Document, old_str: str, n
             _replace_placeholder_in_paragraph_el(p_el, old_str, new_str)
 
 
+def _populate_proposal_content_sections(
+    doc: docx.Document,
+    data: Dict[str, Any],
+    proposal_id: int,
+    db: Session,
+) -> None:
+    """Inject user-edited proposal content sections, tables, and attachments into DOCX template."""
+    from app.services.proposal_workflow_service import get_proposal_content_sections
+
+    try:
+        content_info = get_proposal_content_sections(proposal_id=proposal_id, db=db)
+        sections = content_info.get("sections") or {}
+        attachments = content_info.get("attachments") or []
+    except Exception as exc:
+        logger.warning(f"Unable to load content sections for export: {exc}")
+        return
+
+    customer_name = data.get("customer_name") or "Customer"
+    rep_curr = data.get("reporting_currency") or "INR"
+    total_services = float(data.get("total_services") or 0.0)
+
+    def insert_after(
+        target_p: Any,
+        text: str = "",
+        bold: bool = False,
+        space_before: int = 2,
+        space_after: int = 3,
+        font_size: float = 9.5,
+        color_rgb: Optional[RGBColor] = None,
+    ) -> Any:
+        p = doc.add_paragraph("")
+        target_p._element.addnext(p._element)
+        p.paragraph_format.space_before = Pt(space_before)
+        p.paragraph_format.space_after = Pt(space_after)
+        if text:
+            r = p.add_run(text)
+            r.font.name = "Calibri"
+            r.font.bold = bold
+            r.font.size = Pt(font_size)
+            if color_rgb:
+                r.font.color.rgb = color_rgb
+        return p
+
+    def find_p(startswith_text: str) -> Optional[Any]:
+        for p in doc.paragraphs:
+            if p.text.strip().startswith(startswith_text):
+                return p
+        return None
+
+    # 1. Executive Summary
+    exec_c = sections.get("executive_summary")
+    if exec_c:
+        p_exec = find_p("Executive Summary")
+        if p_exec:
+            curr_p = p_exec
+            if isinstance(exec_c, dict):
+                intro = exec_c.get("customer_introduction")
+                if intro:
+                    curr_p = insert_after(curr_p, intro, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+                p_obj = find_p(f"{customer_name}’S Objectives:") or find_p("Objectives:") or curr_p
+                curr_p = p_obj
+                obj = exec_c.get("customer_objectives")
+                if obj:
+                    curr_p = insert_after(curr_p, obj, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+                val_prop = exec_c.get("value_proposition")
+                if val_prop:
+                    curr_p = insert_after(curr_p, "Value Proposition & Strategic Alignment", bold=True, font_size=11.0, color_rgb=RGBColor(11, 21, 40))
+                    curr_p = insert_after(curr_p, val_prop, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+                conc = exec_c.get("conclusion")
+                if conc:
+                    curr_p = insert_after(curr_p, "Executive Conclusion", bold=True, font_size=11.0, color_rgb=RGBColor(11, 21, 40))
+                    curr_p = insert_after(curr_p, conc, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+            elif isinstance(exec_c, str) and exec_c.strip():
+                insert_after(curr_p, exec_c.strip(), font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+    # 2. Scope of Work
+    sow_c = sections.get("scope_of_work")
+    if sow_c:
+        if isinstance(sow_c, dict):
+            lic = sow_c.get("license")
+            if lic:
+                p_lic = find_p("License Scope considered in this proposal:")
+                if p_lic:
+                    insert_after(p_lic, lic, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+            plan = sow_c.get("implementation_plan")
+            p_plan = find_p("Implementation Scope considered in this proposal")
+            if p_plan:
+                curr_p = p_plan
+                if plan:
+                    curr_p = insert_after(curr_p, plan, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+                appr = sow_c.get("implementation_approach")
+                if appr:
+                    curr_p = insert_after(curr_p, "Implementation Approach & Governance:", bold=True, font_size=10.0, color_rgb=RGBColor(11, 21, 40))
+                    curr_p = insert_after(curr_p, appr, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+            # In Scope Table (Table 3)
+            in_scope_text = sow_c.get("in_scope")
+            if in_scope_text and len(doc.tables) > 3:
+                t3 = doc.tables[3]
+                lines = [l.strip().lstrip("-*•1234567890. ") for l in in_scope_text.split("\n") if l.strip()]
+                if lines:
+                    while len(t3.rows) > 1:
+                        t3._element.remove(t3.rows[-1]._element)
+                    for idx, line in enumerate(lines, 1):
+                        r = t3.add_row()
+                        if len(r.cells) >= 2:
+                            r.cells[0].text = str(idx)
+                            r.cells[1].text = line
+
+            # Out of Scope Table (Table 4)
+            out_scope_text = sow_c.get("out_of_scope")
+            if out_scope_text and len(doc.tables) > 4:
+                t4 = doc.tables[4]
+                lines = [l.strip().lstrip("-*•1234567890. ") for l in out_scope_text.split("\n") if l.strip()]
+                if lines:
+                    while len(t4.rows) > 1:
+                        t4._element.remove(t4.rows[-1]._element)
+                    for idx, line in enumerate(lines, 1):
+                        r = t4.add_row()
+                        if len(r.cells) >= 2:
+                            r.cells[0].text = str(idx)
+                            r.cells[1].text = line
+        elif isinstance(sow_c, str) and sow_c.strip():
+            p_lic = find_p("License Scope considered in this proposal:")
+            if p_lic:
+                insert_after(p_lic, sow_c.strip(), font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+    # 3. Customization & Integration (Tables 5 and 6)
+    ci_c = sections.get("customization_integration")
+    if ci_c and isinstance(ci_c, dict):
+        none_req = bool(ci_c.get("none_required"))
+        items = ci_c.get("items") or []
+
+        # Table 5: Customizations
+        if len(doc.tables) > 5:
+            t5 = doc.tables[5]
+            cust_items = [i for i in items if i.get("type") == "Customization"]
+            while len(t5.rows) > 1:
+                t5._element.remove(t5.rows[-1]._element)
+            if none_req or not cust_items:
+                r = t5.add_row()
+                if len(r.cells) >= 5:
+                    r.cells[0].text = "—"
+                    r.cells[1].text = "All Modules"
+                    r.cells[2].text = "Standard"
+                    r.cells[3].text = "No customizations required"
+                    r.cells[4].text = "Standard product features address all defined requirements."
+            else:
+                for idx, item in enumerate(cust_items, 1):
+                    r = t5.add_row()
+                    if len(r.cells) >= 5:
+                        r.cells[0].text = str(idx)
+                        r.cells[1].text = item.get("system") or "Core HCM"
+                        r.cells[2].text = item.get("module") or "General"
+                        r.cells[3].text = item.get("title") or "Custom Workflow"
+                        charge_str = "Chargeable" if item.get("chargeable") else "Non-Chargeable"
+                        effort = item.get("effort_days") or 0
+                        desc = item.get("description") or ""
+                        r.cells[4].text = f"{desc} ({effort} days, {charge_str})".strip()
+
+        # Table 6: Integrations
+        if len(doc.tables) > 6:
+            t6 = doc.tables[6]
+            integ_items = [i for i in items if i.get("type") == "Integration"]
+            while len(t6.rows) > 1:
+                t6._element.remove(t6.rows[-1]._element)
+            if none_req or not integ_items:
+                r = t6.add_row()
+                if len(r.cells) >= 5:
+                    r.cells[0].text = "—"
+                    r.cells[1].text = "All Modules"
+                    r.cells[2].text = "Standard"
+                    r.cells[3].text = "No system integrations required"
+                    r.cells[4].text = "Standard platform connectors and APIs available."
+            else:
+                for idx, item in enumerate(integ_items, 1):
+                    r = t6.add_row()
+                    if len(r.cells) >= 5:
+                        r.cells[0].text = str(idx)
+                        r.cells[1].text = item.get("system") or "External System"
+                        r.cells[2].text = item.get("module") or "API Connector"
+                        r.cells[3].text = item.get("title") or "System Integration"
+                        charge_str = "Chargeable" if item.get("chargeable") else "Non-Chargeable"
+                        effort = item.get("effort_days") or 0
+                        desc = item.get("description") or ""
+                        r.cells[4].text = f"{desc} ({effort} days, {charge_str})".strip()
+
+    # 4. Terms & Conditions
+    tc_c = sections.get("terms_conditions")
+    if tc_c and isinstance(tc_c, dict):
+        comm_tc = tc_c.get("commercial_tc")
+        if comm_tc:
+            p_comm_tc = find_p("T&C for above Commercials:")
+            if p_comm_tc:
+                insert_after(p_comm_tc, comm_tc, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+        # Change Request Rates (Table 7)
+        cr_rates = tc_c.get("change_request_rates") or []
+        if cr_rates and len(doc.tables) > 7:
+            t7 = doc.tables[7]
+            while len(t7.rows) > 1:
+                t7._element.remove(t7.rows[-1]._element)
+            for cr in cr_rates:
+                r = t7.add_row()
+                if len(r.cells) >= 3:
+                    role = cr.get("role") or "Consultant"
+                    rate = float(cr.get("rate_per_day") or 0.0)
+                    curr = cr.get("currency") or rep_curr
+                    r.cells[0].text = role
+                    r.cells[1].text = f"{format_money(rate, curr)} / Day"
+                    r.cells[2].text = f"{format_money(rate * 0.85, curr)} / Day"
+
+        # Payment Milestones Table under 'Payment Terms'
+        milestones = tc_c.get("payment_milestones") or []
+        p_pay = find_p("Payment Terms")
+        if p_pay:
+            curr_p = p_pay
+            if milestones:
+                tbl = doc.add_table(rows=0, cols=3)
+                tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+                _set_table_borders(tbl)
+                curr_p._element.addnext(tbl._element)
+                col_widths = [3.5, 1.5, 2.0]
+                for i, w in enumerate(col_widths):
+                    for cell in tbl.columns[i].cells:
+                        cell.width = Inches(w)
+                _add_styled_row(
+                    tbl,
+                    ["Implementation Milestone / Deliverable", "Fee %", f"Amount ({rep_curr})"],
+                    is_header=True,
+                    aligns=[WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.RIGHT],
+                )
+                for m in milestones:
+                    pct = float(m.get("percentage") or 0.0)
+                    amt = total_services * (pct / 100.0)
+                    _add_styled_row(
+                        tbl,
+                        [m.get("milestone") or "Milestone", f"{pct:g}%", format_money(amt, rep_curr)],
+                        aligns=[WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.RIGHT],
+                    )
+            pay_text = tc_c.get("payment_terms_text")
+            if pay_text:
+                insert_after(p_pay, pay_text, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+        # Proposal Validity & Terms of Proposal
+        p_prop = find_p("Terms of Proposal")
+        if p_prop:
+            curr_p = p_prop
+            val_days = tc_c.get("proposal_validity_days") if tc_c.get("proposal_validity_days") is not None else 0
+            curr_p = insert_after(
+                curr_p,
+                f"Proposal Validity: This commercial proposal and associated software licensing terms are valid for {val_days} calendar days from the date of issuance.",
+                bold=True,
+                font_size=9.5,
+                color_rgb=RGBColor(180, 83, 9),
+            )
+            terms_txt = tc_c.get("terms_of_proposal")
+            if terms_txt:
+                insert_after(curr_p, terms_txt, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+    # 5. Fitment Document (Annexure 1)
+    fit_c = sections.get("fitment_document")
+    p_fit = find_p("Annexure 1 – Product Fitment Document")
+    if p_fit:
+        curr_p = p_fit
+        if fit_c and isinstance(fit_c, dict):
+            fit_text = fit_c.get("fitment_text")
+            if fit_text:
+                curr_p = insert_after(curr_p, fit_text, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+            reqs = fit_c.get("customer_requirements")
+            if reqs:
+                curr_p = insert_after(curr_p, "Customer Specific Requirements Evaluation:", bold=True, font_size=10.0, color_rgb=RGBColor(11, 21, 40))
+                curr_p = insert_after(curr_p, reqs, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+            sol = fit_c.get("solution_fitment")
+            if sol:
+                curr_p = insert_after(curr_p, "Adrenalin Solution Fitment & Gap Analysis:", bold=True, font_size=10.0, color_rgb=RGBColor(11, 21, 40))
+                curr_p = insert_after(curr_p, sol, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+            rem = fit_c.get("remarks")
+            if rem:
+                curr_p = insert_after(curr_p, "Fitment Remarks & Technical Assumptions:", bold=True, font_size=10.0, color_rgb=RGBColor(11, 21, 40))
+                curr_p = insert_after(curr_p, rem, font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+        elif isinstance(fit_c, str) and fit_c.strip():
+            curr_p = insert_after(curr_p, fit_c.strip(), font_size=9.5, color_rgb=RGBColor(51, 65, 85))
+
+        # Insert Attachments table if attachments exist
+        if attachments:
+            curr_p = insert_after(curr_p, "Attached RFP Compliance & Technical Fitment Documentation:", bold=True, font_size=10.0, color_rgb=RGBColor(11, 21, 40))
+            att_tbl = doc.add_table(rows=0, cols=4)
+            att_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            _set_table_borders(att_tbl)
+            curr_p._element.addnext(att_tbl._element)
+            _add_styled_row(
+                att_tbl,
+                ["#", "Attachment Document Name", "File Size (KB)", "Format / Status"],
+                is_header=True,
+                aligns=[WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.CENTER],
+            )
+            for idx, att in enumerate(attachments, 1):
+                size_kb = (att.get("file_size_bytes") or 0) / 1024.0
+                _add_styled_row(
+                    att_tbl,
+                    [str(idx), att.get("file_name") or "Attachment", f"{size_kb:,.1f} KB", att.get("status") or "uploaded"],
+                    aligns=[WD_ALIGN_PARAGRAPH.CENTER, WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.CENTER],
+                )
+
+
 def generate_proposal_docx(
     proposal_id: int,
     db: Session,
@@ -1477,6 +1790,9 @@ def generate_proposal_docx(
         "Note: All commercials indicated above are strictly exclusive of Government Taxes / VAT / GST.",
         bold=True, space_before=4, space_after=10, font_size=9.5, color_rgb=RGBColor(180, 83, 9),
     )
+
+    # Populate Proposal Content narrative, structured tables, and attachments
+    _populate_proposal_content_sections(doc=doc, data=data, proposal_id=proposal_id, db=db)
 
     output_stream = io.BytesIO()
     doc.save(output_stream)

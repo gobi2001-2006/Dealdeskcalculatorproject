@@ -652,3 +652,87 @@ export function discountsFromSnapshot(calcData) {
   })
   return { product_subscription_discounts, product_service_discounts }
 }
+
+/**
+ * Proposal Narrative Content (Step 4)
+ */
+export async function getProposalContent(proposalId) {
+  const response = await apiClient.get(`/proposals/${proposalId}/content`)
+  return response.data
+}
+
+export async function updateProposalContent(proposalId, sections) {
+  const response = await apiClient.put(`/proposals/${proposalId}/content`, { sections })
+  return response.data
+}
+
+/**
+ * Proposal Fitment Attachments (Step 4)
+ */
+export async function uploadProposalAttachment(proposalId, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await apiClient.post(`/proposals/${proposalId}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return response.data
+}
+
+export async function getProposalAttachments(proposalId) {
+  const response = await apiClient.get(`/proposals/${proposalId}/attachments`)
+  return response.data
+}
+
+export async function deleteProposalAttachment(proposalId, documentId) {
+  const response = await apiClient.delete(`/proposals/${proposalId}/attachments/${documentId}`)
+  return response.data
+}
+
+export function getAttachmentDownloadUrl(proposalId, documentId) {
+  return `/api/proposals/${proposalId}/attachments/${documentId}`
+}
+
+/**
+ * Proposal Governance Readiness & Approval Route (Step 6)
+ */
+export async function getProposalReadiness(proposalId) {
+  const response = await apiClient.get(`/proposals/${proposalId}/readiness`)
+  return response.data
+}
+
+export async function getProposalApprovalRoute(proposalId) {
+  const response = await apiClient.get(`/proposals/${proposalId}/approval-route`)
+  return response.data
+}
+
+export async function submitProposalForApproval(proposalId, { actingUserId = 1, notes = '' } = {}) {
+  const response = await apiClient.post(`/proposals/${proposalId}/submit`, {
+    acting_user_id: actingUserId,
+    notes,
+  })
+  return response.data
+}
+
+export async function getProposalActivity(proposalId) {
+  const response = await apiClient.get(`/proposals/${proposalId}/activity`)
+  return response.data
+}
+
+export async function decideProposalApproval(proposalId, approvalId, { decision = 'approved', notes = '', actingUserId = 1 } = {}) {
+  const response = await apiClient.post(`/proposals/${proposalId}/approvals/${approvalId}/decision`, {
+    decision,
+    notes,
+    acting_user_id: actingUserId,
+  })
+  return response.data
+}
+
+export async function recallProposalSubmission(proposalId, { reason = '', actingUserId = 1 } = {}) {
+  const response = await apiClient.post(`/proposals/${proposalId}/recall`, {
+    reason,
+    acting_user_id: actingUserId,
+  })
+  return response.data
+}
+
+

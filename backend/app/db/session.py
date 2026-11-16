@@ -19,6 +19,8 @@ def get_database_url() -> str:
         raise RuntimeError(
             "DATABASE_URL is missing. Please configure it in backend/.env"
         )
+    if "channel_binding=" in url:
+        url = url.replace("&channel_binding=require", "").replace("channel_binding=require&", "").replace("channel_binding=require", "")
     return url
 
 

@@ -6,6 +6,11 @@ import { RateCardPage } from '../features/ratecard/RateCardPage'
 import { CalculatorPage } from '../features/calculator/CalculatorPage'
 import { PricingPage } from '../features/pricing/PricingPage'
 import { ProposalSummaryPage } from '../features/proposals/ProposalSummaryPage'
+import { HubSpotImportPage } from '../features/proposals/HubSpotImportPage'
+import { ProposalContentPage } from '../features/proposals/ProposalContentPage'
+import { ProposalReviewSubmitPage } from '../features/proposals/ProposalReviewSubmitPage'
+import { ApprovalsPage } from '../features/approvals/ApprovalsPage'
+import { AdminPage } from '../features/admin/AdminPage'
 import { NotFoundPage } from '../features/notfound/NotFoundPage'
 
 export const router = createBrowserRouter([
@@ -16,6 +21,22 @@ export const router = createBrowserRouter([
   {
     path: '/dashboard',
     element: <Navigate to="/catalogue" replace />,
+  },
+  {
+    path: '/masters',
+    element: <Navigate to="/catalogue" replace />,
+  },
+  {
+    path: '/masters/catalogue',
+    element: <Navigate to="/catalogue" replace />,
+  },
+  {
+    path: '/masters/packs',
+    element: <Navigate to="/packs" replace />,
+  },
+  {
+    path: '/masters/rate-cards',
+    element: <Navigate to="/rate-cards" replace />,
   },
   {
     path: '/catalogue',
@@ -34,6 +55,10 @@ export const router = createBrowserRouter([
     element: <RateCardPage />,
   },
   {
+    path: '/proposals/import',
+    element: <HubSpotImportPage />,
+  },
+  {
     path: '/calculator',
     element: <CalculatorPage />,
   },
@@ -46,12 +71,32 @@ export const router = createBrowserRouter([
     element: <PricingPage />,
   },
   {
+    path: '/proposals/content',
+    element: <ProposalContentPage />,
+  },
+  {
     path: '/proposals',
     element: <ProposalSummaryPage />,
   },
   {
     path: '/proposal-summary',
     element: <ProposalSummaryPage />,
+  },
+  {
+    path: '/proposals/review',
+    element: <ProposalReviewSubmitPage />,
+  },
+  {
+    path: '/proposals/review-submit',
+    element: <ProposalReviewSubmitPage />,
+  },
+  {
+    path: '/approvals',
+    element: <ApprovalsPage />,
+  },
+  {
+    path: '/admin',
+    element: <AdminPage />,
   },
   {
     element: <AppShell />,

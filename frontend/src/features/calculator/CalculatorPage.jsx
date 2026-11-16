@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Plus,
@@ -248,14 +248,21 @@ export function CalculatorPage() {
     [urlProposalId, clientInfo.proposalId, masters, setClientInfo, setCountryConfigs]
   )
 
+  const reloadedIdRef = useRef(null)
+
   // Load the proposal named in the URL once the masters (needed to map families/currencies) are in.
   useEffect(() => {
     if (masters.isLoading) return
-    if (urlProposalId && String(clientInfo.proposalId) !== String(urlProposalId)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      handleReloadProposal(urlProposalId)
+    if (urlProposalId) {
+      const needsReload =
+        String(clientInfo.proposalId) !== String(urlProposalId) ||
+        (countryConfigs.length === 0 && reloadedIdRef.current !== String(urlProposalId))
+      if (needsReload) {
+        reloadedIdRef.current = String(urlProposalId)
+        handleReloadProposal(urlProposalId)
+      }
     }
-  }, [urlProposalId, handleReloadProposal, clientInfo.proposalId, masters.isLoading])
+  }, [urlProposalId, handleReloadProposal, clientInfo.proposalId, countryConfigs.length, masters.isLoading])
 
   // Handle Client Info Changes
   const handleChangeClientInfo = (field, value) => {

@@ -254,3 +254,24 @@ export async function saveRateCardTarget(payload) {
   const res = await apiClient.put('/rates/rate-cards/target', payload)
   return res.data
 }
+
+/**
+ * Fetch available roles from /masters/roles (or fallback to /rates/service-rates).
+ * Fully database-driven roles for Change Request Rates and service scopes.
+ */
+export async function getMasterRoles() {
+  try {
+    const res = await apiClient.get('/masters/roles')
+    if (Array.isArray(res.data) && res.data.length > 0) return res.data
+  } catch (err) {
+    console.warn('Could not fetch /masters/roles, falling back to service-rates:', err)
+  }
+  try {
+    const sr = await apiClient.get('/rates/service-rates')
+    if (Array.isArray(sr.data)) {
+      const names = [...new Set(sr.data.map((r) => r.role_name).filter(Boolean))]
+      return names.map((name, idx) => ({ id: idx + 1, name }))
+    }
+  } catch {}
+  return []
+}

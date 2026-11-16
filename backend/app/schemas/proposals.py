@@ -358,6 +358,7 @@ class ProposalResponse(ProposalBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    product_family_ids: list[int] = Field(default_factory=list)
 
 
 # =============================================================================

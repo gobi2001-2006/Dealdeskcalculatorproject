@@ -251,6 +251,17 @@ export function deserializeBackendProposal(backendProposal, { masters = {}, late
       }
       return familyMap.get(key)
     }
+
+    // Include imported product families from proposal if this is the primary or only deployment
+    if (c.is_primary_deployment || blocks.length === 1) {
+      const importedFamilyIds = backendProposal.product_family_ids || []
+      importedFamilyIds.forEach((famId) => {
+        if (famId !== null && famId !== undefined) {
+          familyEntry(Number(famId))
+        }
+      })
+    }
+
     // Each line belongs to its own country block (lines without one belong to the primary block).
     const inThisCountry = (line) => lineCountryIdOf(line, backendProposal.countries) === Number(c.country_id)
     lineItems.filter(inThisCountry).forEach((li) => {

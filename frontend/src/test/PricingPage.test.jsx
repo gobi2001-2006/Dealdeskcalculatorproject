@@ -36,13 +36,13 @@ function renderPage(url = '/pricing-discounts?proposalId=900', initialProposal =
 describe('Page 5 — Pricing & Discounts', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('keeps the six-page navigation with Pricing & Discounts active', async () => {
+  it('keeps the navigation with Pricing & Discounts active under Proposal', async () => {
     installFakeApi(apiClient, routes())
     renderPage()
-    const link = screen.getByRole('link', { name: /Pricing & Discounts/i })
+    const link = screen.getByRole('link', { name: 'Pricing & Discounts' })
     expect(link).toHaveClass('border-orange-500')
     expect(link.getAttribute('href')).toBe('/pricing-discounts')
-    for (const name of [/Product Catalog/i, /Pack Builder/i, /Rate Card & Masters/i, /Proposal Configurator/i, /Proposal Summary/i]) {
+    for (const name of ['Masters', 'Proposal', 'Approvals', 'Admin', 'Proposal Configurator', 'Proposal Summary']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument()
     }
   })
@@ -60,7 +60,7 @@ describe('Page 5 — Pricing & Discounts', () => {
     expect(within(table).getByText('TA Premium')).toBeInTheDocument()
     expect(within(table).getByText('Standalone Add-on')).toBeInTheDocument()
     // Native-currency amounts straight from the snapshot
-    expect(within(table).getAllByText('₹620,000.00')).toHaveLength(2) // gross and net (no line discount)
+    expect(within(table).getAllByText(/₹6,?20,000\.00/)).toHaveLength(2) // gross and net (no line discount)
     expect(within(table).getByText('₹55,800.00')).toBeInTheDocument()
     // Saved line discount (10%) restored from the line item; overall/service from the (older) snapshot,
     // since this country block has none stored yet

@@ -287,7 +287,30 @@ def get_proposal(*, db: Session, proposal_id: int) -> Optional[Proposal]:
             selectinload(Proposal.versions).selectinload(ProposalVersion.approvals),
         )
     )
-    return db.execute(stmt).scalar_one_or_none()
+    proposal = db.execute(stmt).scalar_one_or_none()
+    if proposal:
+        try:
+            from app.models.integrations import CrmSyncLog
+            sync_logs = db.execute(
+                select(CrmSyncLog)
+                .where(
+                    CrmSyncLog.crm_provider == "hubspot",
+                    CrmSyncLog.direction == "inbound",
+                    CrmSyncLog.status == "success",
+                )
+                .order_by(CrmSyncLog.id.desc())
+            ).scalars().all()
+            family_ids = []
+            for log in sync_logs:
+                snap = log.payload_snapshot or {}
+                if snap.get("proposal_id") == proposal.id:
+                    family_ids = snap.get("product_family_ids") or []
+                    break
+            setattr(proposal, "product_family_ids", family_ids)
+        except Exception as e:
+            logger.warning(f"Could not load proposal product_family_ids: {e}")
+            setattr(proposal, "product_family_ids", [])
+    return proposal
 
 
 # =============================================================================

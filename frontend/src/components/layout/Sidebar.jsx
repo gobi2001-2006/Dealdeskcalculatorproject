@@ -48,6 +48,18 @@ const NAV_ITEMS = [
     icon: FileText,
     badge: '9 Drafts',
   },
+  {
+    to: '/approvals',
+    label: 'Approvals & Governance',
+    icon: ShieldCheck,
+    badge: null,
+  },
+  {
+    to: '/admin',
+    label: 'Administration',
+    icon: Building2,
+    badge: null,
+  },
 ]
 
 export function Sidebar({ isOpen, onClose }) {

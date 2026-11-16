@@ -17,7 +17,8 @@ Implements proposal endpoints:
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Path, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -689,3 +690,329 @@ def get_proposal_commercials_for_export_endpoint(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except IncompleteCommercialError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+
+
+# =============================================================================
+# Proposal Workflow, Narrative Content, Readiness & Governance Approvals
+# =============================================================================
+
+@router.get(
+    "/{proposal_id}/content",
+    summary="Get Proposal Narrative Content Sections",
+)
+def get_proposal_content_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/content"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        get_proposal_content_sections,
+    )
+    try:
+        return get_proposal_content_sections(proposal_id=proposal_id, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.put(
+    "/{proposal_id}/content",
+    summary="Update Proposal Narrative Content Sections",
+)
+def update_proposal_content_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    """PUT /api/proposals/{proposal_id}/content"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        upsert_proposal_content_sections,
+    )
+    try:
+        sections = payload.get("sections", payload)
+        return upsert_proposal_content_sections(proposal_id=proposal_id, sections=sections, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/{proposal_id}/attachments",
+    summary="Upload Fitment Document Attachment",
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_proposal_attachment_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """POST /api/proposals/{proposal_id}/attachments"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        save_proposal_attachment,
+    )
+    try:
+        content_bytes = await file.read()
+        return save_proposal_attachment(
+            proposal_id=proposal_id,
+            filename=file.filename,
+            content_bytes=content_bytes,
+            mime_type=file.content_type,
+            db=db,
+        )
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/{proposal_id}/attachments",
+    summary="List Proposal Fitment Attachments",
+)
+def list_proposal_attachments_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/attachments"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        get_proposal_attachments,
+    )
+    try:
+        return get_proposal_attachments(proposal_id=proposal_id, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/{proposal_id}/attachments/{document_id}",
+    summary="Download Proposal Fitment Attachment",
+)
+def download_proposal_attachment_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    document_id: int = Path(..., gt=0, description="Attachment document ID"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/attachments/{document_id}"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        get_attachment_file,
+    )
+    import os
+    try:
+        doc = get_attachment_file(proposal_id=proposal_id, document_id=document_id, db=db)
+        if not os.path.exists(doc.storage_path):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment file not found on disk.")
+        return FileResponse(
+            path=doc.storage_path,
+            filename=doc.file_name,
+            media_type=doc.mime_type or "application/octet-stream",
+        )
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.delete(
+    "/{proposal_id}/attachments/{document_id}",
+    summary="Delete Proposal Fitment Attachment",
+)
+def delete_proposal_attachment_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    document_id: int = Path(..., gt=0, description="Attachment document ID"),
+    db: Session = Depends(get_db),
+):
+    """DELETE /api/proposals/{proposal_id}/attachments/{document_id}"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        delete_proposal_attachment,
+    )
+    try:
+        return delete_proposal_attachment(proposal_id=proposal_id, document_id=document_id, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/{proposal_id}/readiness",
+    summary="Check Proposal Readiness for Submission",
+)
+def get_proposal_readiness_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/readiness"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        evaluate_proposal_readiness,
+    )
+    try:
+        return evaluate_proposal_readiness(proposal_id=proposal_id, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/{proposal_id}/approval-route",
+    summary="Get Evaluated Governance Approval Route",
+)
+def get_proposal_approval_route_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/approval-route"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        evaluate_proposal_approval_route,
+    )
+    try:
+        return evaluate_proposal_approval_route(proposal_id=proposal_id, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/{proposal_id}/submit",
+    summary="Submit Proposal for Governance Approval",
+)
+def submit_proposal_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    payload: dict = {},
+    db: Session = Depends(get_db),
+):
+    """POST /api/proposals/{proposal_id}/submit"""
+    from app.services.proposal_workflow_service import (
+        ProposalNotReadyError,
+        ProposalWorkflowError,
+        submit_proposal_for_approval,
+    )
+    try:
+        acting_user_id = payload.get("acting_user_id", 1)
+        notes = payload.get("notes", "")
+        return submit_proposal_for_approval(
+            proposal_id=proposal_id,
+            acting_user_id=acting_user_id,
+            notes=notes,
+            db=db,
+        )
+    except ProposalNotReadyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": str(exc), "missing_items": exc.missing_items},
+        )
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/{proposal_id}/activity",
+    summary="Get Proposal Activity and Audit History",
+)
+def get_proposal_activity_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    db: Session = Depends(get_db),
+):
+    """GET /api/proposals/{proposal_id}/activity"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        get_proposal_activity,
+    )
+    try:
+        return get_proposal_activity(proposal_id=proposal_id, db=db)
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/{proposal_id}/approvals/{approval_id}/decision",
+    summary="Record Governance Approval Decision (Approve / Reject)",
+)
+def record_approval_decision_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    approval_id: int = Path(..., gt=0, description="Approval primary key"),
+    payload: dict = {},
+    db: Session = Depends(get_db),
+):
+    """POST /api/proposals/{proposal_id}/approvals/{approval_id}/decision"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        decide_proposal_approval,
+    )
+    try:
+        decision = payload.get("decision", "approved")
+        notes = payload.get("notes", "")
+        acting_user_id = payload.get("acting_user_id", 1)
+        return decide_proposal_approval(
+            proposal_id=proposal_id,
+            approval_id=approval_id,
+            decision=decision,
+            notes=notes,
+            acting_user_id=acting_user_id,
+            db=db,
+        )
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.post(
+    "/{proposal_id}/recall",
+    summary="Recall Submitted Proposal Back to Draft",
+)
+def recall_proposal_endpoint(
+    *,
+    proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
+    payload: dict = {},
+    db: Session = Depends(get_db),
+):
+    """POST /api/proposals/{proposal_id}/recall"""
+    from app.services.proposal_workflow_service import (
+        ProposalWorkflowError,
+        recall_proposal_submission,
+    )
+    try:
+        reason = payload.get("reason", "Recalled by author")
+        acting_user_id = payload.get("acting_user_id", 1)
+        return recall_proposal_submission(
+            proposal_id=proposal_id,
+            acting_user_id=acting_user_id,
+            reason=reason,
+            db=db,
+        )
+    except ProposalWorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+

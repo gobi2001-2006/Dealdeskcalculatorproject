@@ -2,14 +2,57 @@
 import { createContext, useContext, useState, useMemo, useCallback } from 'react'
 import { INITIAL_CLIENT_INFO } from '../features/calculator/calculatorData'
 
+export const ACTIVE_PROPOSAL_STORAGE_KEY = 'dealdesk_active_proposal_id'
+
+export function getStoredProposalId() {
+  try {
+    const val = sessionStorage.getItem(ACTIVE_PROPOSAL_STORAGE_KEY)
+    if (val && !isNaN(val)) return Number(val)
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function persistProposalId(id) {
+  try {
+    if (id !== null && id !== undefined && !isNaN(id)) {
+      sessionStorage.setItem(ACTIVE_PROPOSAL_STORAGE_KEY, String(id))
+    } else {
+      sessionStorage.removeItem(ACTIVE_PROPOSAL_STORAGE_KEY)
+    }
+  } catch {
+    // Ignore in non-browser/restricted environments
+  }
+}
+
 export const ProposalContext = createContext(null)
 
 export function ProposalProvider({ children, initialProposal = null }) {
   // Phase A: Client Details & Reporting Currency
-  const [clientInfo, setClientInfo] = useState(
+  const [clientInfo, setClientInfoState] = useState(
     initialProposal?.clientInfo || INITIAL_CLIENT_INFO
   )
   const [clientErrors, setClientErrors] = useState({})
+
+  const setClientInfo = useCallback((updater) => {
+    setClientInfoState((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      if (next?.proposalId) {
+        persistProposalId(next.proposalId)
+      }
+      return next
+    })
+  }, [])
+
+  const setActiveProposalId = useCallback((id) => {
+    const num = id !== null && id !== undefined && !isNaN(id) ? Number(id) : null
+    persistProposalId(num)
+    setClientInfoState((prev) => ({
+      ...prev,
+      proposalId: num,
+    }))
+  }, [])
 
   // Phase B: Country Configurations (a new proposal starts with none)
   const [countryConfigs, setCountryConfigs] = useState(
@@ -48,12 +91,15 @@ export function ProposalProvider({ children, initialProposal = null }) {
   )
 
   // Helpers to update state
-  const updateClientInfo = (field, value) => {
-    setClientInfo((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
+  const updateClientInfo = useCallback((field, value) => {
+    setClientInfoState((prev) => {
+      const next = { ...prev, [field]: value }
+      if (field === 'proposalId') {
+        persistProposalId(value)
+      }
+      return next
+    })
+  }, [])
 
   const addCountry = useCallback((newCountry) => {
     setCountryConfigs((prev) => [...prev, newCountry])
@@ -111,6 +157,7 @@ export function ProposalProvider({ children, initialProposal = null }) {
       setClientInfo,
       clientErrors,
       setClientErrors,
+      setActiveProposalId,
       updateClientInfo,
       countryConfigs,
       setCountryConfigs,
@@ -172,6 +219,7 @@ export function useProposal() {
       clientErrors: {},
       setClientErrors: () => {},
       updateClientInfo: () => {},
+      setActiveProposalId: () => {},
       countryConfigs: [],
       setCountryConfigs: () => {},
       addCountry: () => {},

@@ -7,11 +7,14 @@ export function SummaryStrip({
   pricingFcv = '—',
   servicesValue = '—',
   grandTotal = '—',
+  proposalCode = null,
+  proposalStatus = null,
 }) {
   const summaryItems = [
     {
-      label: 'Client',
-      value: clientName,
+      label: 'Client / Proposal',
+      value: proposalCode ? `${clientName} (${proposalCode})` : clientName,
+      badge: proposalStatus,
     },
     {
       label: 'Countries',
@@ -56,9 +59,16 @@ export function SummaryStrip({
                   : 'lg:px-4'
               }`}
             >
-              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 truncate">
-                {item.label}
-              </span>
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 truncate">
+                  {item.label}
+                </span>
+                {item.badge && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold uppercase tracking-wider bg-orange-100 text-orange-800 border border-orange-200 shrink-0">
+                    {item.badge}
+                  </span>
+                )}
+              </div>
               <span
                 title={String(item.value)}
                 className={`text-[13px] sm:text-[14px] font-semibold mt-0.5 truncate ${

@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import DOMAIN_ERRORS, http_error
 from app.db.session import get_db
-from app.models.governance import ApprovalThreshold
+from app.models.governance import ApprovalThreshold, Role
+from app.models.rate_card import ServiceRate
 from app.schemas.governance import ApprovalThresholdResponse
 from app.models.master_data import (
     Currency,
@@ -88,6 +89,15 @@ router = APIRouter()
 # =============================================================================
 # Helper Request Schemas for UI Integration
 # =============================================================================
+
+class MasterRoleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, str_strip_whitespace=True)
+
+    id: Optional[int] = None
+    code: Optional[str] = None
+    name: str
+    source: Optional[str] = None
+
 
 class CountryCreatePayload(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -464,3 +474,55 @@ def list_deployment_pricing_options(db: Session = Depends(get_db)):
         DeploymentPricingOption.deployment_model_id, DeploymentPricingOption.pricing_model_id
     )
     return db.execute(stmt).scalars().all()
+
+
+@router.get(
+    "/roles",
+    response_model=List[MasterRoleResponse],
+    summary="List available roles from service rates and governance masters",
+)
+def list_master_roles(db: Session = Depends(get_db)):
+    """Fetch distinct active roles from ServiceRate and governance Role tables."""
+    sr_roles = (
+        db.query(ServiceRate.role_name)
+        .filter(
+            ServiceRate.role_name.isnot(None),
+            ServiceRate.status != "retired",
+        )
+        .distinct()
+        .all()
+    )
+
+    gov_roles = db.query(Role.id, Role.code, Role.name).all()
+
+    results: List[MasterRoleResponse] = []
+    seen = set()
+
+    for idx, (role_name,) in enumerate(sr_roles, start=1):
+        clean_name = (role_name or "").strip()
+        if clean_name and clean_name.lower() not in seen:
+            seen.add(clean_name.lower())
+            results.append(
+                MasterRoleResponse(
+                    id=idx,
+                    code=clean_name.lower().replace(" ", "_"),
+                    name=clean_name,
+                    source="service_rate",
+                )
+            )
+
+    for role in gov_roles:
+        clean_name = (role.name or "").strip()
+        if clean_name and clean_name.lower() not in seen:
+            seen.add(clean_name.lower())
+            results.append(
+                MasterRoleResponse(
+                    id=len(results) + 1,
+                    code=role.code,
+                    name=clean_name,
+                    source="governance_role",
+                )
+            )
+
+    results.sort(key=lambda r: r.name)
+    return results
