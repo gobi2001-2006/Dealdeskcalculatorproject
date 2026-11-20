@@ -200,7 +200,7 @@ export function UsersTab({ meta, me }) {
 
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-[14px]" aria-label="Users table">
-          <thead className="bg-[#faf8f5] text-[11px] uppercase tracking-wider text-slate-500">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="text-left font-semibold px-4 py-3">User</th>
               <th className="text-left font-semibold px-4 py-3">Email</th>

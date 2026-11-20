@@ -43,7 +43,7 @@ export function EmailNotificationsTab({ meta }) {
                 setSub(t.key)
                 if (t.key === 'log') refreshLog()
               }}
-              className={`px-4 py-2.5 text-[15px] font-medium -mb-px border-b-2 ${sub === t.key ? 'border-orange-700 text-orange-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+              className={`px-4 py-2.5 text-[15px] font-medium -mb-px border-b-2 ${sub === t.key ? 'border-emerald-600 text-emerald-800' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
             >
               {t.label}
               {count !== null && count !== undefined && <span className="ml-2 text-[12px] font-mono text-slate-500">{count}</span>}
@@ -99,7 +99,7 @@ function RulesPanel({ rules, setRules, meta, setMessage, onSent }) {
     <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,7fr)_minmax(0,4fr)] gap-5">
       <div className={`${cardCls} overflow-x-auto`}>
         <table className="w-full text-[14px]" aria-label="Notification rules">
-          <thead className="bg-[#faf8f5] text-[11px] uppercase tracking-wider text-slate-500">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-4 py-3 font-semibold text-left">On</th>
               <th className="px-4 py-3 font-semibold text-left">Event</th>
@@ -112,7 +112,7 @@ function RulesPanel({ rules, setRules, meta, setMessage, onSent }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rules.map((r) => (
-              <tr key={r.event_code} className={selected === r.event_code ? 'bg-orange-50/60' : ''}>
+              <tr key={r.event_code} className={selected === r.event_code ? 'bg-emerald-50/60' : ''}>
                 <td className="px-4 py-2.5">
                   <button
                     type="button"
@@ -136,7 +136,7 @@ function RulesPanel({ rules, setRules, meta, setMessage, onSent }) {
                   <td key={role} className="px-2 py-2.5 text-center">
                     <input
                       type="checkbox"
-                      className="w-5 h-5 accent-orange-700"
+                      className="w-5 h-5 accent-emerald-600"
                       aria-label={`${r.label}: send to ${meta.recipient_labels?.[role] || role}`}
                       checked={r.recipient_roles.includes(role)}
                       disabled={busy === r.event_code}
@@ -282,7 +282,7 @@ function TemplateEditor({ rule, meta, setRules, setMessage, onSent }) {
           <button type="button" className={secondaryBtn} onClick={() => { setSubject(rule.subject_template); setBody(rule.body_template) }} disabled={!dirty || saving}>Discard</button>
           <button type="button" className={secondaryBtn} onClick={resetTemplate} disabled={saving}>↺ Reset template</button>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-[#faf8f5] p-3" aria-label="Live preview">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="Live preview">
           <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
             {preview?.proposal_code
               ? `Live preview · using ${preview.proposal_code}`
@@ -351,7 +351,7 @@ function LogPanel({ log, rules }) {
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]" aria-label="Email log">
-          <thead className="bg-[#faf8f5] text-[11px] uppercase tracking-wider text-slate-500">
+          <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="text-left px-4 py-2 font-semibold">Created</th>
               <th className="text-left px-4 py-2 font-semibold">Event</th>

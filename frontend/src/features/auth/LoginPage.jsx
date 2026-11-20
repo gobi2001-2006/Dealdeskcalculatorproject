@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { BarChart3, Briefcase, Eye, EyeOff, Landmark, Puzzle, Scale, Star, Wrench } from 'lucide-react'
 import { AdrenalinLogo } from './AdrenalinLogo'
+import { BRAND_RING } from '../../components/brand/brandColors'
 import { demoLogin, getAuthConfig, login } from '../../api/authApi'
 import { getSession, landingPathFor, saveSession } from '../../auth/session'
 import './LoginPage.css'
@@ -132,24 +133,20 @@ export function LoginPage() {
     <div className="login-page">
       <aside className="login-art" aria-hidden="false">
         <svg className="login-art__bg" viewBox="0 0 600 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
-          <defs>
-            <linearGradient id="login-art-copper" x1="0" y1="1" x2="1" y2="0">
-              <stop offset="0" stopColor="#b5651d" stopOpacity="0" />
-              <stop offset="1" stopColor="#d98a3d" stopOpacity="0.55" />
-            </linearGradient>
-            <linearGradient id="login-art-teal" x1="0" y1="1" x2="1" y2="0">
-              <stop offset="0" stopColor="#0d6e63" stopOpacity="0" />
-              <stop offset="1" stopColor="#0d6e63" stopOpacity="0.45" />
-            </linearGradient>
-          </defs>
-          <path d="M-40 760 L220 300 L300 440 L380 360 L660 800 Z" fill="url(#login-art-copper)" />
-          <path d="M120 820 L420 380 L700 820 Z" fill="url(#login-art-teal)" />
-          <g stroke="#2a3548" strokeWidth="1" fill="none">
+          {/* Brand ring from the Adrenalin badge, drawn large and faint (artwork only). */}
+          <g fill="none" strokeWidth="34" opacity="0.32">
+            <path d="M247 347 A250 250 0 0 1 601 347" stroke={BRAND_RING.top} />
+            <path d="M601 347 A250 250 0 0 1 601 701" stroke={BRAND_RING.right} />
+            <path d="M601 701 A250 250 0 0 1 247 701" stroke={BRAND_RING.bottom} />
+            <path d="M247 701 A250 250 0 0 1 247 347" stroke={BRAND_RING.left} />
+          </g>
+          <g stroke="#1e293b" strokeWidth="1" fill="none">
             <path d="M0 200 H600" />
             <path d="M0 260 H600" />
             <path d="M0 320 H600" />
           </g>
         </svg>
+        <span className="login-art__spectrum" aria-hidden="true" />
         <AdrenalinLogo onDark height={28} className="login-art__logo" />
         <div className="login-art__copy">
           <h2>

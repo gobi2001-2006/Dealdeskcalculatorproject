@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from .routes import health, catalogue, packs, masters, rates, customers, deals, proposals, hubspot, admin, auth
+from .routes import health, catalogue, packs, masters, rates, customers, deals, proposals, hubspot, admin, auth, approvals
 
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["Health"])
@@ -13,3 +13,4 @@ api_router.include_router(proposals.router, prefix="/proposals", tags=["Proposal
 api_router.include_router(hubspot.router, prefix="/integrations/hubspot", tags=["HubSpot"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
+api_router.include_router(approvals.router, prefix="/approvals", tags=["Approvals"])

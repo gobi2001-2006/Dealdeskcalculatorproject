@@ -131,7 +131,7 @@ export function RolesPermissionsTab() {
       {matrix && (
         <div className={`${cardCls} overflow-x-auto`}>
           <table className="w-full text-[14px]" aria-label="Permission matrix">
-            <thead className="bg-[#faf8f5]">
+            <thead className="bg-slate-50">
               <tr>
                 <th className="text-left px-4 py-3 text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Permission</th>
                 {matrix.roles.map((r) => (
@@ -144,8 +144,8 @@ export function RolesPermissionsTab() {
             </thead>
             <tbody>
               {categories.map((cat) => [
-                <tr key={`h-${cat.name}`} className="bg-[#faf8f5] border-t border-slate-200">
-                  <td colSpan={matrix.roles.length + 1} className="px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-orange-800">
+                <tr key={`h-${cat.name}`} className="bg-slate-50 border-t border-slate-200">
+                  <td colSpan={matrix.roles.length + 1} className="px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-emerald-800">
                     {cat.name}
                   </td>
                 </tr>,
@@ -161,7 +161,7 @@ export function RolesPermissionsTab() {
                         <td key={r.code} className="px-3 py-2.5 text-center">
                           <input
                             type="checkbox"
-                            className="w-5 h-5 accent-orange-700 cursor-pointer disabled:cursor-not-allowed"
+                            className="w-5 h-5 accent-emerald-600 cursor-pointer disabled:cursor-not-allowed"
                             aria-label={`${r.label}: ${p.label}`}
                             checked={grants[r.code]?.has(p.code) || false}
                             disabled={saving || isLocked}

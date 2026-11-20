@@ -1020,6 +1020,7 @@ def recall_proposal_endpoint(
     *,
     proposal_id: int = Path(..., gt=0, description="Proposal primary key"),
     payload: dict = {},
+    header_user_id: Optional[int] = Depends(get_acting_user_id),
     db: Session = Depends(get_db),
 ):
     """POST /api/proposals/{proposal_id}/recall"""
@@ -1029,7 +1030,7 @@ def recall_proposal_endpoint(
     )
     try:
         reason = payload.get("reason", "Recalled by author")
-        acting_user_id = payload.get("acting_user_id", 1)
+        acting_user_id = header_user_id or payload.get("acting_user_id", 1)
         return recall_proposal_submission(
             proposal_id=proposal_id,
             acting_user_id=acting_user_id,

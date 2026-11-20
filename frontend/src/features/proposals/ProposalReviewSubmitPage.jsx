@@ -33,6 +33,10 @@ import {
   recallProposalSubmission,
   listProposals,
 } from '../../api/proposalsApi'
+import { getMyApprovalAction } from '../../api/approvalsApi'
+import { DecisionPanel } from '../approvals/components/DecisionPanel'
+import { RouteTimeline } from '../approvals/components/RouteTimeline'
+import { BreachTable } from '../approvals/components/BreachTable'
 
 /** A configured percentage, or 'Not configured' when the Admin has not set it (no assumed value). */
 function pctOrNotConfigured(value) {
@@ -62,6 +66,7 @@ export function ProposalReviewSubmitPage() {
   // Backend state
   const [readiness, setReadiness] = useState(null)
   const [approvalRoute, setApprovalRoute] = useState(null)
+  const [routeError, setRouteError] = useState(null)
   const [activityLogs, setActivityLogs] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -133,9 +138,9 @@ export function ProposalReviewSubmitPage() {
 
   // Recall & Approval decision modal / action state
   const [isRecalling, setIsRecalling] = useState(false)
-  const [actingDecision, setActingDecision] = useState(null) // { approvalId, decision: 'approved'|'rejected', notes: '' }
-  const [decisionNotes, setDecisionNotes] = useState('')
+  const [myAction, setMyAction] = useState(null)
   const [isProcessingDecision, setIsProcessingDecision] = useState(false)
+  const [decisionNotice, setDecisionNotice] = useState('')
 
   // Data fetching helper
   const loadData = useCallback(async () => {
@@ -147,20 +152,25 @@ export function ProposalReviewSubmitPage() {
     try {
       setIsLoading(true)
       setError(null)
-      const activityPromise =
-        typeof getProposalActivity === 'function'
-          ? getProposalActivity(proposalId).catch(() => [])
-          : Promise.resolve([])
-
-      const [readinessRes, routeRes, activityRes] = await Promise.all([
+      // Each call settles on its own: a slow or failing route, history or action query must not
+      // blank the whole page. Only readiness (the page's core) is required.
+      const [readinessRes, routeRes, activityRes, actionRes] = await Promise.allSettled([
         getProposalReadiness(proposalId),
         getProposalApprovalRoute(proposalId),
-        activityPromise,
+        getProposalActivity(proposalId),
+        getMyApprovalAction(proposalId),
       ])
+      if (readinessRes.status === 'rejected') throw readinessRes.reason
 
-      setReadiness(readinessRes)
-      setApprovalRoute(routeRes)
-      setActivityLogs(activityRes || [])
+      setReadiness(readinessRes.value)
+      setApprovalRoute(routeRes.status === 'fulfilled' ? routeRes.value : null)
+      setRouteError(
+        routeRes.status === 'rejected'
+          ? routeRes.reason?.response?.data?.detail || routeRes.reason?.message || 'The approval route could not be loaded.'
+          : null,
+      )
+      setActivityLogs(activityRes.status === 'fulfilled' ? activityRes.value || [] : [])
+      setMyAction(actionRes.status === 'fulfilled' ? actionRes.value : null)
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Failed to load proposal governance details.')
     } finally {
@@ -223,19 +233,18 @@ export function ProposalReviewSubmitPage() {
   }
 
   // Handle approver decision
-  const handleDecisionSubmit = async () => {
-    if (!actingDecision || !proposalId) return
+  const handleDecide = async (decision, notes) => {
+    if (!myAction?.approval_id || !proposalId) return
     setIsProcessingDecision(true)
     setError(null)
+    setDecisionNotice('')
 
     try {
-      await decideProposalApproval(proposalId, actingDecision.approvalId, {
-        decision: actingDecision.decision,
-        notes: decisionNotes,
-        actingUserId: 1,
+      await decideProposalApproval(proposalId, myAction.approval_id, {
+        decision,
+        notes,
       })
-      setActingDecision(null)
-      setDecisionNotes('')
+      setDecisionNotice(decision === 'approved' ? 'Stage approved successfully.' : 'Proposal returned to Sales.')
       await loadData()
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'Approval action failed.')
@@ -427,13 +436,15 @@ export function ProposalReviewSubmitPage() {
                       ? 'Proposal Formally Approved'
                       : readiness?.status === 'rejected'
                       ? 'Proposal Approval Returned / Rejected'
+                      : approvalRoute?.current_stage
+                      ? `In approval — awaiting ${approvalRoute.current_stage.stage_label}${approvalRoute.current_stage.assigned_user_name ? ` (${approvalRoute.current_stage.assigned_user_name})` : ''}`
                       : 'Proposal Under Governance Review'}
                   </div>
                   <p className="text-[13px] text-slate-600 mt-1 leading-relaxed">
                     {readiness?.status === 'approved'
                       ? 'All required multi-tier governance gates have approved this proposal. It is now ready for formal customer contracting.'
                       : readiness?.status === 'rejected'
-                      ? 'One or more governance approvers have rejected or returned this proposal. Review decision feedback notes below.'
+                      ? 'One or more governance approvers have rejected or returned this proposal. You may review the decision feedback notes below, edit the configuration, and resubmit.'
                       : 'Proposal version is currently locked in under_review status awaiting multi-level signoff.'}
                   </p>
                 </div>
@@ -759,6 +770,16 @@ export function ProposalReviewSubmitPage() {
 
             {/* Right Column (5 cols): Dynamic Approval Route, Submit Form, and Activity History */}
             <div className="lg:col-span-5 space-y-6">
+              {/* Decision Panel if user has authority to decide open stage */}
+              {myAction?.can_decide && myAction.approval_id && (
+                <DecisionPanel action={myAction} onDecide={handleDecide} busy={isProcessingDecision} />
+              )}
+              {decisionNotice && (
+                <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-800 font-medium">
+                  {decisionNotice}
+                </div>
+              )}
+
               {/* Dynamic Approval Chain Stepper */}
               <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-2xs space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -769,6 +790,11 @@ export function ProposalReviewSubmitPage() {
                   <span className="text-[11px] text-slate-500">Policy Engine</span>
                 </div>
 
+                {routeError && (
+                  <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="status">
+                    {typeof routeError === 'string' ? routeError : 'The approval route could not be loaded.'} The rest of the page is up to date; reload to try again.
+                  </div>
+                )}
                 {approvalRoute?.configuration_issues?.length > 0 && (
                   <div role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900">
                     <div className="font-semibold">Approval workflow not fully configured — submission is blocked</div>
@@ -853,36 +879,6 @@ export function ProposalReviewSubmitPage() {
                                 "{stage.decision_notes}"
                               </div>
                             )}
-
-                            {/* Approver Action Button if stage is pending and proposal is under review */}
-                            {readiness?.status === 'under_review' && stage.status === 'pending' && (
-                              <div className="mt-2 flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setActingDecision({
-                                      approvalId: stage.id || stage.role_id,
-                                      decision: 'approved',
-                                    })
-                                  }
-                                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded shadow-2xs transition-colors cursor-pointer"
-                                >
-                                  Approve Stage
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setActingDecision({
-                                      approvalId: stage.id || stage.role_id,
-                                      decision: 'rejected',
-                                    })
-                                  }
-                                  className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold rounded shadow-2xs transition-colors cursor-pointer"
-                                >
-                                  Reject Stage
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </div>
                       )
@@ -890,57 +886,6 @@ export function ProposalReviewSubmitPage() {
                   </div>
                 )}
               </div>
-
-              {/* Approver Decision Modal / Box if triggered */}
-              {actingDecision && (
-                <div className="bg-white rounded-xl p-5 border-2 border-orange-500 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-[13px] text-slate-900 capitalize">
-                      Confirm {actingDecision.decision} Decision
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setActingDecision(null)}
-                      className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
-                      Approver Rationale / Feedback Notes
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={decisionNotes}
-                      onChange={(e) => setDecisionNotes(e.target.value)}
-                      placeholder="Add approval justification, conditions, or rejection reason..."
-                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-[12px] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500"
-                    />
-                  </div>
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActingDecision(null)}
-                      className="px-3 py-1.5 border border-slate-300 text-slate-700 text-[12px] font-semibold rounded-lg hover:bg-slate-50 cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDecisionSubmit}
-                      disabled={isProcessingDecision}
-                      className={`px-4 py-1.5 text-white text-[12px] font-bold rounded-lg transition-colors cursor-pointer ${
-                        actingDecision.decision === 'approved'
-                          ? 'bg-emerald-600 hover:bg-emerald-700'
-                          : 'bg-rose-600 hover:bg-rose-700'
-                      }`}
-                    >
-                      {isProcessingDecision ? 'Processing...' : `Submit ${actingDecision.decision}`}
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {/* Submission Form Card (If not yet submitted) */}
               {!isProposalSubmitted && (
@@ -1020,7 +965,7 @@ export function ProposalReviewSubmitPage() {
                   </span>
                 </div>
 
-                <div className="space-y-3 pt-1">
+                <div className="space-y-3 pt-1 max-h-96 overflow-y-auto pr-1">
                   {activityLogs.length === 0 ? (
                     <div className="text-[12px] text-slate-400 text-center py-4">
                       No audit events recorded yet.

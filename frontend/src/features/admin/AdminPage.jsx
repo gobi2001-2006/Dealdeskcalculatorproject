@@ -46,7 +46,7 @@ export function AdminPage() {
   const current = visible.find((t) => t.key === active) || visible[0]
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f4f2ee] flex flex-col text-slate-800 font-sans">
+    <div className="h-screen overflow-hidden bg-slate-100 flex flex-col text-slate-800 font-sans">
       <CatalogueTopNav activeSection="admin" />
 
       <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-2 flex shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden" role="tablist" aria-label="Admin sections">
@@ -62,7 +62,7 @@ export function AdminPage() {
               onClick={() => setParams({ tab: tab.key })}
               className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-medium whitespace-nowrap transition-colors border ${
                 isActive
-                  ? 'bg-orange-50 text-orange-800 border-orange-200 font-semibold'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
                   : 'text-slate-600 border-transparent hover:bg-slate-100 hover:text-slate-900'
               }`}
             >

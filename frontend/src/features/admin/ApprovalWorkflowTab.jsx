@@ -290,7 +290,7 @@ export function ApprovalWorkflowTab({ meta }) {
             <h2 className="px-5 py-4 border-b border-slate-100 font-semibold text-slate-900">Approval matrix</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-[14px]" aria-label="Approval matrix">
-                <thead className="bg-[#faf8f5] text-[11px] uppercase tracking-wider text-slate-500">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="text-left px-4 py-2 font-semibold">Stage</th>
                     <th className="text-left px-4 py-2 font-semibold">When</th>
@@ -361,7 +361,7 @@ export function ApprovalWorkflowTab({ meta }) {
               )}
               {requiredPreview.map((s, i) => (
                 <li key={s.stage_code} className="flex flex-col items-center text-center w-24">
-                  <span className="w-9 h-9 rounded-full border-2 border-orange-600 text-orange-700 flex items-center justify-center font-semibold">{i + 2}</span>
+                  <span className="w-9 h-9 rounded-full border-2 border-emerald-600 text-emerald-700 flex items-center justify-center font-semibold">{i + 2}</span>
                   <span className="mt-1 text-[10px] uppercase tracking-wider text-slate-500">{s.label}</span>
                   <span className="text-[12px] font-semibold">{roleLabel[form.stages[s.stage_code]]}</span>
                   {s.sub_label && <span className="text-[11px] text-slate-500">{s.sub_label}</span>}
@@ -380,7 +380,7 @@ export function ApprovalWorkflowTab({ meta }) {
         <h2 className="px-5 py-4 border-b border-slate-100 font-semibold text-slate-900">Regional Business Heads</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-[14px]" aria-label="Regional Business Heads">
-            <thead className="bg-[#faf8f5] text-[11px] uppercase tracking-wider text-slate-500">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="text-left px-4 py-2 font-semibold">Region (ADR)</th>
                 <th className="text-left px-4 py-2 font-semibold">Sub-regions</th>

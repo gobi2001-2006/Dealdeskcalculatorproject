@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { LogOut, ShieldCheck, User } from 'lucide-react'
+import { LogOut, User } from 'lucide-react'
+import { AdrenalinBrand } from '../../components/brand/AdrenalinBrand'
 import { useProposal } from '../../context/ProposalContext'
 import { clearSession, currentUser } from '../../auth/session'
 import { logout } from '../../api/authApi'
+import { getApprovalInbox } from '../../api/approvalsApi'
 
 /**
  * Top navigation with two-tier hierarchy:
@@ -15,6 +18,25 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
   // Keep the open proposal when moving between the proposal pages (survives a browser refresh).
   const { clientInfo } = useProposal()
   const signedIn = currentUser()
+  const [awaitingCount, setAwaitingCount] = useState(0)
+
+  useEffect(() => {
+    let alive = true
+    getApprovalInbox()
+      .then((data) => {
+        if (alive && data?.counts?.awaiting_me) {
+          setAwaitingCount(Number(data.counts.awaiting_me))
+        } else if (alive) {
+          setAwaitingCount(0)
+        }
+      })
+      .catch(() => {
+        if (alive) setAwaitingCount(0)
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
   // Sign out: tell the server (stateless), drop the session, and reload on the login page so no
   // proposal data stays in memory for the next person.
   const handleSignOut = async () => {
@@ -127,10 +149,9 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
               className="flex items-center gap-2.5 text-white hover:text-slate-200 transition-colors group"
               title="Deal Desk Home"
             >
-              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs">
-                <ShieldCheck className="w-5 h-5 text-white" aria-hidden="true" />
-              </div>
-              <div>
+              <AdrenalinBrand onDark height={28} />
+              <span className="hidden sm:block h-7 w-px bg-slate-700" aria-hidden="true" />
+              <div className="hidden sm:block">
                 <div className="text-[14px] font-bold tracking-wider text-white">
                   DEAL DESK
                 </div>
@@ -179,6 +200,11 @@ export function CatalogueTopNav({ activeSection = 'catalogue', isConnected = nul
                 aria-current={isApprovalsSection ? 'page' : undefined}
               >
                 <span>Approvals</span>
+                {awaitingCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 text-[10px] font-bold rounded-full bg-amber-500 text-slate-950">
+                    {awaitingCount}
+                  </span>
+                )}
               </Link>
 
               {/* 4. Admin */}

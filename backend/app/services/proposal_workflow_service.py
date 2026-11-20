@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import desc, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.governance import ApprovalThreshold, AuditLog, Role, User, UserRole
 from app.models.integrations import Document
@@ -156,7 +156,7 @@ def upsert_proposal_content_sections(
         raise ProposalWorkflowError(f"Proposal {proposal_id} not found.")
 
     version = get_latest_version(proposal)
-    if version.status not in ("draft", "under_review"):
+    if version.status not in ("draft",):
         raise ProposalWorkflowError(f"Cannot edit content for version in status '{version.status}'.")
 
     for key, text_val in sections.items():
@@ -219,7 +219,7 @@ def save_proposal_attachment(
         raise ProposalWorkflowError(f"Proposal {proposal_id} not found.")
 
     version = get_latest_version(proposal)
-    if version.status not in ("draft", "under_review"):
+    if version.status not in ("draft",):
         raise ProposalWorkflowError(f"Cannot add attachments to version in status '{version.status}'.")
 
     ext = os.path.splitext(filename)[1].lower()
@@ -322,6 +322,14 @@ def get_attachment_file(proposal_id: int, document_id: int, db: Session) -> Docu
 
 def delete_proposal_attachment(proposal_id: int, document_id: int, db: Session) -> Dict[str, Any]:
     """Delete an attachment file and mark document record archived."""
+    proposal = get_proposal(db=db, proposal_id=proposal_id)
+    if not proposal:
+        raise ProposalWorkflowError(f"Proposal {proposal_id} not found.")
+
+    version = get_latest_version(proposal)
+    if version.status not in ("draft",):
+        raise ProposalWorkflowError(f"Cannot delete attachments for version in status '{version.status}'.")
+
     doc = get_attachment_file(proposal_id=proposal_id, document_id=document_id, db=db)
     if os.path.exists(doc.storage_path):
         try:
@@ -729,6 +737,7 @@ def evaluate_proposal_approval_route(proposal_id: int, db: Session) -> Dict[str,
         "gross_margin_pct": None,
         "route_source": "not_configured",
         "net_total": metrics["net_total"],
+        "list_total": metrics["list_total"],
         "currency": metrics["currency"],
         "region": None,
         "ceilings": {"line_pct": metrics["ceilings"]["line"], "proposal_pct": metrics["ceilings"]["proposal"],
@@ -739,6 +748,7 @@ def evaluate_proposal_approval_route(proposal_id: int, db: Session) -> Dict[str,
         "configuration_issues": ["No approval stages are configured (Admin → Approval Workflow)."]
         + metrics["configuration_issues"],
         "approval_stages": [],
+        "current_stage": None,
     }
 
 
@@ -998,12 +1008,13 @@ def recall_proposal_submission(
 
 def get_proposal_activity(proposal_id: int, db: Session) -> List[Dict[str, Any]]:
     """Retrieve genuine chronological activity history from immutable AuditLog."""
-    proposal = get_proposal(db=db, proposal_id=proposal_id)
+    proposal = db.get(Proposal, proposal_id)  # only its id, code and creator are needed here
     if not proposal:
         raise ProposalWorkflowError(f"Proposal {proposal_id} not found.")
 
     stmt = (
         select(AuditLog)
+        .options(joinedload(AuditLog.actor))
         .where(AuditLog.entity_type == "proposals", AuditLog.entity_id == str(proposal.id))
         .order_by(AuditLog.occurred_at.desc(), AuditLog.id.desc())
     )
@@ -1074,6 +1085,7 @@ def _active_workflow_stages(db: Session) -> list:
     return list(
         db.execute(
             select(ApprovalWorkflowStage)
+            .options(selectinload(ApprovalWorkflowStage.approver_role))
             .where(ApprovalWorkflowStage.is_active.is_(True))
             .order_by(ApprovalWorkflowStage.sort_order, ApprovalWorkflowStage.id)
         ).scalars().all()
@@ -1117,21 +1129,34 @@ def _stage_role_names(db: Session) -> Dict[str, str]:
     return {s.stage_code: s.approver_role.name for s in _active_workflow_stages(db) if s.approver_role is not None}
 
 
-def _route_metrics(proposal: Proposal, version: ProposalVersion, db: Session) -> Dict[str, Any]:
+_NOT_LOADED = object()
+
+
+def _route_metrics(proposal: Proposal, version: ProposalVersion, db: Session, *, snapshot=_NOT_LOADED,
+                   ceilings: Optional[Dict[str, Any]] = None, test_effective: Optional[bool] = None) -> Dict[str, Any]:
+    """Totals, effective discount and breaches of one proposal version.
+
+    The inbox passes `snapshot`, `ceilings` and `test_effective` it loaded once for every proposal;
+    otherwise they are read here. The rules are the same either way.
+    """
     from app.services.admin_service import approval_options
 
-    latest_snapshot = db.execute(
-        select(CalculationSnapshot)
-        .where(CalculationSnapshot.proposal_version_id == version.id)
-        .order_by(CalculationSnapshot.id.desc())
-    ).scalars().first()
+    if snapshot is _NOT_LOADED:
+        snapshot = db.execute(
+            select(CalculationSnapshot)
+            .where(CalculationSnapshot.proposal_version_id == version.id)
+            .order_by(CalculationSnapshot.id.desc())
+        ).scalars().first()
+    latest_snapshot = snapshot
     payload = latest_snapshot.snapshot_payload if latest_snapshot else {}
     net_total = float(payload.get("total_proposal_contract_reporting_currency") or 0.0)
     gross_total = float(payload.get("total_proposal_base_contract_reporting_currency") or net_total)
     effective = round(((gross_total - net_total) / gross_total) * 100, 2) if gross_total > 0 and gross_total >= net_total else 0.0
 
-    ceilings = _discount_policy_values(db)
-    test_effective = bool(approval_options(db).get("test_effective_discount", False))
+    if ceilings is None:
+        ceilings = _discount_policy_values(db)
+    if test_effective is None:
+        test_effective = bool(approval_options(db).get("test_effective_discount", False))
     issues = []
     if ceilings["line"] is None:
         issues.append("The line-level discount ceiling is not configured (Admin → Approval Workflow).")
@@ -1164,10 +1189,118 @@ def _route_metrics(proposal: Proposal, version: ProposalVersion, db: Session) ->
         "line_breaches": line_breaches,
         "proposal_breaches": prop_breaches,
         "net_total": net_total,
+        "list_total": gross_total if latest_snapshot else None,
         "currency": payload.get("reporting_currency_code") or (proposal.currency.code if proposal.currency else None),
         "test_effective_discount": test_effective,
         "configuration_issues": issues,
     }
+
+
+def _assignee_resolver(db: Session):
+    """Who is assigned to a stage, with users and regional Business Heads loaded once.
+
+    Same rules as `_stage_assignee` / `notification_service.regional_business_head`: the Admin's
+    region mapping first, then a Business Head user of that region; regional stages need a user of
+    the proposal's region; global stages take the first active user with the role.
+    """
+    from app.models.admin import Region
+
+    by_role: Dict[int, List[User]] = {}
+    rows = db.execute(
+        select(User, UserRole.role_id).join(UserRole, UserRole.user_id == User.id)
+        .where(User.is_active.is_(True)).order_by(User.id)
+    ).all()
+    for user, role_id in rows:
+        by_role.setdefault(role_id, []).append(user)
+    regions = {
+        r.name.strip().lower(): r
+        for r in db.execute(
+            select(Region).where(Region.status == "active").options(selectinload(Region.business_head))
+        ).scalars().all()
+    }
+
+    def _in_region(users: List[User], region: str) -> Optional[User]:
+        key = region.strip().lower()
+        return next((u for u in users if u.region and u.region.strip().lower() == key), None)
+
+    def resolve(stage, region: Optional[str]) -> Optional[User]:
+        role = stage.approver_role
+        users = by_role.get(role.id, [])
+        if stage.routing == "regional" and role.code == "business_head" and region:
+            mapped = regions.get(region.strip().lower())
+            if mapped is not None and mapped.business_head is not None and mapped.business_head.is_active:
+                return mapped.business_head
+            bh = _in_region(users, region)
+            if bh is not None:
+                return bh
+        if stage.routing == "regional" and region:
+            return _in_region(users, region)
+        return users[0] if users else None
+
+    return resolve
+
+
+def _stage_label(stage) -> str:
+    return f"{stage.label}{' · ' + stage.sub_label if stage.sub_label else ''}"
+
+
+def _stage_role_display(stage, region: Optional[str]) -> str:
+    name = stage.approver_role.name
+    return f"{name} ({region})" if stage.routing == "regional" else name
+
+
+def _assignee_display(assignee: Optional[User], stage, region: Optional[str]) -> str:
+    if assignee is not None:
+        return assignee.full_name
+    return f"Unassigned {stage.approver_role.name}" + (f" ({region})" if stage.routing == "regional" else "")
+
+
+def open_stage_by_version(db: Session, version_ids: List[int], stages: list) -> Dict[int, tuple]:
+    """For each version, the first configured stage whose approval is pending (stages are decided in
+    order). Same rule as the route: the latest non-cancelled approval of a stage counts. One query."""
+    if not version_ids or not stages:
+        return {}
+    order = {s.stage_code: i for i, s in enumerate(stages)}
+    by_code = {s.stage_code: s for s in stages}
+    latest: Dict[tuple, Approval] = {}
+    rows = db.execute(
+        select(Approval)
+        .where(Approval.proposal_version_id.in_(version_ids), Approval.stage_code.isnot(None))
+        .order_by(Approval.id)
+    ).scalars().all()
+    for a in rows:
+        if a.status != "cancelled":
+            latest[(a.proposal_version_id, a.stage_code)] = a
+    result: Dict[int, tuple] = {}
+    for (vid, code), a in latest.items():
+        if a.status != "pending" or code not in order:
+            continue
+        current = result.get(vid)
+        if current is None or order[code] < order[current[0].stage_code]:
+            result[vid] = (a, by_code[code])
+    return result
+
+
+def decide_problem(*, approval: Approval, stage, region: Optional[str], user: Optional[User],
+                   permissions: set, role_codes: List[str], legacy_role: Optional[Role] = None) -> Optional[str]:
+    """Why this user may NOT decide this approval (None = allowed). Pure: callers load the data once.
+    Used by `assert_can_decide` (decision endpoint) and by the Approval Inbox."""
+    from app.services.permission_service import STAGE_PERMISSION
+
+    if approval.stage_code:
+        if user is None or not user.is_active:
+            return "The acting user is unknown or inactive."
+        permission = STAGE_PERMISSION.get(approval.stage_code, "approval.final_l1")
+        if permission not in permissions:
+            return f"You do not have the '{permission}' permission."
+        if stage is not None and stage.routing == "regional":
+            user_region = (user.region or "").strip().lower()
+            if user_region not in ("", "global") and region and user_region != region.strip().lower():
+                return f"This approval belongs to region {region}; your region is {user.region}."
+        return None
+    if legacy_role is not None and legacy_role.code not in role_codes:
+        return f"Only a user with the {legacy_role.name} role can decide this approval."
+    return None
 
 
 def _stage_assignee(stage, region: str, db: Session) -> Optional[User]:
@@ -1205,6 +1338,7 @@ def _configured_approval_route(proposal: Proposal, version: ProposalVersion, sta
         if a.stage_code and a.status != "cancelled":
             by_stage[a.stage_code] = a
 
+    resolve_assignee = _assignee_resolver(db)
     result_stages = []
     for level, stage in enumerate(stages, start=1):
         code = stage.stage_code
@@ -1229,8 +1363,7 @@ def _configured_approval_route(proposal: Proposal, version: ProposalVersion, sta
             reason = stage.condition_text or stage.label
 
         existing = by_stage.get(code)
-        assignee = _stage_assignee(stage, region, db)
-        role_label = stage.approver_role.name
+        assignee = resolve_assignee(stage, region)
         if existing is not None:
             stage_status = existing.status
         elif not required:
@@ -1242,13 +1375,12 @@ def _configured_approval_route(proposal: Proposal, version: ProposalVersion, sta
         result_stages.append({
             "stage_level": level,
             "stage_code": code,
-            "stage_label": f"{stage.label}{' · ' + stage.sub_label if stage.sub_label else ''}",
+            "stage_label": _stage_label(stage),
             "approval_id": existing.id if existing is not None else None,
             "role_id": stage.approver_role_id,
             "role_code": stage.approver_role.code,
-            "role_name": f"{role_label} ({region})" if stage.routing == "regional" else role_label,
-            "assigned_user_name": assignee.full_name if assignee else f"Unassigned {role_label}"
-                                  + (f" ({region})" if stage.routing == "regional" else ""),
+            "role_name": _stage_role_display(stage, region),
+            "assigned_user_name": _assignee_display(assignee, stage, region),
             "assigned_user_id": assignee.id if assignee else None,
             "region": region if stage.routing == "regional" else "Global",
             "routing": stage.routing,
@@ -1268,6 +1400,7 @@ def _configured_approval_route(proposal: Proposal, version: ProposalVersion, sta
         "gross_margin_pct": None,
         "route_source": "admin_configuration",
         "net_total": metrics["net_total"],
+        "list_total": metrics["list_total"],
         "currency": metrics["currency"],
         "region": region,
         "ceilings": {"line_pct": ceilings["line"], "proposal_pct": ceilings["proposal"],
@@ -1277,6 +1410,12 @@ def _configured_approval_route(proposal: Proposal, version: ProposalVersion, sta
         "proposal_breaches": metrics["proposal_breaches"],
         "configuration_issues": metrics["configuration_issues"],
         "approval_stages": result_stages,
+        # The open stage (stages are decided in order); None when nothing is waiting.
+        "current_stage": next(
+            ({k: st[k] for k in ("stage_code", "stage_label", "role_name", "assigned_user_name", "approval_id")}
+             for st in result_stages if st["status"] == "pending" and st["approval_id"]),
+            None,
+        ),
     }
 
 
@@ -1309,33 +1448,32 @@ def assert_can_decide(proposal_id: int, approval_id: int, user_id: int, db: Sess
     """The acting user needs the stage's approval permission and, for regional stages, the proposal's region."""
     from app.models.admin import ApprovalWorkflowStage
     from app.services.notification_service import proposal_region
-    from app.services.permission_service import (
-        STAGE_PERMISSION,
-        PermissionDenied,
-        assert_user_permission,
-        user_role_codes,
-    )
+    from app.services.permission_service import PermissionDenied, user_permissions, user_role_codes
 
     approval = db.get(Approval, approval_id)
     if approval is None:
         return  # the decision call reports "not found"
+    if user_id is None:
+        raise PermissionDenied("No acting user.")
+    user = db.get(User, user_id)
+    stage = region = legacy_role = None
     if approval.stage_code:
-        assert_user_permission(db, user_id, STAGE_PERMISSION.get(approval.stage_code, "approval.final_l1"))
         stage = db.execute(
             select(ApprovalWorkflowStage).where(ApprovalWorkflowStage.stage_code == approval.stage_code)
         ).scalars().first()
         if stage is not None and stage.routing == "regional":
-            user = db.get(User, user_id)
-            proposal = get_proposal(db=db, proposal_id=proposal_id)
+            proposal = db.get(Proposal, proposal_id)
             region = proposal_region(proposal) if proposal else None
-            user_region = (user.region or "").strip().lower() if user else ""
-            if user_region not in ("", "global") and region and user_region != region.strip().lower():
-                raise PermissionDenied(f"This approval belongs to region {region}; your region is {user.region}.")
     else:
-        # Approvals created before Phase 2: the user must hold the assigned role.
-        role = db.get(Role, approval.assigned_role_id)
-        if role is not None and role.code not in user_role_codes(db, user_id):
-            raise PermissionDenied(f"Only a user with the {role.name} role can decide this approval.")
+        legacy_role = db.get(Role, approval.assigned_role_id)
+    problem = decide_problem(
+        approval=approval, stage=stage, region=region, user=user,
+        permissions=user_permissions(db, user_id) if user is not None else set(),
+        role_codes=user_role_codes(db, user_id) if legacy_role is not None else [],
+        legacy_role=legacy_role,
+    )
+    if problem:
+        raise PermissionDenied(problem)
 
 
 def _fmt_money(value: float, currency: Optional[str]) -> str:

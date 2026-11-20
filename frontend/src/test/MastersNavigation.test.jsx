@@ -216,7 +216,7 @@ describe('Masters Main Navigation & Secondary Tabs', () => {
 
     // Navigate to Approvals
     await user.click(within(topNav).getByRole('link', { name: 'Approvals' }))
-    expect(await screen.findByRole('heading', { name: /Approvals & Governance/i, level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('tablist', { name: 'Approval inbox' })).toBeInTheDocument()
     topNav = screen.getByRole('navigation', { name: /Catalogue Top Navigation/i })
     expect(within(topNav).getByRole('link', { name: 'Approvals' })).toHaveAttribute('aria-current', 'page')
 

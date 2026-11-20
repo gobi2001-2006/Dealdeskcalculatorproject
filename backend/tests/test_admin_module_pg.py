@@ -280,6 +280,84 @@ def test_07_rejection_needs_comment_and_returns_proposal(pg_client, pg_seed_ids,
     assert {e["recipient_email"] for e in log} >= {"dev.user@example.test", "pat.presales@t.test"}
 
 
+def test_07b_approval_inbox_follows_role_region_and_stage_order(pg_client, pg_seed_ids, people, monkeypatch):
+    """Phase 3 Approvals page: the inbox reuses the route and the decision permission check."""
+    ids = pg_seed_ids
+    _ready(monkeypatch)
+    pid = make_proposal(pg_client, ids, suffix="ADM-INBOX")["id"]
+    assert add_pack_line(pg_client, ids, pid, discount="18").status_code == 201        # breaches 15%
+
+    assert pg_client.get("/api/approvals/inbox").status_code == 401                    # no signed-in user
+
+    def item(user):
+        body = pg_client.get("/api/approvals/inbox", headers=H(people[user]["id"])).json()
+        return body, next(i for i in body["items"] if i["proposal_id"] == pid)
+
+    _, draft = item("bh_in")
+    assert draft["status"] == "draft" and draft["current_stage"] is None and draft["awaiting_me"] is False
+    assert draft["region"] == "India" and draft["breach_count"] == 1 and draft["deal_name"]
+
+    assert pg_client.post(f"/api/proposals/{pid}/submit", json={}, headers=H(people["sales"]["id"])).status_code == 200
+    body, bh = item("bh_in")
+    assert bh["current_stage"]["stage_code"] == "commercial_line" and bh["current_stage"]["assigned_user_name"] == "Rahul BH"
+    assert bh["awaiting_me"] is True and bh["submitted_at"]
+    assert body["counts"]["awaiting_me"] >= 1 and body["counts"]["in_progress"] >= 1
+    assert item("bh_me")[1]["awaiting_me"] is False        # other region
+    assert item("legal")[1]["awaiting_me"] is False         # later stage, no permission for this one
+    assert item("sales")[1]["awaiting_me"] is False
+
+    mine = pg_client.get(f"/api/approvals/{pid}/my-action", headers=H(people["bh_in"]["id"])).json()
+    assert mine["can_decide"] is True and mine["approval_id"] == bh["current_stage"]["approval_id"]
+    assert pg_client.get(f"/api/approvals/{pid}/my-action", headers=H(people["cfo"]["id"])).json()["can_decide"] is False
+    assert pg_client.get("/api/approvals/999999/my-action", headers=H(people["bh_in"]["id"])).status_code == 404
+
+    # After the decision the stage moves on: Business Head L1 is next (same user), Legal still waits.
+    url = f"/api/proposals/{pid}/approvals/{bh['current_stage']['approval_id']}/decision"
+    assert pg_client.post(url, json={"decision": "approved", "notes": "ok"}, headers=H(people["bh_in"]["id"])).status_code == 200
+    assert item("bh_in")[1]["current_stage"]["stage_code"] == "final_l1"
+    assert item("legal")[1]["awaiting_me"] is False
+
+
+def test_07c_inbox_query_count_does_not_grow_with_proposals(pg_client, pg_engine, pg_seed_ids, people, monkeypatch):
+    """Remote databases (Neon) pay a round trip per query: the inbox must not run queries per proposal."""
+    from sqlalchemy import event
+
+    _ready(monkeypatch)
+    count = [0]
+
+    def on_execute(*_args, **_kwargs):
+        count[0] += 1
+
+    def inbox_queries():
+        count[0] = 0
+        event.listen(pg_engine, "before_cursor_execute", on_execute)
+        try:
+            assert pg_client.get("/api/approvals/inbox", headers=H(people["bh_in"]["id"])).status_code == 200
+        finally:
+            event.remove(pg_engine, "before_cursor_execute", on_execute)
+        return count[0]
+
+    def add(suffix):
+        pid = make_proposal(pg_client, pg_seed_ids, suffix=suffix)["id"]
+        assert add_pack_line(pg_client, pg_seed_ids, pid, discount="18").status_code == 201
+        assert pg_client.post(f"/api/proposals/{pid}/submit", json={}, headers=H(people["sales"]["id"])).status_code == 200
+        return pid
+
+    pid = add("ADM-PERF-1")
+    few = inbox_queries()
+    for n in range(2, 6):
+        add(f"ADM-PERF-{n}")
+    assert inbox_queries() == few, "the inbox issues queries per proposal"
+
+    count[0] = 0
+    event.listen(pg_engine, "before_cursor_execute", on_execute)
+    try:
+        mine = pg_client.get(f"/api/approvals/{pid}/my-action", headers=H(people["bh_in"]["id"])).json()
+    finally:
+        event.remove(pg_engine, "before_cursor_execute", on_execute)
+    assert mine["can_decide"] is True and count[0] <= 15
+
+
 def test_08_legacy_calls_without_acting_user_still_work(pg_client, pg_seed_ids, monkeypatch):
     """Existing callers that do not send X-User-Id keep the previous behaviour."""
     _ready(monkeypatch)

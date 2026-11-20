@@ -20,7 +20,9 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000,
+  // 60 s: headroom for a serverless database waking up (Neon cold start + TLS). Endpoints should
+  // still answer in a few seconds; the inbox and route no longer issue a query per proposal/stage.
+  timeout: 60000,
 })
 
 // Identify the acting user to the backend so permissions are enforced server-side:
